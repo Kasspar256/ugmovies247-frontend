@@ -1,5 +1,5 @@
-export const AUTH_SESSION_COOKIE = 'ugm_session';
-export const AUTH_ROLE_COOKIE = 'ugm_role';
+export const AUTH_SESSION_COOKIE = 'ugm_session_v2';
+export const AUTH_ROLE_COOKIE = 'ugm_role_v2';
 export const AUTH_SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
 export const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
   .split(',')

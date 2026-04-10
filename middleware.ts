@@ -29,8 +29,13 @@ function matchesProtectedPath(pathname: string) {
 
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const hasSession = Boolean(request.cookies.get(AUTH_SESSION_COOKIE)?.value);
-  const role = request.cookies.get(AUTH_ROLE_COOKIE)?.value || '';
+  const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
+  const role =
+    request.cookies
+      .getAll(AUTH_ROLE_COOKIE)
+      .map((cookie) => cookie.value)
+      .filter(Boolean)
+      .at(-1) || '';
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon') || pathname.includes('.')) {
     return NextResponse.next();
@@ -66,10 +71,6 @@ export function middleware(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
-  }
-
-  if (pathname.startsWith('/api/movies') && !hasSession) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   if (pathname.startsWith('/api/admin') && (!hasSession || role !== 'admin')) {

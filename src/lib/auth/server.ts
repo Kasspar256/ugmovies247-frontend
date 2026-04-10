@@ -40,8 +40,17 @@ function normalizeUserRole(value: unknown): UserRole {
 function getCookieValueFromRequest(request: Request | NextRequest, name: string) {
   const cookieHeader = request.headers.get('cookie') || '';
   const parts = cookieHeader.split(';').map((entry) => entry.trim());
-  const match = parts.find((entry) => entry.startsWith(`${name}=`));
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : '';
+  const matches = parts.filter((entry) => entry.startsWith(`${name}=`));
+
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const value = decodeURIComponent(matches[index].slice(name.length + 1));
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return '';
 }
 
 export function isAdminEmail(email?: string | null) {
@@ -49,29 +58,53 @@ export function isAdminEmail(email?: string | null) {
 }
 
 async function fetchUserRecord(uid: string, fallback: { email?: string; name?: string }) {
-  const snapshot = await adminDb.collection('users').doc(uid).get();
-  const data = snapshot.data() as Partial<AppUserRecord> | undefined;
   const now = new Date().toISOString();
+  const fallbackRole = normalizeUserRole(isAdminEmail(fallback.email) ? 'admin' : 'user');
+
+  try {
+    const snapshot = await adminDb.collection('users').doc(uid).get();
+    const data = snapshot.data() as Partial<AppUserRecord> | undefined;
+
+    return {
+      id: uid,
+      name: data?.name || fallback.name || 'User',
+      email: data?.email || fallback.email || '',
+      authProvider: data?.authProvider || 'password',
+      role: normalizeUserRole(data?.role || fallbackRole),
+      createdAt: data?.createdAt || now,
+      updatedAt: data?.updatedAt || now,
+      lastLoginAt: data?.lastLoginAt || now,
+      isActive: data?.isActive !== false,
+      avatarUrl: data?.avatarUrl || '',
+      notificationPreferences: data?.notificationPreferences || {
+        marketing: false,
+        productUpdates: true,
+      },
+      subscription:
+        data?.subscription && typeof data.subscription === 'object'
+          ? (data.subscription as SubscriptionSnapshot)
+          : undefined,
+    };
+  } catch (error) {
+    console.warn('[auth] failed to read user profile from Firestore, using session fallback', error);
+  }
 
   return {
     id: uid,
-    name: data?.name || fallback.name || 'User',
-    email: data?.email || fallback.email || '',
-    authProvider: data?.authProvider || 'password',
-    role: normalizeUserRole(data?.role || (isAdminEmail(fallback.email) ? 'admin' : 'user')),
-    createdAt: data?.createdAt || now,
-    updatedAt: data?.updatedAt || now,
-    lastLoginAt: data?.lastLoginAt || now,
-    isActive: data?.isActive !== false,
-    avatarUrl: data?.avatarUrl || '',
-    notificationPreferences: data?.notificationPreferences || {
+    name: fallback.name || 'User',
+    email: fallback.email || '',
+    authProvider: 'password',
+    role: fallbackRole,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: now,
+    isActive: true,
+    avatarUrl: '',
+    notificationPreferences: {
       marketing: false,
       productUpdates: true,
     },
-    subscription:
-      data?.subscription && typeof data.subscription === 'object'
-        ? (data.subscription as SubscriptionSnapshot)
-        : undefined,
+    subscription: undefined,
   };
 }
 
@@ -109,7 +142,12 @@ export async function getRequestAuthSession(request: Request | NextRequest) {
 
 export async function getCurrentAuthSession() {
   const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get(AUTH_SESSION_COOKIE)?.value || '';
+  const sessionCookie =
+    cookieStore
+      .getAll(AUTH_SESSION_COOKIE)
+      .map((cookie) => cookie.value)
+      .filter(Boolean)
+      .at(-1) || '';
   return getAuthSessionFromSessionCookie(sessionCookie);
 }
 
@@ -143,7 +181,6 @@ export function getAuthCookieConfig() {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
-    domain: process.env.AUTH_COOKIE_DOMAIN || undefined,
   };
 }
 
