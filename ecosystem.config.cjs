@@ -18,6 +18,10 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: String(port),
       },
+      env_production: {
+        NODE_ENV: 'production',
+        PORT: String(port),
+      },
     },
     {
       name: workerName,
@@ -30,6 +34,9 @@ module.exports = {
       watch: false,
       max_memory_restart: '700M',
       env: {
+        NODE_ENV: 'production',
+      },
+      env_production: {
         NODE_ENV: 'production',
       },
     },
