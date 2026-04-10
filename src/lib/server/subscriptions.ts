@@ -72,13 +72,18 @@ export function getSubscriptionSnapshotFromData(
 }
 
 export async function getCurrentSubscription(userId: string) {
-  const snapshot = await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).get();
+  try {
+    const snapshot = await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).get();
 
-  if (!snapshot.exists) {
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return snapshot.data() as UserSubscriptionDocument;
+  } catch (error) {
+    console.warn('[subscriptions] failed to read current subscription, using empty fallback', error);
     return null;
   }
-
-  return snapshot.data() as UserSubscriptionDocument;
 }
 
 export async function syncUserSubscriptionSnapshot(userId: string, subscription?: Partial<UserSubscriptionDocument> | null) {
@@ -100,20 +105,25 @@ export async function getViewerEntitlement(userId: string): Promise<Subscription
   const snapshot = getSubscriptionSnapshotFromData(subscription);
 
   if (!snapshot.isActive && subscription?.status === 'active') {
-    await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).set(
-      {
+    try {
+      await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).set(
+        {
+          status: 'expired',
+          isActive: false,
+          updatedAt: nowIso(),
+        },
+        { merge: true }
+      );
+      await syncUserSubscriptionSnapshot(userId, {
+        ...subscription,
         status: 'expired',
         isActive: false,
         updatedAt: nowIso(),
-      },
-      { merge: true }
-    );
-    await syncUserSubscriptionSnapshot(userId, {
-      ...subscription,
-      status: 'expired',
-      isActive: false,
-      updatedAt: nowIso(),
-    });
+      });
+    } catch (error) {
+      console.warn('[subscriptions] failed to sync expired subscription state', error);
+    }
+
     return {
       hasPremiumAccess: false,
       requiresSubscription: true,
