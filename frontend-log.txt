@@ -1,0 +1,1713 @@
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> ugmovies247-frontend@1.0.0 dev
+> next dev -p 3000
+
+  ▲ Next.js 14.2.4
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+ ✓ Ready in 2.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 4.5s (709 modules)
+ ⚠ Unsupported metadata themeColor is configured in metadata export in /. Please move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/api-reference/functions/generate-viewport
+ ⚠ Unsupported metadata viewport is configured in metadata export in /. Please move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/api-reference/functions/generate-viewport
+ GET / 200 in 4953ms
+ ✓ Compiled in 697ms (277 modules)
+ ✓ Compiled in 656ms (709 modules)
+ ⨯ ./src/app/profile/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+    ,-[[36;1;4m/home/kasspar/.openclaw/workspace/ugmovies247-frontend/src/app/profile/page.tsx[0m:26:1]
+ [2m26[0m |   };
+ [2m27[0m | 
+ [2m28[0m |   return (
+ [2m29[0m |     <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
+    : [31;1m     ^^^[0m
+ [2m30[0m |       
+ [2m31[0m |       {/* Desktop Header */}
+ [2m32[0m |       <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/profile/page.tsx
+ ⨯ ./src/app/profile/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+    ,-[[36;1;4m/home/kasspar/.openclaw/workspace/ugmovies247-frontend/src/app/profile/page.tsx[0m:26:1]
+ [2m26[0m |   };
+ [2m27[0m | 
+ [2m28[0m |   return (
+ [2m29[0m |     <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
+    : [31;1m     ^^^[0m
+ [2m30[0m |       
+ [2m31[0m |       {/* Desktop Header */}
+ [2m32[0m |       <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/profile/page.tsx
+ ○ Compiling /_not-found ...
+ ⨯ ./src/app/profile/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+    ,-[[36;1;4m/home/kasspar/.openclaw/workspace/ugmovies247-frontend/src/app/profile/page.tsx[0m:26:1]
+ [2m26[0m |   };
+ [2m27[0m | 
+ [2m28[0m |   return (
+ [2m29[0m |     <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
+    : [31;1m     ^^^[0m
+ [2m30[0m |       
+ [2m31[0m |       {/* Desktop Header */}
+ [2m32[0m |       <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/profile/page.tsx
+ GET /profile 500 in 3900ms
+ GET /profile 500 in 23ms
+ ✓ Compiled /_error in 663ms (508 modules)
+ ✓ Compiled / in 454ms (471 modules)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at Object.__webpack_require__ [as require] (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:33:43)
+    at JSON.parse (<anonymous>)
+digest: "3259155047"
+TypeError: Cannot read properties of undefined (reading 'call')
+    at Object.__webpack_require__ [as require] (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:33:43)
+    at require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:39:19604)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108279
+    at eo (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108464)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:110693
+    at Object._fromJSON (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:111249)
+    at JSON.parse (<anonymous>)
+    at eu (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108958)
+    at en (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108026)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115168
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115185
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115218
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115235
+    at t (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115458)
+ ⨯ TypeError: Cannot read properties of undefined (reading 'call')
+    at Object.__webpack_require__ [as require] (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:33:43)
+    at require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:39:19604)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108279
+    at eo (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108464)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:110693
+    at Object._fromJSON (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:111249)
+    at JSON.parse (<anonymous>)
+    at eu (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108958)
+    at en (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:108026)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115168
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115185
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115218
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115235
+    at t (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js:35:115458) {
+  page: '/'
+}
+ ✓ Compiled /_error in 345ms (919 modules)
+ ⨯ Error: Cannot find module './682.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:335
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:376)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:72:65
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:71:33)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET / 500 in 1017ms
+ ✓ Compiled /_not-found in 162ms (922 modules)
+ GET /_next/static/chunks/fallback/react-refresh.js 404 in 269ms
+ GET /_next/static/chunks/fallback/pages/_app.js 404 in 269ms
+ GET /_next/static/chunks/fallback/main.js 404 in 268ms
+ GET /_next/static/chunks/fallback/pages/_error.js 404 in 267ms
+ GET /_next/static/chunks/fallback/webpack.js 404 in 318ms
+ GET / 200 in 152ms
+ GET /_next/static/css/app/layout.css?v=1775339728560 404 in 71ms
+ GET /_next/static/chunks/main-app.js?v=1775339728560 404 in 52ms
+ GET /_next/static/chunks/app/page.js 404 in 52ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 52ms
+ GET / 200 in 25ms
+ GET /_next/static/chunks/main-app.js?v=1775339732085 404 in 45ms
+ GET /_next/static/css/app/layout.css?v=1775339732085 404 in 44ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 44ms
+ GET /_next/static/chunks/app/page.js 404 in 43ms
+ GET / 200 in 28ms
+ GET /_next/static/css/app/layout.css?v=1775339737950 404 in 26ms
+ GET /_next/static/chunks/app/page.js 404 in 31ms
+ GET /_next/static/chunks/main-app.js?v=1775339737950 404 in 31ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 32ms
+ GET / 200 in 27ms
+ GET /_next/static/css/app/layout.css?v=1775339739769 404 in 39ms
+ GET /_next/static/chunks/main-app.js?v=1775339739769 404 in 34ms
+ GET /_next/static/chunks/app/page.js 404 in 34ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 33ms
+ GET / 200 in 24ms
+ GET /_next/static/css/app/layout.css?v=1775339741795 404 in 42ms
+ GET /_next/static/chunks/main-app.js?v=1775339741795 404 in 41ms
+ GET /_next/static/chunks/app/page.js 404 in 40ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 30ms
+ GET / 200 in 30ms
+ GET /_next/static/css/app/layout.css?v=1775339859774 404 in 55ms
+ GET /_next/static/chunks/app/page.js 404 in 40ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 39ms
+ GET /_next/static/chunks/main-app.js?v=1775339859774 404 in 42ms
+ GET / 200 in 29ms
+ GET /_next/static/css/app/layout.css?v=1775339981185 404 in 53ms
+ GET /_next/static/chunks/main-app.js?v=1775339981185 404 in 49ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 48ms
+ GET /_next/static/chunks/app/page.js 404 in 46ms
+ ✓ Compiled in 554ms (460 modules)
+ GET / 200 in 41ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 606ms (920 modules)
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ✓ Compiled /_error in 209ms (922 modules)
+ GET /_next/static/css/app/layout.css?v=1775340254909 500 in 892ms
+ GET /_next/static/chunks/app-pages-internals.js 500 in 891ms
+ GET /_next/static/chunks/main-app.js?v=1775340254909 500 in 885ms
+ GET /_next/static/chunks/app/page.js 500 in 884ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22428
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22477)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderPageComponent (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1917:24)
+    at async DevServer.renderToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1969:32)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async NextNodeServer.handleCatchallRenderRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:272:17)
+    at async DevServer.handleRequestImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:816:17)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:353:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ],
+  page: '/'
+}
+ ⨯ Error: Cannot find module './682.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:335
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:376)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:72:65
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:71:33)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET / 500 in 26ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET /_next/static/chunks/fallback/webpack.js 500 in 44ms
+ GET /_next/static/chunks/fallback/main.js 500 in 43ms
+ GET /_next/static/chunks/fallback/pages/_app.js 500 in 42ms
+ GET /_next/static/chunks/fallback/pages/_error.js 500 in 41ms
+ GET /_next/static/chunks/fallback/react-refresh.js 500 in 41ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22428
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22477)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderPageComponent (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1917:24)
+    at async DevServer.renderToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1969:32)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async NextNodeServer.handleCatchallRenderRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:272:17)
+    at async DevServer.handleRequestImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:816:17)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:353:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ],
+  page: '/'
+}
+ ⨯ Error: Cannot find module './682.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:335
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:376)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:72:65
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:71:33)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET / 500 in 20ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET /_next/static/chunks/fallback/webpack.js 500 in 17ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4859
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/_not-found/page.js:1:4904)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderErrorToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2097:30)
+    at async pipe.req.req (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:2063:30)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:368:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET /_next/static/chunks/fallback/react-refresh.js 500 in 24ms
+ GET /_next/static/chunks/fallback/pages/_app.js 500 in 22ms
+ GET /_next/static/chunks/fallback/main.js 500 in 22ms
+ GET /_next/static/chunks/fallback/pages/_error.js 500 in 20ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22428
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22477)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderPageComponent (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1917:24)
+    at async DevServer.renderToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1969:32)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async NextNodeServer.handleCatchallRenderRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:272:17)
+    at async DevServer.handleRequestImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:816:17)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:353:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ],
+  page: '/'
+}
+ ⨯ Error: Cannot find module './682.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:335
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:376)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:72:65
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:71:33)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ HEAD / 500 in 24ms
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22428
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js:1:22477)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:84
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:98:26)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36)
+    at async DevServer.findPageComponents (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:577:20)
+    at async DevServer.renderPageComponent (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1917:24)
+    at async DevServer.renderToResponseImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:1969:32)
+    at async DevServer.pipeImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:920:25)
+    at async NextNodeServer.handleCatchallRenderRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:272:17)
+    at async DevServer.handleRequestImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/base-server.js:816:17)
+    at async /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:339:20
+    at async Span.traceAsyncFn (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/trace/trace.js:154:20)
+    at async DevServer.handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/next-dev-server.js:336:24)
+    at async invokeRender (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:174:21)
+    at async handleRequest (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:353:24)
+    at async requestHandlerImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js:377:13)
+    at async Server.requestListener (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ],
+  page: '/'
+}
+ ⨯ Error: Cannot find module './682.js'
+Require stack:
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js
+- /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Module._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at __webpack_require__.f.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:198:28)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js:162:22)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:335
+    at Object.<anonymous> (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/pages/_document.js:1:376)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Module._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at mod.require (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require-hook.js:65:28)
+    at require (node:internal/modules/helpers:147:16)
+    at requirePage (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js:109:84)
+    at /home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:72:65
+    at async Promise.all (index 0)
+    at async loadComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js:71:33)
+    at async DevServer.findPageComponentsImpl (/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/next-server.js:710:36) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/webpack-runtime.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/.next/server/app/page.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/require.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/load-components.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/build/utils.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-middleware.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/dev/hot-reloader-webpack.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/router-server.js',
+    '/home/kasspar/.openclaw/workspace/ugmovies247-frontend/node_modules/next/dist/server/lib/start-server.js'
+  ]
+}
+ GET / 500 in 21ms
+ GET / 404 in 20ms

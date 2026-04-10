@@ -1,0 +1,23 @@
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> ugmovies247-frontend@1.0.0 build
+> next build
+
+  ▲ Next.js 14.2.4
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+Failed to compile.
+
+./src/app/admin/page.tsx:66:34
+Type error: An object literal cannot have multiple properties with the same name.
+
+[0m [90m 64 |[39m     [35m36[39m[33m:[39m [32m'Family'[39m[33m,[39m [35m38[39m[33m:[39m [32m'History'[39m[33m,[39m [35m27[39m[33m:[39m [32m'Horror'[39m[33m,[39m [35m10402[39m[33m:[39m [32m'Music'[39m[33m,[39m [35m9648[39m[33m:[39m [32m'Mystery'[39m[33m,[39m[0m
+[0m [90m 65 |[39m     [35m10749[39m[33m:[39m [32m'Romance'[39m[33m,[39m [35m878[39m[33m:[39m [32m'Sci-Fi'[39m[33m,[39m [35m10770[39m[33m:[39m [32m'TV Movie'[39m[33m,[39m [35m53[39m[33m:[39m [32m'Thriller'[39m[33m,[39m[0m
+[0m[31m[1m>[22m[39m[90m 66 |[39m     [35m10752[39m[33m:[39m [32m'War'[39m[33m,[39m [35m37[39m[33m:[39m [32m'Western'[39m[33m,[39m [35m9648[39m[33m:[39m [32m'Detective'[39m[0m
+[0m [90m    |[39m                                  [31m[1m^[22m[39m[0m
+[0m [90m 67 |[39m   }[33m;[39m[0m
+[0m [90m 68 |[39m[0m
+[0m [90m 69 |[39m   [36mconst[39m getGenresFromIds [33m=[39m (ids[33m:[39m number[]) [33m=>[39m {[0m

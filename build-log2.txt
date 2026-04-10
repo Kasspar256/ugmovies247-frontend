@@ -1,0 +1,29 @@
+npm warn Unknown builtin config "globalignorefile". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+  ▲ Next.js 14.2.4
+  - Environments: .env.local
+
+   Creating an optimized production build ...
+Failed to compile.
+
+./src/app/profile/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+    ,-[[36;1;4m/home/kasspar/.openclaw/workspace/ugmovies247-frontend/src/app/profile/page.tsx[0m:26:1]
+ [2m26[0m |   };
+ [2m27[0m | 
+ [2m28[0m |   return (
+ [2m29[0m |     <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
+    : [31;1m     ^^^[0m
+ [2m30[0m |       
+ [2m31[0m |       {/* Desktop Header */}
+ [2m32[0m |       <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/profile/page.tsx
+
+
+> Build failed because of webpack errors
