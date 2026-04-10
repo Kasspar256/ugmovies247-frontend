@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 
 const AUTH_FREE_PREFIXES = ['/login', '/signup', '/forgot-password', '/admin'];
 
@@ -28,32 +26,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       };
     }
 
-    if (auth.currentUser) {
-      setReady(true);
-      return () => {
-        active = false;
-      };
-    }
-
     setReady(false);
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!active) {
-        return;
+    const checkSession = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!active) {
+          return;
+        }
+
+        if (response.ok) {
+          setReady(true);
+          return;
+        }
+      } catch (error) {
+        console.warn('[auth-gate] session check failed', error);
       }
 
-      if (user) {
-        setReady(true);
+      if (!active) {
         return;
       }
 
       const redirectTarget = pathname || '/';
       router.replace(`/login?redirect=${encodeURIComponent(redirectTarget)}`);
-    });
+    };
+
+    void checkSession();
 
     return () => {
       active = false;
-      unsubscribe();
     };
   }, [pathname, router, shouldSkip]);
 
