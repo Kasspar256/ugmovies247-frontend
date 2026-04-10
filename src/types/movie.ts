@@ -76,6 +76,7 @@ export type Movie = {
   title: string;
   original_title?: string;
   name?: string;
+  overview?: string;
   description?: string;
   poster: string;
   genres: string[];
@@ -243,6 +244,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     title: String(data.title || data.name || 'Untitled movie'),
     original_title: typeof data.original_title === 'string' ? data.original_title : '',
     name: typeof data.name === 'string' ? data.name : '',
+    overview: typeof data.overview === 'string' ? data.overview : '',
     description: typeof data.description === 'string' ? data.description : '',
     poster: typeof data.poster === 'string' ? data.poster : '',
     genres: Array.isArray(data.genres)
