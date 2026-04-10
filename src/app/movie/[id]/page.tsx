@@ -132,7 +132,7 @@ const currentGenres = new Set((movie.genres || []).map((genre) => genre.toLowerC
 const currentCategories = new Set((movie.category || []).map((category) => category.toLowerCase()));
 const currentCountry = movie.country?.toLowerCase() || '';
 
-const scoredMovies = allMovies
+  const scoredMovies = allMovies
   .filter((candidate) => candidate.id !== movie.id)
   .filter((candidate) => getMovieListingKey(candidate) !== currentListingKey)
   .map((candidate) => {
@@ -148,13 +148,13 @@ const scoredMovies = allMovies
 
     return { candidate, metadataScore };
   })
-  .sort((first, second) => {
-    if (second.metadataScore !== first.metadataScore) {
-      return second.metadataScore - first.metadataScore;
-    }
+    .sort((first, second) => {
+      if (second.metadataScore !== first.metadataScore) {
+        return second.metadataScore - first.metadataScore;
+      }
 
-    return (second.date_added || '').localeCompare(first.date_added || '');
-  });
+      return (second.candidate.date_added || '').localeCompare(first.candidate.date_added || '');
+    });
 
 const uniqueScoredMovies = dedupeSeriesMovies(scoredMovies.map((entry) => entry.candidate)).map((candidate) => {
   const match = scoredMovies.find((entry) => entry.candidate.id === candidate.id);
