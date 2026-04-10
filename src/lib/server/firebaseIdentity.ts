@@ -146,6 +146,16 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+async function readExistingUserState(uid: string) {
+  try {
+    const snapshot = await adminDb.collection('users').doc(uid).get();
+    return snapshot.data() as Record<string, unknown> | undefined;
+  } catch (error) {
+    console.warn('[auth] failed to read user profile from Firestore during session creation', error);
+    return undefined;
+  }
+}
+
 export async function createAuthSessionResponse(options: {
   idToken: string;
   requestedName?: string;
@@ -168,8 +178,7 @@ export async function createAuthSessionResponse(options: {
   }
 
   const userRef = adminDb.collection('users').doc(decoded.uid);
-  const existingSnapshot = await userRef.get();
-  const existing = existingSnapshot.data() as Record<string, unknown> | undefined;
+  const existing = await readExistingUserState(decoded.uid);
   const role = (existing?.role === 'admin' || isAdminEmail(email)) ? 'admin' : 'user';
 
   if (existing?.isActive === false) {
