@@ -1,48 +1,30 @@
 'use client';
 
-import {
-  browserSessionPersistence,
-  browserLocalPersistence,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-  setPersistence,
-  signInWithEmailAndPassword,
-  signOut,
-  updateProfile,
-  type UserCredential,
-} from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 export { getAuthDevDiagnostics, getFirebaseAuthErrorMessage } from './devDiagnostics';
-let persistenceReady: Promise<void> | null = null;
-let persistenceMode: 'local' | 'session' = 'local';
 
-async function ensurePersistence(mode: 'local' | 'session' = 'local') {
-  if (!persistenceReady || persistenceMode !== mode) {
-    persistenceMode = mode;
-    persistenceReady = setPersistence(
-      auth,
-      mode === 'session' ? browserSessionPersistence : browserLocalPersistence
-    ).catch((error) => {
-      console.error('[auth] failed to set persistence', error);
-    });
-  }
+type SessionResponse = {
+  success: boolean;
+  role: 'user' | 'admin';
+  redirectTo: string;
+};
 
-  await persistenceReady;
-}
-
-async function createServerSession(options: { idToken: string; name?: string }) {
-  const response = await fetch('/api/auth/session', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options),
-  });
-  const payload = await response.json();
+async function parseAuthResponse(response: Response) {
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    code?: string;
+    success?: boolean;
+    role?: 'user' | 'admin';
+    redirectTo?: string;
+    message?: string;
+  };
 
   if (!response.ok) {
-    throw new Error(payload.error || 'Failed to create a secure session.');
+    const error = new Error(payload.error || 'Authentication failed.') as Error & { code?: string };
+    error.code = payload.code || 'auth/request-failed';
+    throw error;
   }
 
-  return payload as { success: boolean; role: 'user' | 'admin'; redirectTo: string };
+  return payload;
 }
 
 export async function loginWithEmailPassword(
@@ -50,11 +32,19 @@ export async function loginWithEmailPassword(
   password: string,
   options?: { rememberMe?: boolean }
 ) {
-  await ensurePersistence(options?.rememberMe === false ? 'session' : 'local');
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-  const idToken = await credential.user.getIdToken(true);
-  const session = await createServerSession({ idToken, name: credential.user.displayName || '' });
-  return { credential, session };
+  const response = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      email,
+      password,
+      rememberMe: options?.rememberMe !== false,
+    }),
+  });
+
+  const session = (await parseAuthResponse(response)) as SessionResponse;
+  return { credential: null, session };
 }
 
 export async function signupWithEmailPassword(options: {
@@ -62,25 +52,36 @@ export async function signupWithEmailPassword(options: {
   email: string;
   password: string;
 }) {
-  await ensurePersistence();
-  const credential = await createUserWithEmailAndPassword(auth, options.email, options.password);
-  await updateProfile(credential.user, { displayName: options.name });
-  const idToken = await credential.user.getIdToken(true);
-  const session = await createServerSession({ idToken, name: options.name });
-  return { credential, session };
+  const response = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(options),
+  });
+
+  const session = (await parseAuthResponse(response)) as SessionResponse;
+  return { credential: null, session };
 }
 
 export async function logoutCurrentUser() {
-  try {
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-    });
-  } finally {
-    await signOut(auth);
+  const response = await fetch('/api/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to sign out.');
   }
 }
 
 export async function sendResetPasswordEmail(email: string) {
-  await ensurePersistence();
-  await sendPasswordResetEmail(auth, email);
+  const response = await fetch('/api/auth/password-reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email }),
+  });
+
+  return parseAuthResponse(response);
 }
+

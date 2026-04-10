@@ -23,6 +23,8 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
       return 'Incorrect email or password.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait and try again.';
+    case 'auth/quota-exceeded':
+      return 'Firebase auth quota is temporarily exhausted. Please wait a bit and try again.';
     case 'auth/operation-not-allowed':
       return 'Email/Password sign-in is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
     default:
