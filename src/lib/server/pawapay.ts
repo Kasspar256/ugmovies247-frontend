@@ -24,6 +24,8 @@ type PawaPayInitiateDepositResponse = {
   failureReason?: {
     errorCode?: string;
     errorMessage?: string;
+    failureCode?: string;
+    failureMessage?: string;
   };
 };
 
@@ -34,6 +36,8 @@ type PawaPayDepositStatusResponse = {
   failureReason?: {
     errorCode?: string;
     errorMessage?: string;
+    failureCode?: string;
+    failureMessage?: string;
   };
   data?: {
     depositId?: string;
@@ -43,6 +47,8 @@ type PawaPayDepositStatusResponse = {
     failureReason?: {
       errorCode?: string;
       errorMessage?: string;
+      failureCode?: string;
+      failureMessage?: string;
     };
     requestedAmount?: string;
     currency?: string;
@@ -224,9 +230,13 @@ export function getPawaPayFailureMessage(payload: Record<string, unknown> | null
     payload?.message,
     payload?.error,
     failureReason?.errorMessage,
+    failureReason?.failureMessage,
     nestedFailureReason?.errorMessage,
+    nestedFailureReason?.failureMessage,
     failureReason?.errorCode,
+    failureReason?.failureCode,
     nestedFailureReason?.errorCode,
+    nestedFailureReason?.failureCode,
     data?.message,
     data?.error
   );
