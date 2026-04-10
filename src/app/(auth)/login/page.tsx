@@ -3,12 +3,11 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import { getAuthDevDiagnostics, getFirebaseAuthErrorMessage, loginWithEmailPassword } from '@/lib/auth/client';
 
 export default function LoginPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
   const [email, setEmail] = useState('');
@@ -33,8 +32,7 @@ export default function LoginPage() {
 
     try {
       await loginWithEmailPassword(email.trim(), password, { rememberMe });
-      router.replace(redirectTarget);
-      router.refresh();
+      window.location.assign(redirectTarget);
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));

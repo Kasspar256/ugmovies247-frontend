@@ -3,12 +3,11 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import { getAuthDevDiagnostics, getFirebaseAuthErrorMessage, signupWithEmailPassword } from '@/lib/auth/client';
 
 export default function SignupPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
   const [name, setName] = useState('');
@@ -54,9 +53,7 @@ export default function SignupPage() {
         email: email.trim(),
         password,
       });
-
-      router.replace(redirectTarget);
-      router.refresh();
+      window.location.assign(redirectTarget);
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));
