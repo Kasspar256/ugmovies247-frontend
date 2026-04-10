@@ -29,9 +29,21 @@ type PawaPayInitiateDepositResponse = {
 
 type PawaPayDepositStatusResponse = {
   status?: string;
+  message?: string;
+  error?: string;
+  failureReason?: {
+    errorCode?: string;
+    errorMessage?: string;
+  };
   data?: {
     depositId?: string;
     status?: string;
+    message?: string;
+    error?: string;
+    failureReason?: {
+      errorCode?: string;
+      errorMessage?: string;
+    };
     requestedAmount?: string;
     currency?: string;
     country?: string;
@@ -177,19 +189,47 @@ function parseJsonSafely<T>(text: string) {
 }
 
 function formatPawaPayError(response: Response, text: string, payload: Record<string, unknown> | null, fallback: string) {
-  const failureReason =
-    payload && typeof payload.failureReason === 'object' && payload.failureReason
-      ? (payload.failureReason as Record<string, unknown>)
-      : null;
-
-  const detailedMessage =
-    (typeof payload?.message === 'string' && payload.message) ||
-    (typeof payload?.error === 'string' && payload.error) ||
-    (typeof failureReason?.errorMessage === 'string' && failureReason.errorMessage) ||
-    (typeof failureReason?.errorCode === 'string' && failureReason.errorCode) ||
-    text.trim();
+  const detailedMessage = getPawaPayFailureMessage(payload) || text.trim();
 
   return `${fallback} status ${response.status}${detailedMessage ? `: ${detailedMessage}` : '.'}`;
+}
+
+function getNestedRecord(
+  payload: Record<string, unknown> | null | undefined,
+  key: string
+): Record<string, unknown> | null {
+  if (!payload || typeof payload[key] !== 'object' || !payload[key]) {
+    return null;
+  }
+
+  return payload[key] as Record<string, unknown>;
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return '';
+}
+
+export function getPawaPayFailureMessage(payload: Record<string, unknown> | null | undefined) {
+  const data = getNestedRecord(payload, 'data');
+  const failureReason = getNestedRecord(payload, 'failureReason');
+  const nestedFailureReason = getNestedRecord(data, 'failureReason');
+
+  return firstString(
+    payload?.message,
+    payload?.error,
+    failureReason?.errorMessage,
+    nestedFailureReason?.errorMessage,
+    failureReason?.errorCode,
+    nestedFailureReason?.errorCode,
+    data?.message,
+    data?.error
+  );
 }
 
 export async function initiatePawaPayDeposit(input: InitiatePawaPayDepositInput) {

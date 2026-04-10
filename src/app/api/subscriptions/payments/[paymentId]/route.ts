@@ -8,6 +8,7 @@ import {
 import {
   fetchPawaPayDepositStatus,
   getPawaPayConfigError,
+  getPawaPayFailureMessage,
   getProviderTransactionId,
   mapPawaPayStatusToPaymentState,
 } from '@/lib/server/pawapay';
@@ -63,11 +64,15 @@ export async function GET(
         source: 'poll',
       });
     } else if (mappedStatus === 'failed' || mappedStatus === 'cancelled' || mappedStatus === 'not_found') {
+      const failureMessage =
+        getPawaPayFailureMessage(providerStatusResponse as unknown as Record<string, unknown>) ||
+        rawStatus ||
+        'Payment was not completed.';
       await markPaymentAttemptFailed({
         paymentId: params.paymentId,
         status: mappedStatus,
         providerStatus: rawStatus,
-        message: rawStatus || 'Payment was not completed.',
+        message: failureMessage,
         rawPayload: providerStatusResponse as unknown as Record<string, unknown>,
         source: 'poll',
       });

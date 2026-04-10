@@ -6,6 +6,7 @@ import {
   markPaymentAttemptFailed,
 } from '@/lib/server/subscriptions';
 import {
+  getPawaPayFailureMessage,
   getProviderTransactionId,
   mapPawaPayStatusToPaymentState,
   validatePawaPayContentDigest,
@@ -70,11 +71,12 @@ export async function POST(request: Request) {
       source: 'webhook',
     });
   } else if (mappedStatus === 'failed' || mappedStatus === 'cancelled' || mappedStatus === 'not_found') {
+    const failureMessage = getPawaPayFailureMessage(payload) || providerStatus || 'Payment failed.';
     await markPaymentAttemptFailed({
       paymentId: depositId,
       status: mappedStatus,
       providerStatus,
-      message: providerStatus || 'Payment failed.',
+      message: failureMessage,
       rawPayload: payload,
       source: 'webhook',
     });
