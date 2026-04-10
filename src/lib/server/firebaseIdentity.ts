@@ -12,6 +12,26 @@ import { getSubscriptionSnapshotFromData } from '@/lib/server/subscriptions';
 
 type FirebaseIdentitySuccess = Record<string, unknown>;
 
+type FirebaseSignInSuccess = FirebaseIdentitySuccess & {
+  idToken: string;
+  refreshToken?: string;
+  expiresIn?: string;
+  localId?: string;
+  email?: string;
+};
+
+type FirebaseSignUpSuccess = FirebaseIdentitySuccess & {
+  idToken: string;
+  refreshToken?: string;
+  expiresIn?: string;
+  localId?: string;
+  email?: string;
+};
+
+type FirebasePasswordResetSuccess = FirebaseIdentitySuccess & {
+  email?: string;
+};
+
 type FirebaseIdentityError = Error & {
   code?: string;
   status?: number;
@@ -89,7 +109,10 @@ function mapIdentityError(code: string, message: string) {
   }
 }
 
-async function callIdentityToolkit(path: string, body: Record<string, unknown>) {
+async function callIdentityToolkit<TSuccess extends FirebaseIdentitySuccess>(
+  path: string,
+  body: Record<string, unknown>
+) {
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/${path}?key=${encodeURIComponent(getFirebaseWebApiKey())}`,
     {
@@ -116,7 +139,7 @@ async function callIdentityToolkit(path: string, body: Record<string, unknown>) 
     } as FirebaseIdentityError);
   }
 
-  return payload;
+  return payload as TSuccess;
 }
 
 function nowIso() {
@@ -227,7 +250,7 @@ export async function createAuthSessionResponse(options: {
 }
 
 export async function signInWithPasswordServer(email: string, password: string) {
-  return callIdentityToolkit('accounts:signInWithPassword', {
+  return callIdentityToolkit<FirebaseSignInSuccess>('accounts:signInWithPassword', {
     email,
     password,
     returnSecureToken: true,
@@ -239,7 +262,7 @@ export async function signUpWithPasswordServer(options: {
   email: string;
   password: string;
 }) {
-  const payload = await callIdentityToolkit('accounts:signUp', {
+  const payload = await callIdentityToolkit<FirebaseSignUpSuccess>('accounts:signUp', {
     email: options.email,
     password: options.password,
     returnSecureToken: true,
@@ -257,7 +280,7 @@ export async function signUpWithPasswordServer(options: {
 }
 
 export async function sendPasswordResetEmailServer(email: string) {
-  return callIdentityToolkit('accounts:sendOobCode', {
+  return callIdentityToolkit<FirebasePasswordResetSuccess>('accounts:sendOobCode', {
     requestType: 'PASSWORD_RESET',
     email,
   });
