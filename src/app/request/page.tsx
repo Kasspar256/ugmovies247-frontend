@@ -116,7 +116,7 @@ export default function RequestPage() {
           <div>
             <label className="block text-[#888888] text-xs font-bold uppercase tracking-widest mb-2">Additional Info</label>
             <textarea 
-              rows="3"
+              rows={3}
               value={formData.notes}
               onChange={(e) => setFormData({...formData, notes: e.target.value})}
               placeholder="Any specific action scene, actor, or alternate title? Let us know." 
