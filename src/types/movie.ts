@@ -95,6 +95,21 @@ export type Movie = {
 
 export type MovieDocument = Omit<Movie, 'id'>;
 
+function normalizeSourceType(value: unknown): Episode['sourceType'] {
+  return value === 'upload' || value === 'remote_link' || value === 'direct_upload'
+    ? value
+    : undefined;
+}
+
+function normalizeSourcePipeline(value: unknown): Episode['sourcePipeline'] {
+  return value === 'hls_pipeline' ||
+    value === 'direct_upload' ||
+    value === 'remote_mkv_to_mp4' ||
+    value === 'remote_mp4_ingest'
+    ? value
+    : undefined;
+}
+
 export function normalizeMovie(id: string, data: Record<string, unknown>): Movie {
   const normalizeRenditions = (value: unknown) =>
     Array.isArray(value)
@@ -126,10 +141,10 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
       : [];
 
   const seasons = Array.isArray(data.seasons)
-    ? data.seasons.map((season, seasonIndex) => {
+    ? data.seasons.map((season, seasonIndex): Season => {
         const rawSeason = season as Record<string, unknown>;
         const episodes = Array.isArray(rawSeason.episodes)
-          ? rawSeason.episodes.map((episode, episodeIndex) => {
+          ? rawSeason.episodes.map((episode, episodeIndex): Episode => {
               const rawEpisode = episode as Record<string, unknown>;
 
               return {
@@ -142,17 +157,8 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                 video_url: typeof rawEpisode.video_url === 'string' ? rawEpisode.video_url : '',
                 poster: typeof rawEpisode.poster === 'string' ? rawEpisode.poster : '',
                 thumbnail: typeof rawEpisode.thumbnail === 'string' ? rawEpisode.thumbnail : '',
-                sourceType:
-                  rawEpisode.sourceType === 'upload' || rawEpisode.sourceType === 'remote_link' || rawEpisode.sourceType === 'direct_upload'
-                    ? rawEpisode.sourceType
-                    : undefined,
-                sourcePipeline:
-                  rawEpisode.sourcePipeline === 'hls_pipeline' ||
-                  rawEpisode.sourcePipeline === 'direct_upload' ||
-                  rawEpisode.sourcePipeline === 'remote_mkv_to_mp4' ||
-                  rawEpisode.sourcePipeline === 'remote_mp4_ingest'
-                    ? rawEpisode.sourcePipeline
-                    : undefined,
+                sourceType: normalizeSourceType(rawEpisode.sourceType),
+                sourcePipeline: normalizeSourcePipeline(rawEpisode.sourcePipeline),
                 sourceFileName: typeof rawEpisode.sourceFileName === 'string' ? rawEpisode.sourceFileName : '',
                 sourceUrl: typeof rawEpisode.sourceUrl === 'string' ? rawEpisode.sourceUrl : '',
                 jobStatus:
@@ -205,17 +211,8 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     id,
     movieId: typeof data.movieId === 'string' ? data.movieId : id,
     contentType: data.contentType === 'series' ? 'series' : 'movie',
-    sourceType:
-      data.sourceType === 'upload' || data.sourceType === 'remote_link' || data.sourceType === 'direct_upload'
-        ? data.sourceType
-        : undefined,
-    sourcePipeline:
-      data.sourcePipeline === 'hls_pipeline' ||
-      data.sourcePipeline === 'direct_upload' ||
-      data.sourcePipeline === 'remote_mkv_to_mp4' ||
-      data.sourcePipeline === 'remote_mp4_ingest'
-        ? data.sourcePipeline
-        : undefined,
+    sourceType: normalizeSourceType(data.sourceType),
+    sourcePipeline: normalizeSourcePipeline(data.sourcePipeline),
     sourceFileName: typeof data.sourceFileName === 'string' ? data.sourceFileName : '',
     sourceUrl: typeof data.sourceUrl === 'string' ? data.sourceUrl : '',
     jobStatus: typeof data.jobStatus === 'string' ? (data.jobStatus as Movie['jobStatus']) : undefined,
