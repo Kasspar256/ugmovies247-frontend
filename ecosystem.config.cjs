@@ -1,4 +1,4 @@
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT || 3100);
 const appName = process.env.PM2_APP_NAME || 'ugmovies247-web';
 const workerName = process.env.PM2_WORKER_NAME || 'ugmovies247-worker';
 
