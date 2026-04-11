@@ -2,8 +2,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { db } from '@/lib/firebase';
-import { deleteDoc, doc } from 'firebase/firestore';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
 import type { FirebaseError } from 'firebase/app';
@@ -30,7 +28,6 @@ const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [selectedSeasonIndex, setSelectedSeasonIndex] = useState(0);
 const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
 const videoRef = useRef<HTMLVideoElement | null>(null);
-const router = useRouter();
 
 useEffect(() => {
 const fetchMovie = async () => {
@@ -351,21 +348,6 @@ useEffect(() => {
   playbackType,
   playbackVideoUrl,
 ]);
-
-const handleDelete = async () => {
-if (!movie || movieSource !== 'movies') {
-return;
-}
-
-if (confirm("Are you absolutely sure you want to permanently delete this payload from the database?")) {
-try {
-await deleteDoc(doc(db, 'movies', movie.id));
-router.push('/');
-} catch (err) {
-alert("Failed to delete record.");
-}
-}
-};
 
 const handleVideoError = () => {
 const videoElement = videoRef.current;
@@ -785,14 +767,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
             Share
           </button>
 
-          {movieSource === 'movies' && (
-            <button
-              onClick={handleDelete}
-              className="border border-gray-600 hover:border-[#D90429] text-gray-300 px-4 py-2 rounded-lg text-sm font-bold bg-white/5"
-            >
-              Delete
-            </button>
-          )}
         </div>
       </div>
   </section>

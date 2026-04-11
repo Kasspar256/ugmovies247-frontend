@@ -7,9 +7,9 @@ import { MANUAL_HOME_CATEGORIES, type ManualHomeCategory } from '@/lib/homeCateg
 import type { SourcePipeline, VideoJobDocument } from '@/types/videoJobs';
 import { fetchPublicMovies } from '@/lib/publicMovies';
 
-type AdminTab = 'hls' | 'direct' | 'queue' | 'library';
+type AdminTab = 'direct' | 'queue' | 'library';
 type HlsMode = 'upload' | 'link';
-type DirectMode = 'upload' | 'links';
+type DirectMode = 'upload' | 'existingLink';
 
 type TmdbResult = {
   id: number | null;
@@ -60,46 +60,140 @@ async function parseApiResponse(response: Response) {
 }
 
 function uploadFileToSignedUrl(
-  file: File,
+  blob: Blob,
   uploadUrl: string,
-  contentType?: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (loadedBytes: number, totalBytes: number) => void
 ) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<{ etag: string; uploadHost: string }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    let uploadHost = 'unknown-storage-host';
+
+    try {
+      uploadHost = new URL(uploadUrl).host;
+    } catch {
+      uploadHost = 'invalid-upload-url';
+    }
+
     xhr.open('PUT', uploadUrl);
-    xhr.setRequestHeader('Content-Type', contentType || file.type || 'application/octet-stream');
+    xhr.timeout = PART_UPLOAD_REQUEST_TIMEOUT_MS;
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) {
         return;
       }
 
-      onProgress?.(Math.round((event.loaded / event.total) * 100));
+      onProgress?.(event.loaded, event.total);
     };
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.(100);
-        resolve();
+        const etag = xhr.getResponseHeader('ETag')?.trim();
+
+        if (!etag) {
+          reject(
+            new Error(
+              `Upload part succeeded on ${uploadHost}, but the ETag header was not exposed to the browser. Add ETag to the R2 bucket CORS ExposeHeaders list.`
+            )
+          );
+          return;
+        }
+
+        onProgress?.(blob.size, blob.size);
+        resolve({ etag, uploadHost });
         return;
       }
 
-      reject(new Error(`Source upload failed with status ${xhr.status}.`));
+      reject(new Error(`Source upload failed with status ${xhr.status} from ${uploadHost}.`));
     };
 
     xhr.onerror = () => {
       reject(
         new Error(
           xhr.status > 0
-            ? `Source upload failed with status ${xhr.status}.`
-            : 'Source upload failed before the next step. This usually means the browser could not complete the direct storage upload.'
+            ? `Source upload failed with status ${xhr.status} from ${uploadHost}.`
+            : `Source upload failed before the next step while contacting ${uploadHost}. This usually means the signed storage target could not be reached or was rejected before the browser received a normal upload response.`
+        )
+      );
+    };
+    xhr.ontimeout = () => {
+      reject(
+        new Error(
+          `Source upload timed out after ${Math.round(PART_UPLOAD_REQUEST_TIMEOUT_MS / 1000)} seconds while contacting ${uploadHost}.`
         )
       );
     };
     xhr.onabort = () => reject(new Error('Source upload was aborted before completion.'));
-    xhr.send(file);
+    xhr.send(blob);
   });
+}
+
+type MultipartUploadPartDescriptor = {
+  partNumber: number;
+  uploadUrl: string;
+};
+
+type MultipartUploadInitPayload = {
+  key: string;
+  uploadId: string;
+  publicUrl: string;
+  partSize: number;
+  parts: MultipartUploadPartDescriptor[];
+};
+
+const PART_UPLOAD_REQUEST_TIMEOUT_MS = 1000 * 60 * 10;
+const PART_UPLOAD_MAX_RETRIES = 3;
+const PART_UPLOAD_CONCURRENCY = 3;
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function uploadMultipartPartWithRetry(options: {
+  file: File;
+  multipartUpload: MultipartUploadInitPayload;
+  part: MultipartUploadPartDescriptor;
+  onPartProgress: (partNumber: number, loadedBytes: number) => void;
+  onDiagnostic: (message: string) => void;
+}) {
+  const partIndex = options.part.partNumber - 1;
+  const start = partIndex * options.multipartUpload.partSize;
+  const end = Math.min(start + options.multipartUpload.partSize, options.file.size);
+  const fileChunk = options.file.slice(start, end);
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= PART_UPLOAD_MAX_RETRIES; attempt += 1) {
+    options.onDiagnostic(
+      `[PART ${options.part.partNumber}] Attempt ${attempt}/${PART_UPLOAD_MAX_RETRIES} uploading ${Math.ceil(fileChunk.size / (1024 * 1024))} MB...`
+    );
+
+    try {
+      const uploadedPart = await uploadFileToSignedUrl(fileChunk, options.part.uploadUrl, (loadedBytes) => {
+        options.onPartProgress(options.part.partNumber, loadedBytes);
+      });
+
+      options.onPartProgress(options.part.partNumber, fileChunk.size);
+      options.onDiagnostic(`[PART ${options.part.partNumber}] Completed successfully.`);
+      return {
+        partNumber: options.part.partNumber,
+        etag: uploadedPart.etag,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown multipart upload error.');
+      options.onDiagnostic(
+        `[PART ${options.part.partNumber}] Attempt ${attempt} failed: ${lastError.message}`
+      );
+
+      if (attempt < PART_UPLOAD_MAX_RETRIES) {
+        await wait(attempt * 1500);
+      }
+    }
+  }
+
+  throw new Error(
+    `Multipart upload failed on part ${options.part.partNumber}/${options.multipartUpload.parts.length} after ${PART_UPLOAD_MAX_RETRIES} attempts. ${
+      lastError?.message || 'Unknown storage upload error.'
+    }`
+  );
 }
 
 function getGenresFromIds(ids: number[] = []) {
@@ -188,7 +282,7 @@ function getPipelineLabel(sourcePipeline?: SourcePipeline) {
 }
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<AdminTab>('hls');
+  const [activeTab, setActiveTab] = useState<AdminTab>('direct');
   const [contentType, setContentType] = useState<'movie' | 'series'>('movie');
   const [hlsMode, setHlsMode] = useState<HlsMode>('upload');
   const [directMode, setDirectMode] = useState<DirectMode>('upload');
@@ -218,7 +312,9 @@ export default function AdminDashboard() {
   const [seriesSeasons, setSeriesSeasons] = useState<AdminSeasonInput[]>(getSeasonStarter());
   const [videoJobs, setVideoJobs] = useState<VideoJobDocument[]>([]);
   const [libraryMovies, setLibraryMovies] = useState<Movie[]>([]);
-  const [libraryFilter, setLibraryFilter] = useState<'all' | 'hls' | 'mp4' | 'failed' | 'ready' | 'processing'>('all');
+  const [libraryFilter, setLibraryFilter] = useState<'all' | 'mp4' | 'failed' | 'ready' | 'processing'>('all');
+  const [libraryStatus, setLibraryStatus] = useState('');
+  const [libraryActionId, setLibraryActionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const resetSharedMetadata = () => {
@@ -402,37 +498,15 @@ export default function AdminDashboard() {
     setHlsDiagnostics('[INIT] HLS local upload started...');
 
     try {
-      const uploadUrlResponse = await fetch('/api/admin/video-jobs/upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: hlsFile.name,
-          contentType: hlsFile.type || 'video/mp4',
-        }),
-      });
-      const uploadUrlPayload = await parseApiResponse(uploadUrlResponse);
-
-      if (!uploadUrlResponse.ok) {
-        throw new Error(uploadUrlPayload.payload.detail || uploadUrlPayload.payload.error || 'Failed to prepare HLS upload.');
-      }
-
-      setHlsStatus('Uploading source to HLS staging...');
-      await uploadFileToSignedUrl(
-        hlsFile,
-        uploadUrlPayload.payload.uploadUrl,
-        uploadUrlPayload.payload.contentType,
-        setHlsProgress
-      );
-      setHlsDiagnostics((prev) => `${prev}\n[UPLOAD] Source staged for HLS processing.`);
+      setHlsStatus('Uploading source to HLS queue...');
+      const formData = new FormData();
+      formData.append('payload', JSON.stringify({ metadata: buildMetadata() }));
+      formData.append('files', hlsFile);
+      setHlsProgress(35);
 
       const queueResponse = await fetch('/api/admin/video-jobs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'remote_links',
-          metadata: buildMetadata(),
-          remoteLinks: [uploadUrlPayload.payload.publicUrl],
-        }),
+        body: formData,
       });
       const queuePayload = await parseApiResponse(queueResponse);
 
@@ -440,8 +514,9 @@ export default function AdminDashboard() {
         throw new Error(queuePayload.payload.detail || queuePayload.payload.error || 'Failed to queue HLS job.');
       }
 
+      setHlsProgress(100);
       setHlsStatus(`Queued ${queuePayload.payload.queued || 1} HLS job(s).`);
-      setHlsDiagnostics((prev) => `${prev}\n[QUEUE] HLS job created successfully.`);
+      setHlsDiagnostics((prev) => `${prev}\n[UPLOAD] Source received by backend.\n[QUEUE] HLS job created successfully.`);
       await loadAdminData();
       await triggerQueueProcessor();
       setTimeout(resetHlsForm, 1200);
@@ -531,32 +606,11 @@ export default function AdminDashboard() {
       let queued = 0;
 
       for (const file of hlsBulkFiles) {
-        const uploadUrlResponse = await fetch('/api/admin/video-jobs/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: file.name,
-            contentType: file.type || 'video/mp4',
-          }),
-        });
-        const uploadUrlPayload = await parseApiResponse(uploadUrlResponse);
-
-        if (!uploadUrlResponse.ok) {
-          throw new Error(uploadUrlPayload.payload.detail || uploadUrlPayload.payload.error || `Failed to prepare ${file.name}.`);
-        }
-
-        await uploadFileToSignedUrl(
-          file,
-          uploadUrlPayload.payload.uploadUrl,
-          uploadUrlPayload.payload.contentType
-        );
-
         const { title, vj } = extractMovieData(file.name);
-        const response = await fetch('/api/admin/video-jobs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'remote_links',
+        const formData = new FormData();
+        formData.append(
+          'payload',
+          JSON.stringify({
             metadata: {
               ...buildMetadata(),
               title,
@@ -564,8 +618,13 @@ export default function AdminDashboard() {
               vj: vj || 'Unknown',
               contentType: 'movie',
             },
-            remoteLinks: [uploadUrlPayload.payload.publicUrl],
-          }),
+          })
+        );
+        formData.append('files', file);
+
+        const response = await fetch('/api/admin/video-jobs', {
+          method: 'POST',
+          body: formData,
         });
         const payload = await parseApiResponse(response);
 
@@ -632,7 +691,7 @@ export default function AdminDashboard() {
 
   const handleDirectLocalUpload = async () => {
     if (contentType === 'series') {
-      setDirectStatus('Use remote episode links for direct series/episode publishing.');
+      setDirectStatus('Local direct upload is available for movies only. Use MP4 episode links for series.');
       return;
     }
 
@@ -643,91 +702,159 @@ export default function AdminDashboard() {
 
     setIsSubmitting(true);
     setDirectDiagnostics('[INIT] Direct upload started...');
-    const lowerName = directFile.name.toLowerCase();
-    const isMkv = lowerName.endsWith('.mkv');
+    let multipartUpload: MultipartUploadInitPayload | null = null;
 
-      try {
-        setDirectStatus(isMkv ? 'Preparing MKV staging upload...' : 'Preparing direct MP4 upload...');
-        setDirectProgress(15);
-
-        const uploadUrlResponse = await fetch('/api/admin/direct-videos/upload-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: directFile.name,
-            contentType: directFile.type || (isMkv ? 'video/x-matroska' : 'video/mp4'),
-            stage: isMkv ? 'staging' : 'final',
-          }),
-        });
-        const uploadUrlPayload = await parseApiResponse(uploadUrlResponse);
-
-        if (!uploadUrlResponse.ok) {
-          throw new Error(
-            uploadUrlPayload.payload.detail ||
-              uploadUrlPayload.payload.error ||
-              'Failed to prepare direct upload.'
-          );
-        }
-
-        setDirectStatus(isMkv ? 'Uploading MKV source for conversion...' : 'Uploading MP4 source for direct publishing...');
-        setDirectProgress(30);
-        await uploadFileToSignedUrl(
-          directFile,
-          uploadUrlPayload.payload.uploadUrl,
-          uploadUrlPayload.payload.contentType,
-          (progress) => setDirectProgress(Math.max(30, progress))
-        );
-        setDirectProgress(100);
-        setDirectDiagnostics((prev) => `${prev}\n[UPLOAD] Local source uploaded successfully.`);
-
-        if (isMkv) {
-          setDirectStatus('Queueing MKV conversion job...');
-          const response = await fetch('/api/admin/direct-videos', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-            mode: 'staged_local_conversion',
-            metadata: buildMetadata(),
-            stagedUrl: uploadUrlPayload.payload.publicUrl,
-            sourceFileName: directFile.name,
-          }),
-        });
-        const payload = await parseApiResponse(response);
-
-        if (!response.ok) {
-          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to queue MKV conversion.');
-        }
-
-        setDirectStatus('Queued local MKV conversion into direct MP4 pipeline.');
-          setDirectDiagnostics((prev) => `${prev}\n[QUEUE] Local MKV queued for MP4 conversion.`);
-          await loadAdminData();
-          await triggerQueueProcessor();
-        } else {
-          setDirectStatus('Publishing direct MP4 metadata...');
-          const response = await fetch('/api/admin/direct-videos', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-            mode: 'local_upload',
-            metadata: buildMetadata(),
-            playbackUrl: uploadUrlPayload.payload.publicUrl,
-            sourceFileName: directFile.name,
-            sourceUrl: uploadUrlPayload.payload.publicUrl,
-          }),
-        });
-        const payload = await parseApiResponse(response);
-
-        if (!response.ok) {
-          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to save direct MP4 metadata.');
-        }
-
-        setDirectStatus('Direct MP4 upload published successfully.');
-        setDirectDiagnostics((prev) => `${prev}\n[PUBLISH] Direct MP4 saved and ready for playback.`);
-        await loadAdminData();
+    try {
+      if (!directFile.name.toLowerCase().endsWith('.mp4') && directFile.type !== 'video/mp4') {
+        throw new Error('Only MP4 uploads are allowed in the simplified admin.');
       }
+
+      setDirectStatus('Preparing direct MP4 multipart upload...');
+      setDirectProgress(10);
+
+      const uploadUrlResponse = await fetch('/api/admin/direct-videos/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: directFile.name,
+          fileSize: directFile.size,
+          contentType: directFile.type || 'video/mp4',
+          stage: 'final',
+        }),
+      });
+      const uploadUrlPayload = await parseApiResponse(uploadUrlResponse);
+
+      if (!uploadUrlResponse.ok) {
+        throw new Error(
+          uploadUrlPayload.payload.detail ||
+            uploadUrlPayload.payload.error ||
+            'Failed to prepare direct upload.'
+        );
+      }
+
+      multipartUpload = uploadUrlPayload.payload as MultipartUploadInitPayload;
+
+      if (!multipartUpload.uploadId || !multipartUpload.key || !Array.isArray(multipartUpload.parts) || !multipartUpload.parts.length) {
+        throw new Error('Multipart upload setup is incomplete.');
+      }
+
+      setDirectDiagnostics(
+        (prev) =>
+          `${prev}\n[INIT] Multipart session created with ${multipartUpload.parts.length} part(s) at ${Math.ceil(
+            multipartUpload.partSize / (1024 * 1024)
+          )} MB each.\n[PART] Uploading multipart data directly to storage...`
+      );
+      setDirectStatus(
+        `Uploading MP4 source parts with ${PART_UPLOAD_CONCURRENCY} parallel connection(s)...`
+      );
+      setDirectProgress(20);
+
+      const uploadedParts: Array<{ partNumber: number; etag: string }> = [];
+      const partLoadedBytes = new Map<number, number>();
+      let nextPartIndex = 0;
+
+      const updateAggregateProgress = () => {
+        const totalUploaded = [...partLoadedBytes.values()].reduce((sum, value) => sum + value, 0);
+        const uploadProgress = directFile.size > 0 ? totalUploaded / directFile.size : 0;
+        const mappedProgress = 20 + Math.round(uploadProgress * 70);
+
+        setDirectProgress(Math.min(90, Math.max(20, mappedProgress)));
+      };
+
+      const uploadWorker = async () => {
+        while (nextPartIndex < multipartUpload.parts.length) {
+          const currentIndex = nextPartIndex;
+          nextPartIndex += 1;
+          const part = multipartUpload.parts[currentIndex];
+
+          setDirectStatus(
+            `Uploading MP4 source parts... ${Math.min(currentIndex + 1, multipartUpload.parts.length)}/${multipartUpload.parts.length} scheduled`
+          );
+
+          const uploadedPart = await uploadMultipartPartWithRetry({
+            file: directFile,
+            multipartUpload,
+            part,
+            onPartProgress: (partNumber, loadedBytes) => {
+              partLoadedBytes.set(partNumber, loadedBytes);
+              updateAggregateProgress();
+            },
+            onDiagnostic: (message) => {
+              setDirectDiagnostics((prev) => `${prev}\n${message}`);
+            },
+          });
+
+          uploadedParts.push(uploadedPart);
+        }
+      };
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(PART_UPLOAD_CONCURRENCY, multipartUpload.parts.length) },
+          () => uploadWorker()
+        )
+      );
+
+      setDirectStatus('Finalizing multipart upload with storage...');
+      setDirectProgress(92);
+
+      const completeResponse = await fetch('/api/admin/direct-videos/upload-url', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: multipartUpload.key,
+          uploadId: multipartUpload.uploadId,
+          parts: uploadedParts,
+        }),
+      });
+      const completePayload = await parseApiResponse(completeResponse);
+
+      if (!completeResponse.ok) {
+        throw new Error(
+          completePayload.payload.detail ||
+            completePayload.payload.error ||
+            'Failed to finalize multipart upload.'
+        );
+      }
+
+      setDirectProgress(100);
+      setDirectDiagnostics((prev) => `${prev}\n[UPLOAD] Multipart source upload completed successfully.`);
+
+      setDirectStatus('Publishing direct MP4 metadata...');
+      const response = await fetch('/api/admin/direct-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'local_upload',
+          metadata: buildMetadata(),
+          playbackUrl: multipartUpload.publicUrl,
+          sourceFileName: directFile.name,
+          sourceUrl: multipartUpload.publicUrl,
+        }),
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload.payload.detail || payload.payload.error || 'Failed to save direct MP4 metadata.');
+      }
+
+      setDirectStatus('Direct MP4 upload published successfully.');
+      setDirectDiagnostics((prev) => `${prev}\n[PUBLISH] Direct MP4 saved and ready for playback.`);
+      await loadAdminData();
 
       setTimeout(resetDirectForm, 1200);
     } catch (error) {
+      if (multipartUpload?.uploadId && multipartUpload?.key) {
+        fetch('/api/admin/direct-videos/upload-url', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            key: multipartUpload.key,
+            uploadId: multipartUpload.uploadId,
+          }),
+        }).catch(() => undefined);
+      }
+
       setDirectStatus(error instanceof Error ? error.message : 'Direct upload failed.');
       setDirectDiagnostics((prev) => `${prev}\n[ERROR] ${error instanceof Error ? error.message : 'Unknown direct upload error.'}`);
     } finally {
@@ -737,7 +864,7 @@ export default function AdminDashboard() {
 
   const handleDirectRemoteQueue = async () => {
     if (!selectedMovie) {
-      setDirectStatus('Select TMDb metadata before importing direct content.');
+      setDirectStatus('Select TMDb metadata before publishing a saved cloud link.');
       return;
     }
 
@@ -748,14 +875,14 @@ export default function AdminDashboard() {
 
       if (contentType === 'series') {
         if (!seasons.length) {
-          throw new Error('Add at least one episode link for the direct series import.');
+          throw new Error('Add at least one MP4 episode link for the series.');
         }
 
         const response = await fetch('/api/admin/direct-videos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            mode: 'series_remote',
+            mode: 'series_links',
             metadata: buildMetadata(),
             seasons,
           }),
@@ -763,43 +890,39 @@ export default function AdminDashboard() {
         const payload = await parseApiResponse(response);
 
         if (!response.ok) {
-          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to queue direct series jobs.');
+          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to publish direct series links.');
         }
 
-        setDirectStatus(`Queued ${payload.payload.queued || 0} direct series job(s).`);
+        setDirectStatus('Series published successfully from existing MP4 links.');
       } else {
-        const links = directRemoteLinks
-          .split('\n')
-          .map((entry) => entry.trim())
-          .filter(Boolean);
+        const existingLink = directRemoteLinks.trim();
 
-        if (!links.length) {
-          throw new Error('Paste at least one direct MP4 or MKV link.');
+        if (!existingLink) {
+          throw new Error('Paste the existing cloud MP4 link first.');
         }
 
         const response = await fetch('/api/admin/direct-videos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            mode: 'remote_links',
+            mode: 'existing_link',
             metadata: buildMetadata(),
-            remoteLinks: links,
+            playbackUrl: existingLink,
           }),
         });
         const payload = await parseApiResponse(response);
 
         if (!response.ok) {
-          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to queue direct remote links.');
+          throw new Error(payload.payload.detail || payload.payload.error || 'Failed to publish existing cloud link.');
         }
 
-        setDirectStatus(`Queued ${payload.payload.queued || links.length} direct ingest/conversion job(s).`);
+        setDirectStatus('Existing cloud MP4 linked successfully.');
       }
 
       await loadAdminData();
-      await triggerQueueProcessor();
       setTimeout(resetDirectForm, 1200);
     } catch (error) {
-      setDirectStatus(error instanceof Error ? error.message : 'Failed to queue direct content.');
+      setDirectStatus(error instanceof Error ? error.message : 'Failed to publish direct content.');
     } finally {
       setIsSubmitting(false);
     }
@@ -814,6 +937,33 @@ export default function AdminDashboard() {
   const handleCancelJob = async (jobId: string) => {
     await fetch(`/api/admin/video-jobs/${jobId}/cancel`, { method: 'POST' });
     await loadAdminData();
+  };
+
+  const handleDeleteLibraryMovie = async (movieId: string, title: string) => {
+    if (!confirm(`Delete "${title}" from the library? This will remove the movie record and any matching R2 files we can safely identify.`)) {
+      return;
+    }
+
+    setLibraryActionId(movieId);
+    setLibraryStatus('');
+
+    try {
+      const response = await fetch(`/api/admin/movies/${movieId}`, {
+        method: 'DELETE',
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload.payload.detail || payload.payload.error || 'Failed to delete movie.');
+      }
+
+      setLibraryStatus(`Deleted "${title}" successfully.`);
+      await loadAdminData();
+    } catch (error) {
+      setLibraryStatus(error instanceof Error ? error.message : 'Failed to delete movie.');
+    } finally {
+      setLibraryActionId('');
+    }
   };
 
   const getJobTypeLabel = (job: VideoJobDocument) => {
@@ -956,6 +1106,7 @@ export default function AdminDashboard() {
   const libraryItems = useMemo(() => {
     const items: Array<{
       key: string;
+      movieId: string;
       title: string;
       kind: 'movie' | 'series' | 'episode';
       playbackType: 'hls' | 'mp4';
@@ -963,11 +1114,13 @@ export default function AdminDashboard() {
       status: 'failed' | 'processing' | 'ready' | 'draft';
       updatedAt: string;
       subtitle: string;
+      canDelete: boolean;
     }> = [];
 
     for (const movie of libraryMovies) {
       items.push({
         key: movie.id,
+        movieId: movie.id,
         title: movie.title,
         kind: movie.contentType === 'series' ? 'series' : 'movie',
         playbackType: movie.playbackType || 'mp4',
@@ -975,6 +1128,7 @@ export default function AdminDashboard() {
         status: getLibraryStatus(movie),
         updatedAt: movie.updatedAt || movie.date_added || '',
         subtitle: movie.vj || 'Unknown VJ',
+        canDelete: true,
       });
 
       if (movie.contentType === 'series' && Array.isArray(movie.seasons)) {
@@ -991,12 +1145,14 @@ export default function AdminDashboard() {
 
             items.push({
               key: `${movie.id}-s${season.seasonNumber}-e${episode.episodeNumber}`,
+              movieId: movie.id,
               title: `${movie.title} - ${episode.title}`,
               kind: 'episode',
               playbackType: episode.playbackType || 'mp4',
               sourcePipeline: episode.sourcePipeline || movie.sourcePipeline,
               status: episodeStatus,
               updatedAt: episode.updatedAt || movie.updatedAt || '',
+              canDelete: false,
               subtitle: `Season ${season.seasonNumber} • Episode ${episode.episodeNumber}`,
             });
           }
@@ -1015,7 +1171,7 @@ export default function AdminDashboard() {
         return true;
       }
 
-      if (libraryFilter === 'hls' || libraryFilter === 'mp4') {
+      if (libraryFilter === 'mp4') {
         return item.playbackType === libraryFilter;
       }
 
@@ -1029,7 +1185,7 @@ export default function AdminDashboard() {
         <div>
           <h2 className="text-red-500 font-bold text-lg">Title Metadata</h2>
           <p className="text-sm text-gray-500">
-            Use TMDb search plus manual overrides to prepare clean metadata before publishing or queueing.
+            Choose the movie first, then confirm clean metadata before publishing.
           </p>
         </div>
         <div className="flex gap-3">
@@ -1291,7 +1447,7 @@ export default function AdminDashboard() {
             UG Movies 247 | Admin Command Center
           </h1>
             <p className="mt-2 text-sm md:text-base text-gray-400 max-w-3xl">
-              Manage premium HLS uploads and fast direct MP4 publishing side-by-side without mixing the two workflows.
+              Manage premium direct MP4 publishing and remote imports from a single workflow.
             </p>
 
             <div className="mt-3">
@@ -1305,9 +1461,7 @@ export default function AdminDashboard() {
 
             <div className="mt-5 flex flex-wrap gap-3">
             {([
-              ['hls', 'HLS Uploads'],
               ['direct', 'Direct Uploads'],
-              ['queue', 'Queue / Processing'],
               ['library', 'Library'],
             ] as const).map(([tab, label]) => (
               <button
@@ -1473,44 +1627,41 @@ export default function AdminDashboard() {
         {activeTab === 'direct' && (
           <div className="space-y-6">
             <section className="bg-black p-6 rounded-md border border-neutral-800">
-              <h2 className="text-red-500 font-bold text-lg">Direct Uploads</h2>
+              <h2 className="text-red-500 font-bold text-lg">Direct Publishing</h2>
               <p className="text-sm text-gray-400 mt-2">
-                Faster legacy workflow for direct MP4 playback. Use for quick publishing, direct MP4 uploads, and MKV-to-MP4 ingestion from remote links.
+                Keep this simple: upload one MP4, or paste an existing cloud MP4 link and publish it immediately.
               </p>
-              <div className="mt-5 flex gap-3">
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                 <button
                   onClick={() => setDirectMode('upload')}
                   className={`px-4 py-2 rounded text-sm font-bold ${directMode === 'upload' ? 'bg-red-700 text-white' : 'bg-neutral-900 text-gray-400'}`}
                 >
-                  Local Direct Upload
+                  Upload MP4
                 </button>
                 <button
-                  onClick={() => setDirectMode('links')}
-                  className={`px-4 py-2 rounded text-sm font-bold ${directMode === 'links' ? 'bg-red-700 text-white' : 'bg-neutral-900 text-gray-400'}`}
+                  onClick={() => setDirectMode('existingLink')}
+                  className={`px-4 py-2 rounded text-sm font-bold ${directMode === 'existingLink' ? 'bg-red-700 text-white' : 'bg-neutral-900 text-gray-400'}`}
                 >
-                  Remote MP4 / MKV Links
+                  Use Existing Cloud Link
                 </button>
               </div>
             </section>
-
-            {renderMetadataCard()}
-            {renderSeriesEditor()}
 
             <section className="bg-black p-6 rounded-md border border-neutral-800 space-y-5">
               <div>
                 <h2 className="text-red-500 font-bold text-lg">Direct Workflow Input</h2>
                 <p className="text-sm text-gray-500">
-                  Direct Uploads publish MP4 playback without the HLS transcoding pipeline. Remote MKV inputs are converted to clean MP4 first, then stored in our own R2 bucket.
+                  Publish straight to direct MP4 playback. MKV conversion has been removed from this admin.
                 </p>
               </div>
 
               {directMode === 'upload' ? (
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block mb-2">Local MP4 / MKV File</label>
+                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block mb-2">Local MP4 File</label>
                     <input
                       type="file"
-                      accept="video/mp4,video/x-mkv,video/*,.mkv"
+                      accept="video/mp4,.mp4"
                       onChange={(event) => {
                         const file = event.target.files?.[0] || null;
                         setDirectFile(file);
@@ -1521,7 +1672,7 @@ export default function AdminDashboard() {
                       className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-bold file:bg-red-800 file:text-white hover:file:bg-red-700 cursor-pointer"
                     />
                     <p className="text-xs text-gray-500 mt-2">
-                      MP4 uploads publish directly. MKV uploads are staged, converted to MP4, then published through the direct pipeline.
+                      Upload the final MP4 file and publish it directly to playback.
                     </p>
                   </div>
 
@@ -1545,26 +1696,34 @@ export default function AdminDashboard() {
                 <div className="space-y-4">
                   {contentType === 'movie' ? (
                     <div>
-                      <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block mb-2">Remote MP4 / MKV Links</label>
-                      <textarea
+                      <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block mb-2">Existing Cloud MP4 Link</label>
+                      <input
+                        type="url"
                         value={directRemoteLinks}
                         onChange={(event) => setDirectRemoteLinks(event.target.value)}
-                        placeholder="Paste one direct MP4 or MKV URL per line"
-                        className="w-full bg-neutral-900 border border-neutral-700 text-white p-3 rounded text-sm min-h-[160px]"
+                        placeholder="https://.../movie.mp4"
+                        className="w-full bg-neutral-900 border border-neutral-700 text-white p-3 rounded text-sm"
                       />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Paste a direct MP4 URL from R2 or another cloud storage source to avoid re-uploading the same movie.
+                      </p>
                     </div>
                   ) : (
                     <div className="rounded-md border border-neutral-800 bg-neutral-950 p-4 text-sm text-gray-400">
-                      Series direct publishing works from the episode links above. Paste one direct MP4 or MKV link into each episode entry.
+                      Series publishing works from the episode MP4 links above. Paste one direct MP4 URL into each episode entry.
                     </div>
                   )}
 
                   <button
                     onClick={handleDirectRemoteQueue}
-                    disabled={isSubmitting || !selectedMovie}
+                    disabled={
+                      isSubmitting ||
+                      !selectedMovie ||
+                      (contentType === 'movie' && !directRemoteLinks.trim())
+                    }
                     className="w-full bg-red-700 hover:bg-red-600 disabled:bg-neutral-700 disabled:cursor-not-allowed py-4 rounded font-bold text-sm uppercase tracking-[0.2em]"
                   >
-                    Queue Direct Import
+                    {contentType === 'series' ? 'Publish Series From Links' : 'Publish Existing Link'}
                   </button>
                 </div>
               )}
@@ -1580,6 +1739,9 @@ export default function AdminDashboard() {
                 </div>
               )}
             </section>
+
+            {renderMetadataCard()}
+            {renderSeriesEditor()}
           </div>
         )}
 
@@ -1589,7 +1751,7 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-red-500 font-bold text-lg">Queue / Processing</h2>
-                  <p className="text-sm text-gray-500">One worker processes heavy jobs sequentially. HLS and direct conversion/import jobs are separated below.</p>
+                  <p className="text-sm text-gray-500">One worker processes direct conversion and import jobs sequentially.</p>
                 </div>
                 <button onClick={loadAdminData} className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 px-4 py-2 rounded text-xs font-bold">
                   Refresh
@@ -1598,7 +1760,6 @@ export default function AdminDashboard() {
             </section>
 
             {([
-              ['HLS Processing Queue', jobsByTab.hlsJobs],
               ['Direct Upload Queue', jobsByTab.directJobs],
             ] as const).map(([title, jobs]) => (
               <section key={title} className="bg-black p-6 rounded-md border border-neutral-800">
@@ -1664,12 +1825,11 @@ export default function AdminDashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <h2 className="text-red-500 font-bold text-lg">Library</h2>
-                  <p className="text-sm text-gray-500">Review playback mode, pipeline, readiness status, and content type for each title.</p>
+                  <p className="text-sm text-gray-500">Review your published titles and delete them directly from admin when needed.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {([
                     'all',
-                    'hls',
                     'mp4',
                     'ready',
                     'processing',
@@ -1685,19 +1845,26 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               </div>
+
+              {libraryStatus && (
+                <div className={`mt-4 rounded-md border p-3 text-sm ${libraryStatus.toLowerCase().includes('failed') || libraryStatus.toLowerCase().includes('error') ? 'border-red-700 bg-red-950/40 text-red-200' : 'border-emerald-800 bg-emerald-950/30 text-emerald-200'}`}>
+                  {libraryStatus}
+                </div>
+              )}
             </section>
 
             <section className="bg-black p-6 rounded-md border border-neutral-800">
-              <div className="hidden lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px] gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-500 border-b border-neutral-800">
+              <div className="hidden lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_140px] gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-500 border-b border-neutral-800">
                 <div>Title</div>
                 <div>Kind</div>
                 <div>Playback</div>
                 <div>Pipeline</div>
                 <div>Status</div>
                 <div>Updated</div>
+                <div>Actions</div>
               </div>
 
-              <div className="space-y-3 lg:space-y-0">
+              <div className="space-y-3">
                 {filteredLibraryMovies.length === 0 ? (
                   <div className="border border-dashed border-neutral-800 rounded-md p-6 text-sm text-gray-500">
                     No library entries match this filter.
@@ -1706,17 +1873,51 @@ export default function AdminDashboard() {
                   filteredLibraryMovies.map((movie) => (
                     <div
                       key={movie.key}
-                      className="grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px] gap-4 items-center px-4 py-4 border border-neutral-800 rounded-md bg-neutral-950"
+                      className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-4"
                     >
-                      <div className="min-w-0">
-                        <div className="font-bold text-white truncate">{movie.title}</div>
-                        <div className="text-xs text-gray-500 truncate mt-1">{movie.subtitle}</div>
+                      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_140px] lg:items-center lg:gap-4">
+                        <div className="min-w-0">
+                          <div className="font-bold text-white truncate">{movie.title}</div>
+                          <div className="text-xs text-gray-500 truncate mt-1">{movie.subtitle}</div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:contents">
+                          <div>
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 lg:hidden">Kind</div>
+                            <div className="text-sm text-gray-300 capitalize">{movie.kind}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 lg:hidden">Playback</div>
+                            <div className="text-sm text-gray-300 uppercase">{movie.playbackType || 'mp4'}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 lg:hidden">Pipeline</div>
+                            <div className="text-sm text-gray-300">{getPipelineLabel(movie.sourcePipeline)}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 lg:hidden">Status</div>
+                            <div className="text-sm text-gray-300 capitalize">{movie.status}</div>
+                          </div>
+                          <div>
+                            <div className="mb-1 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500 lg:hidden">Updated</div>
+                            <div className="text-sm text-gray-400">{movie.updatedAt ? new Date(movie.updatedAt).toLocaleDateString() : '-'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-start lg:justify-end">
+                          {movie.canDelete ? (
+                            <button
+                              onClick={() => handleDeleteLibraryMovie(movie.movieId, movie.title)}
+                              disabled={libraryActionId === movie.movieId}
+                              className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {libraryActionId === movie.movieId ? 'Deleting...' : 'Delete'}
+                            </button>
+                          ) : (
+                            <span className="text-xs uppercase tracking-[0.18em] text-gray-600">Episode item</span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-sm text-gray-300 capitalize">{movie.kind}</div>
-                      <div className="text-sm text-gray-300 uppercase">{movie.playbackType || 'mp4'}</div>
-                      <div className="text-sm text-gray-300">{getPipelineLabel(movie.sourcePipeline)}</div>
-                      <div className="text-sm text-gray-300 capitalize">{movie.status}</div>
-                      <div className="text-sm text-gray-400">{movie.updatedAt ? new Date(movie.updatedAt).toLocaleDateString() : '-'}</div>
                     </div>
                   ))
                 )}

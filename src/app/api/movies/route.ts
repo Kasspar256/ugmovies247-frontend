@@ -3,8 +3,9 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession } from '@/lib/auth/server';
-import { getViewerEntitlement } from '@/lib/server/subscriptions';
+import { getSubscriptionSnapshotFromData, getViewerEntitlement } from '@/lib/server/subscriptions';
 import { sanitizeMovieForViewer } from '@/lib/server/contentAccess';
+import type { SubscriptionEntitlement } from '@/types/subscriptions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,12 @@ type CachedMovieCatalog = {
 };
 
 let inMemoryMovieCache: CachedMovieCatalog | null = null;
+
+const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
+  hasPremiumAccess: false,
+  requiresSubscription: true,
+  subscription: getSubscriptionSnapshotFromData(null),
+};
 
 function isFreshCache(cache: CachedMovieCatalog | null) {
   if (!cache?.cachedAt) {
@@ -91,12 +98,7 @@ async function fetchMovieCatalog() {
 export async function GET() {
   try {
     const session = await getCurrentAuthSession();
-
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const entitlement = await getViewerEntitlement(session.uid);
+    const entitlement = session ? await getViewerEntitlement(session.uid) : DEFAULT_ENTITLEMENT;
 
     const adminSetupError = getFirebaseAdminSetupError();
 
