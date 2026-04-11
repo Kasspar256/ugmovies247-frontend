@@ -7,7 +7,7 @@ import { MANUAL_HOME_CATEGORIES, type ManualHomeCategory } from '@/lib/homeCateg
 import type { SourcePipeline, VideoJobDocument } from '@/types/videoJobs';
 import { fetchPublicMovies } from '@/lib/publicMovies';
 
-type AdminTab = 'direct' | 'queue' | 'library';
+type AdminTab = 'direct' | 'queue' | 'library' | 'hls';
 type HlsMode = 'upload' | 'link';
 type DirectMode = 'upload' | 'existingLink';
 
@@ -754,7 +754,12 @@ export default function AdminDashboard() {
       let nextPartIndex = 0;
 
       const updateAggregateProgress = () => {
-        const totalUploaded = [...partLoadedBytes.values()].reduce((sum, value) => sum + value, 0);
+        let totalUploaded = 0;
+
+        partLoadedBytes.forEach((value) => {
+          totalUploaded += value;
+        });
+
         const uploadProgress = directFile.size > 0 ? totalUploaded / directFile.size : 0;
         const mappedProgress = 20 + Math.round(uploadProgress * 70);
 

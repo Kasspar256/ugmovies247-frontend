@@ -2,6 +2,7 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  type CreateMultipartUploadCommandOutput,
   DeleteObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -56,7 +57,7 @@ const s3Client = new S3Client({
   },
 });
 
-async function sendR2Command<T>(command: T, label: string) {
+async function sendR2Command<TOutput>(command: unknown, label: string): Promise<TOutput> {
   const abortController = new AbortController();
   const startedAt = Date.now();
   const timeout = setTimeout(() => abortController.abort(), R2_REQUEST_TIMEOUT_MS);
@@ -70,7 +71,7 @@ async function sendR2Command<T>(command: T, label: string) {
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return await s3Client.send(command as any, { abortSignal: abortController.signal });
+    return await s3Client.send(command as any, { abortSignal: abortController.signal }) as TOutput;
   } catch (error) {
     console.error('[r2] request failed', {
       label,
@@ -169,7 +170,7 @@ export async function createMultipartR2Upload(options: {
     throw new Error('Multipart upload requires at least one part.');
   }
 
-  const createResponse = await sendR2Command(
+  const createResponse = await sendR2Command<CreateMultipartUploadCommandOutput>(
     new CreateMultipartUploadCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: options.key,
