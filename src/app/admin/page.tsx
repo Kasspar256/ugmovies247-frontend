@@ -127,6 +127,50 @@ function uploadFileToSignedUrl(
   });
 }
 
+function uploadImageToSignedUrl(file: File, uploadUrl: string) {
+  return new Promise<{ uploadHost: string }>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let uploadHost = 'unknown-storage-host';
+
+    try {
+      uploadHost = new URL(uploadUrl).host;
+    } catch {
+      uploadHost = 'invalid-upload-url';
+    }
+
+    xhr.open('PUT', uploadUrl);
+    xhr.timeout = 1000 * 60 * 2;
+
+    if (file.type) {
+      xhr.setRequestHeader('Content-Type', file.type);
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({ uploadHost });
+        return;
+      }
+
+      reject(new Error(`Poster upload failed with status ${xhr.status} from ${uploadHost}.`));
+    };
+
+    xhr.onerror = () => {
+      reject(
+        new Error(
+          xhr.status > 0
+            ? `Poster upload failed with status ${xhr.status} from ${uploadHost}.`
+            : `Poster upload failed before completion while contacting ${uploadHost}.`
+        )
+      );
+    };
+    xhr.ontimeout = () => {
+      reject(new Error(`Poster upload timed out while contacting ${uploadHost}.`));
+    };
+    xhr.onabort = () => reject(new Error('Poster upload was aborted before completion.'));
+    xhr.send(file);
+  });
+}
+
 type MultipartUploadPartDescriptor = {
   partNumber: number;
   uploadUrl: string;
@@ -235,6 +279,30 @@ function getCountryFromTmdbLanguage(language?: string) {
   return 'Unknown';
 }
 
+function getTmdbPosterUrl(movie?: TmdbResult | null) {
+  if (!movie?.poster_path) {
+    return '';
+  }
+
+  return `https://image.tmdb.org/t/p/w500${movie.poster_path}`;
+}
+
+function isBlobUrl(value?: string | null) {
+  return Boolean(value && value.startsWith('blob:'));
+}
+
+function getPosterFallbackUrl() {
+  return 'https://via.placeholder.com/300x450/111/444?text=No+Poster';
+}
+
+function slugifyPosterKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
 function getSeasonStarter(): AdminSeasonInput[] {
   return [
     {
@@ -291,6 +359,10 @@ export default function AdminDashboard() {
   const [detectedVj, setDetectedVj] = useState('');
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<TmdbResult | null>(null);
+  const [customPosterUrl, setCustomPosterUrl] = useState('');
+  const [customPosterPreviewUrl, setCustomPosterPreviewUrl] = useState('');
+  const [customPosterStatus, setCustomPosterStatus] = useState('');
+  const [isUploadingCustomPoster, setIsUploadingCustomPoster] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<ManualHomeCategory[]>([]);
   const [isTrending, setIsTrending] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
@@ -317,7 +389,24 @@ export default function AdminDashboard() {
   const [libraryActionId, setLibraryActionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const clearCustomPosterOverride = () => {
+    if (isBlobUrl(customPosterPreviewUrl)) {
+      URL.revokeObjectURL(customPosterPreviewUrl);
+    }
+
+    setCustomPosterUrl('');
+    setCustomPosterPreviewUrl('');
+    setCustomPosterStatus('');
+    setIsUploadingCustomPoster(false);
+  };
+
+  const applySelectedMovie = (movie: TmdbResult | null) => {
+    clearCustomPosterOverride();
+    setSelectedMovie(movie);
+  };
+
   const resetSharedMetadata = () => {
+    clearCustomPosterOverride();
     setCleanTitle('');
     setDetectedVj('');
     setTmdbResults([]);
@@ -370,7 +459,7 @@ export default function AdminDashboard() {
     title: selectedMovie?.title || cleanTitle || 'Untitled movie',
     originalTitle: selectedMovie?.original_title || cleanTitle || 'Untitled movie',
     description: selectedMovie?.overview || '',
-    poster: selectedMovie?.poster_path ? `https://image.tmdb.org/t/p/w500${selectedMovie.poster_path}` : '',
+    poster: customPosterUrl || getTmdbPosterUrl(selectedMovie),
     genres: selectedMovie?.genre_ids ? getGenresFromIds(selectedMovie.genre_ids) : [],
     category: selectedCategories,
     vj: detectedVj || 'Unknown',
@@ -438,7 +527,7 @@ export default function AdminDashboard() {
   };
 
   const handleManualOverride = () => {
-    setSelectedMovie({
+    applySelectedMovie({
       id: null,
       title: cleanTitle || 'Untitled movie',
       original_title: cleanTitle || 'Untitled movie',
@@ -460,6 +549,7 @@ export default function AdminDashboard() {
     const { title, vj } = extractMovieData(file.name);
     setCleanTitle(title);
     setDetectedVj(vj || 'Unknown');
+    clearCustomPosterOverride();
     setSelectedMovie(null);
     setTmdbResults([]);
 
@@ -474,6 +564,74 @@ export default function AdminDashboard() {
     handleManualSearch(title);
   };
 
+  const handleCustomPosterUpload = async (file: File) => {
+    if (!selectedMovie) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setCustomPosterStatus('Choose an image file for the custom poster.');
+      return;
+    }
+
+    const extensionFromType = file.type.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'jpg';
+    const posterKeySeed =
+      selectedMovie.id?.toString() ||
+      slugifyPosterKey(selectedMovie.title || cleanTitle || 'custom-poster') ||
+      'custom-poster';
+    const posterFileName = `admin-poster-${posterKeySeed}.${extensionFromType}`;
+    const localPreviewUrl = URL.createObjectURL(file);
+
+    if (isBlobUrl(customPosterPreviewUrl)) {
+      URL.revokeObjectURL(customPosterPreviewUrl);
+    }
+
+    setCustomPosterPreviewUrl(localPreviewUrl);
+    setCustomPosterStatus('Uploading custom poster...');
+    setIsUploadingCustomPoster(true);
+
+    try {
+      const response = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: posterFileName,
+          fileType: file.type || 'image/jpeg',
+        }),
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(payload.payload.error || payload.payload.detail || 'Failed to prepare poster upload.');
+      }
+
+      const { signedUrl, publicUrl } = payload.payload as {
+        signedUrl?: string;
+        publicUrl?: string;
+      };
+
+      if (!signedUrl || !publicUrl) {
+        throw new Error('Poster upload URL response was incomplete.');
+      }
+
+      await uploadImageToSignedUrl(file, signedUrl);
+
+      URL.revokeObjectURL(localPreviewUrl);
+      setCustomPosterUrl(publicUrl);
+      setCustomPosterPreviewUrl(publicUrl);
+      setCustomPosterStatus('Custom poster uploaded. This will override the TMDb poster for this item.');
+    } catch (error) {
+      URL.revokeObjectURL(localPreviewUrl);
+      setCustomPosterUrl('');
+      setCustomPosterPreviewUrl('');
+      setCustomPosterStatus(
+        error instanceof Error ? error.message : 'Custom poster upload failed.'
+      );
+    } finally {
+      setIsUploadingCustomPoster(false);
+    }
+  };
+
   const triggerQueueProcessor = async () => {
     try {
       await fetch('/api/admin/video-jobs/process-next', { method: 'POST' });
@@ -485,6 +643,11 @@ export default function AdminDashboard() {
   const handleHlsLocalUpload = async () => {
     if (contentType === 'series') {
       setHlsStatus('Use remote episode links for HLS series ingestion.');
+      return;
+    }
+
+    if (isUploadingCustomPoster) {
+      setHlsStatus('Wait for the custom poster upload to finish before publishing.');
       return;
     }
 
@@ -529,6 +692,11 @@ export default function AdminDashboard() {
   };
 
   const handleHlsRemoteQueue = async () => {
+    if (isUploadingCustomPoster) {
+      setHlsStatus('Wait for the custom poster upload to finish before publishing.');
+      return;
+    }
+
     if (!selectedMovie) {
       setHlsStatus('Select TMDb metadata before queueing HLS content.');
       return;
@@ -594,6 +762,11 @@ export default function AdminDashboard() {
   };
 
   const handleHlsBulkLocalQueue = async () => {
+    if (isUploadingCustomPoster) {
+      setHlsStatus('Wait for the custom poster upload to finish before publishing.');
+      return;
+    }
+
     if (!hlsBulkFiles.length) {
       setHlsStatus('Select one or more local source files first.');
       return;
@@ -647,6 +820,11 @@ export default function AdminDashboard() {
   };
 
   const handleHlsBulkRemoteQueue = async () => {
+    if (isUploadingCustomPoster) {
+      setHlsStatus('Wait for the custom poster upload to finish before publishing.');
+      return;
+    }
+
     const links = hlsBulkRemoteLinks
       .split('\n')
       .map((entry) => entry.trim())
@@ -690,6 +868,11 @@ export default function AdminDashboard() {
   };
 
   const handleDirectLocalUpload = async () => {
+    if (isUploadingCustomPoster) {
+      setDirectStatus('Wait for the custom poster upload to finish before publishing.');
+      return;
+    }
+
     if (contentType === 'series') {
       setDirectStatus('Local direct upload is available for movies only. Use MP4 episode links for series.');
       return;
@@ -868,6 +1051,11 @@ export default function AdminDashboard() {
   };
 
   const handleDirectRemoteQueue = async () => {
+    if (isUploadingCustomPoster) {
+      setDirectStatus('Wait for the custom poster upload to finish before publishing.');
+      return;
+    }
+
     if (!selectedMovie) {
       setDirectStatus('Select TMDb metadata before publishing a saved cloud link.');
       return;
@@ -1184,6 +1372,16 @@ export default function AdminDashboard() {
     });
   }, [libraryItems, libraryFilter]);
 
+  const activePosterPreviewUrl =
+    customPosterPreviewUrl || customPosterUrl || getTmdbPosterUrl(selectedMovie) || getPosterFallbackUrl();
+  const activePosterSourceLabel = customPosterPreviewUrl
+    ? isUploadingCustomPoster
+      ? 'Custom Upload (Uploading...)'
+      : 'Custom Upload'
+    : getTmdbPosterUrl(selectedMovie)
+      ? 'TMDb Poster'
+      : 'No Poster';
+
   const renderMetadataCard = () => (
     <section className="bg-black p-6 rounded-md border border-neutral-800 space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1281,7 +1479,7 @@ export default function AdminDashboard() {
             {tmdbResults.slice(0, 10).map((movie) => (
               <button
                 key={`${movie.id}-${movie.title}`}
-                onClick={() => setSelectedMovie(movie)}
+                onClick={() => applySelectedMovie(movie)}
                 className="text-left border border-neutral-800 bg-neutral-950 hover:border-red-500 rounded p-2 transition-colors"
               >
                 <img
@@ -1303,17 +1501,69 @@ export default function AdminDashboard() {
               <div className="text-red-500 font-black tracking-[0.25em] uppercase text-xs">Payload Armed</div>
               <h3 className="text-2xl font-bold text-white mt-2">{selectedMovie.title}</h3>
             </div>
-            <button onClick={() => setSelectedMovie(null)} className="text-xs text-neutral-400 hover:text-white underline">
+            <button
+              onClick={() => applySelectedMovie(null)}
+              disabled={isUploadingCustomPoster}
+              className="text-xs text-neutral-400 hover:text-white underline disabled:cursor-not-allowed disabled:opacity-60"
+            >
               Change Selection
             </button>
           </div>
           <div className="flex flex-col md:flex-row gap-5">
             <img
-              src={selectedMovie.poster_path ? `https://image.tmdb.org/t/p/w500${selectedMovie.poster_path}` : 'https://via.placeholder.com/300x450/111/444?text=No+Poster'}
+              src={activePosterPreviewUrl}
               alt={selectedMovie.title}
               className="w-32 md:w-44 rounded shadow-lg"
             />
             <div className="flex-1">
+              <div className="mb-4 rounded border border-neutral-800 bg-black/30 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.2em] text-gray-400">Poster Source</div>
+                    <div className="mt-2 inline-flex rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-bold text-white">
+                      {activePosterSourceLabel}
+                    </div>
+                  </div>
+
+                  {customPosterUrl && (
+                    <button
+                      type="button"
+                      onClick={clearCustomPosterOverride}
+                      disabled={isUploadingCustomPoster}
+                      className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-white hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Remove Custom Poster
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-[0.2em] text-gray-400 mb-2">
+                    Poster Override
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/avif"
+                    disabled={isUploadingCustomPoster}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+
+                      if (file) {
+                        void handleCustomPosterUpload(file);
+                      }
+
+                      event.currentTarget.value = '';
+                    }}
+                    className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-bold file:bg-red-800 file:text-white hover:file:bg-red-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Leave this empty to keep the TMDb poster. Upload your own image only if you want to override it.
+                  </p>
+                  {customPosterStatus && (
+                    <p className="mt-2 text-xs text-gray-300">{customPosterStatus}</p>
+                  )}
+                </div>
+              </div>
               <p className="text-sm text-gray-300 leading-6 bg-black/30 rounded p-4">
                 {selectedMovie.overview || 'No synopsis available for this title.'}
               </p>
@@ -1538,7 +1788,7 @@ export default function AdminDashboard() {
 
                   <button
                     onClick={handleHlsLocalUpload}
-                    disabled={isSubmitting || !hlsFile || !selectedMovie}
+                    disabled={isSubmitting || isUploadingCustomPoster || !hlsFile || !selectedMovie}
                     className="w-full bg-red-700 hover:bg-red-600 disabled:bg-neutral-700 disabled:cursor-not-allowed py-4 rounded font-bold text-sm uppercase tracking-[0.2em]"
                   >
                     Queue Local Source For HLS
@@ -1569,7 +1819,7 @@ export default function AdminDashboard() {
 
                   <button
                     onClick={handleHlsRemoteQueue}
-                    disabled={isSubmitting || !selectedMovie}
+                    disabled={isSubmitting || isUploadingCustomPoster || !selectedMovie}
                     className="w-full bg-red-700 hover:bg-red-600 disabled:bg-neutral-700 disabled:cursor-not-allowed py-4 rounded font-bold text-sm uppercase tracking-[0.2em]"
                   >
                     Queue Remote Source For HLS
@@ -1683,7 +1933,7 @@ export default function AdminDashboard() {
 
                   <button
                     onClick={handleDirectLocalUpload}
-                    disabled={isSubmitting || !directFile || !selectedMovie}
+                    disabled={isSubmitting || isUploadingCustomPoster || !directFile || !selectedMovie}
                     className="w-full bg-red-700 hover:bg-red-600 disabled:bg-neutral-700 disabled:cursor-not-allowed py-4 rounded font-bold text-sm uppercase tracking-[0.2em]"
                   >
                     Publish Direct Upload
@@ -1723,6 +1973,7 @@ export default function AdminDashboard() {
                     onClick={handleDirectRemoteQueue}
                     disabled={
                       isSubmitting ||
+                      isUploadingCustomPoster ||
                       !selectedMovie ||
                       (contentType === 'movie' && !directRemoteLinks.trim())
                     }
