@@ -185,7 +185,8 @@ type MultipartUploadInitPayload = {
 
 const PART_UPLOAD_REQUEST_TIMEOUT_MS = 1000 * 60 * 10;
 const PART_UPLOAD_MAX_RETRIES = 3;
-const PART_UPLOAD_CONCURRENCY = 3;
+const PART_UPLOAD_CONCURRENCY = 5;
+const DIRECT_MULTIPART_PART_SIZE_BYTES = 25 * 1024 * 1024;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -932,6 +933,7 @@ export default function AdminDashboard() {
           fileSize: directFile.size,
           contentType: directFile.type || 'video/mp4',
           stage: 'final',
+          partSize: DIRECT_MULTIPART_PART_SIZE_BYTES,
         }),
       });
       const uploadUrlPayload = await parseApiResponse(uploadUrlResponse);
