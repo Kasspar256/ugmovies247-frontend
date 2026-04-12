@@ -2094,7 +2094,7 @@ export default function AdminDashboard() {
                   <h2 className="text-red-500 font-bold text-lg">Queue / Processing</h2>
                   <p className="text-sm text-gray-500">One worker processes direct conversion and import jobs sequentially.</p>
                 </div>
-                <button onClick={loadAdminData} className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 px-4 py-2 rounded text-xs font-bold">
+                <button onClick={loadVideoJobs} className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 px-4 py-2 rounded text-xs font-bold">
                   Refresh
                 </button>
               </div>
