@@ -510,15 +510,19 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadAdminData = async () => {
-    await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
-  };
-
   useEffect(() => {
-    loadAdminData();
-    const interval = setInterval(loadVideoJobs, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    if (activeTab === 'queue') {
+      void loadVideoJobs();
+      const interval = setInterval(loadVideoJobs, 5000);
+      return () => clearInterval(interval);
+    }
+
+    if (activeTab === 'library') {
+      void loadLibraryMovies();
+    }
+
+    return undefined;
+  }, [activeTab]);
 
   const handleManualSearch = async (queryTitle: string) => {
     if (!queryTitle) {

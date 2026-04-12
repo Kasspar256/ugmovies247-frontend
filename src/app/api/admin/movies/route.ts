@@ -32,6 +32,12 @@ export async function GET() {
       );
     }
 
+    const cachedCatalog = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+
+    if (cachedCatalog?.movies?.length) {
+      return NextResponse.json({ movies: cachedCatalog.movies, source: 'cache' });
+    }
+
     let movies: Array<Record<string, unknown>>;
 
     try {
@@ -49,14 +55,7 @@ export async function GET() {
       setInMemoryMovieCache(cache);
       await persistMovieCatalog(cache);
     } catch (firestoreError) {
-      const staleCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
-
-      if (!staleCache?.movies?.length) {
-        throw firestoreError;
-      }
-
-      console.warn('[admin] Firestore unavailable, serving stale admin movie cache', firestoreError);
-      movies = staleCache.movies;
+      throw firestoreError;
     }
 
     return NextResponse.json({ movies });
