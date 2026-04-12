@@ -41,7 +41,7 @@ function adminAccessSnapshot(): SubscriptionSnapshot {
     isActive: true,
     startsAt: '',
     expiresAt: '',
-    paymentProvider: 'admin',
+    paymentProvider: '',
     updatedAt: nowIso(),
   };
 }
