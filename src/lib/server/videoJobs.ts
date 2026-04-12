@@ -18,9 +18,12 @@ import { downloadRemoteSource } from './downloadSource';
 import { uploadDirectoryToR2 } from './r2';
 import { getFreeDiskSpace } from './system';
 import { prepareDirectMp4Source, uploadDirectMp4Asset } from './directVideoProcessor';
+import {
+  MOVIES_COLLECTION,
+  VIDEO_JOBS_COLLECTION,
+  VIDEO_JOB_RUNTIME_COLLECTION,
+} from './firestoreNamespaces';
 
-const JOBS_COLLECTION = 'video_jobs';
-const RUNTIME_COLLECTION = 'video_job_runtime';
 const CLAIMING_STALE_MS = 30 * 1000;
 const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
   'validating',
@@ -36,16 +39,16 @@ function isoNow() {
 }
 
 function getRuntimeDoc() {
-  return adminDb.collection(RUNTIME_COLLECTION).doc(VIDEO_JOB_LOCK_ID);
+  return adminDb.collection(VIDEO_JOB_RUNTIME_COLLECTION).doc(VIDEO_JOB_LOCK_ID);
 }
 
 function getJobDoc(jobId: string) {
-  return adminDb.collection(JOBS_COLLECTION).doc(jobId);
+  return adminDb.collection(VIDEO_JOBS_COLLECTION).doc(jobId);
 }
 
 export async function listVideoJobs(limit = 50) {
   const snapshot = await adminDb
-    .collection(JOBS_COLLECTION)
+    .collection(VIDEO_JOBS_COLLECTION)
     .orderBy('createdAt', 'desc')
     .limit(limit)
     .get();
@@ -82,8 +85,8 @@ export async function createVideoJob(
 ) {
   await ensureVideoWorkspace();
   const jobRef = options?.id
-    ? adminDb.collection(JOBS_COLLECTION).doc(options.id)
-    : adminDb.collection(JOBS_COLLECTION).doc();
+    ? adminDb.collection(VIDEO_JOBS_COLLECTION).doc(options.id)
+    : adminDb.collection(VIDEO_JOBS_COLLECTION).doc();
   const now = isoNow();
 
   await jobRef.set({
@@ -151,7 +154,7 @@ async function releaseWorkerLease() {
 
 async function recoverStaleInFlightJobs() {
   const snapshot = await adminDb
-    .collection(JOBS_COLLECTION)
+    .collection(VIDEO_JOBS_COLLECTION)
     .where('status', 'in', IN_FLIGHT_STATUSES)
     .limit(25)
     .get();
@@ -199,7 +202,7 @@ async function recoverStaleInFlightJobs() {
 
 async function recoverOldestInFlightJob() {
   const snapshot = await adminDb
-    .collection(JOBS_COLLECTION)
+    .collection(VIDEO_JOBS_COLLECTION)
     .where('status', 'in', IN_FLIGHT_STATUSES)
     .limit(25)
     .get();
@@ -251,7 +254,7 @@ async function claimNextQueuedJob() {
   await recoverStaleInFlightJobs();
 
   const snapshot = await adminDb
-    .collection(JOBS_COLLECTION)
+    .collection(VIDEO_JOBS_COLLECTION)
     .where('status', '==', 'queued')
     .limit(25)
     .get();
@@ -322,7 +325,7 @@ function buildR2Prefix(job: VideoJobDocument) {
 }
 
 async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoAssetMetadata) {
-  const movieRef = adminDb.collection('movies').doc(target.movieId);
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(target.movieId);
   const movieSnapshot = await movieRef.get();
 
   if (!movieSnapshot.exists) {

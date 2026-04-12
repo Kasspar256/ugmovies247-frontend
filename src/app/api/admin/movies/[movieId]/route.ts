@@ -6,6 +6,7 @@ import {
   removeEpisodeFromCatalogCache,
   removeMovieFromCatalogCache,
 } from '@/lib/server/movieCatalogCache';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { Episode, Movie } from '@/types/movie';
 
 export const runtime = 'nodejs';
@@ -108,7 +109,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
     }
 
-    const movieRef = adminDb.collection('movies').doc(movieId);
+    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
     const snapshot = await movieRef.get();
 
     if (!snapshot.exists) {

@@ -12,6 +12,7 @@ import {
   readMovieCatalogFromDisk,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ async function fetchMovieCatalog() {
   }
 
   try {
-    const snapshot = await adminDb.collection('movies').orderBy('date_added', 'desc').get();
+    const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
     const cache: CachedMovieCatalog = {
       movies: snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,

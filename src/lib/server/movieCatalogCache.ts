@@ -1,8 +1,13 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
+import { FIRESTORE_ENV_NAMESPACE } from './firestoreNamespaces';
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 2;
-export const MOVIE_CACHE_PATH = path.join(process.cwd(), '.runtime-cache', 'movies-catalog.json');
+export const MOVIE_CACHE_PATH = path.join(
+  process.cwd(),
+  '.runtime-cache',
+  `movies-catalog.${FIRESTORE_ENV_NAMESPACE}.json`
+);
 
 export type CachedMovieCatalog = {
   movies: Array<Record<string, unknown>>;
@@ -45,6 +50,42 @@ export async function persistMovieCatalog(cache: CachedMovieCatalog) {
   } catch (error) {
     console.warn('[movie-cache] failed to persist movie cache', error);
   }
+}
+
+function getMovieTimestamp(movie: Record<string, unknown>) {
+  const dateAdded = String(movie.date_added || '');
+  const updatedAt = String(movie.updatedAt || '');
+  const createdAt = String(movie.createdAt || '');
+  const candidate = dateAdded || updatedAt || createdAt;
+  const timestamp = candidate ? new Date(candidate).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortCatalogMovies(movies: Array<Record<string, unknown>>) {
+  return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
+}
+
+export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) {
+  const movieId = String(movie.id || movie.movieId || '');
+
+  if (!movieId) {
+    return;
+  }
+
+  const currentCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+  const existingMovies = currentCache?.movies || [];
+  const nextMovies = sortCatalogMovies([
+    { ...movie, id: movieId },
+    ...existingMovies.filter((entry) => String(entry.id || '') !== movieId),
+  ]);
+
+  const nextCache: CachedMovieCatalog = {
+    movies: nextMovies,
+    cachedAt: new Date().toISOString(),
+  };
+
+  setInMemoryMovieCache(nextCache);
+  await persistMovieCatalog(nextCache);
 }
 
 export async function removeMovieFromCatalogCache(movieId: string) {

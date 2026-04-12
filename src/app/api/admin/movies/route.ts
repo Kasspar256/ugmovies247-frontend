@@ -4,10 +4,12 @@ import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import {
   type CachedMovieCatalog,
   inMemoryMovieCache,
+  isFreshMovieCache,
   persistMovieCatalog,
   readMovieCatalogFromDisk,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,16 +34,21 @@ export async function GET() {
       );
     }
 
-    const cachedCatalog = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+    if (isFreshMovieCache(inMemoryMovieCache)) {
+      return NextResponse.json({ movies: inMemoryMovieCache.movies, source: 'memory-cache' });
+    }
 
-    if (cachedCatalog?.movies?.length) {
-      return NextResponse.json({ movies: cachedCatalog.movies, source: 'cache' });
+    const diskCache = await readMovieCatalogFromDisk();
+
+    if (isFreshMovieCache(diskCache)) {
+      setInMemoryMovieCache(diskCache);
+      return NextResponse.json({ movies: diskCache.movies, source: 'disk-cache' });
     }
 
     let movies: Array<Record<string, unknown>>;
 
     try {
-      const snapshot = await adminDb.collection('movies').orderBy('date_added', 'desc').get();
+      const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
       movies = snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,
         ...movieDoc.data(),
@@ -55,10 +62,17 @@ export async function GET() {
       setInMemoryMovieCache(cache);
       await persistMovieCatalog(cache);
     } catch (firestoreError) {
+      const staleCache = diskCache || inMemoryMovieCache;
+
+      if (staleCache?.movies?.length) {
+        console.warn('[admin] Firestore unavailable, serving stale admin movie cache', firestoreError);
+        return NextResponse.json({ movies: staleCache.movies, source: 'stale-cache' });
+      }
+
       throw firestoreError;
     }
 
-    return NextResponse.json({ movies });
+    return NextResponse.json({ movies, source: 'firestore' });
   } catch (error) {
     console.error('[admin] failed to load admin movies', error);
     return NextResponse.json(

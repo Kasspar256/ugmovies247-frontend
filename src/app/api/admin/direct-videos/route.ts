@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { extractMovieData } from '@/lib/movieUtils';
+import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { SourcePipeline } from '@/types/videoJobs';
 import type { Season } from '@/types/movie';
 
@@ -135,10 +137,9 @@ async function createDirectMovieDocument(options: {
   sourcePipeline: SourcePipeline;
   sourceUrl?: string;
 }) {
-  const movieRef = adminDb.collection('movies').doc();
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
-
-  await movieRef.set({
+  const moviePayload = {
     movieId: movieRef.id,
     ...normalizeDirectMetadata(options.metadata),
     sourceType: options.sourceType,
@@ -148,7 +149,10 @@ async function createDirectMovieDocument(options: {
     video_url: options.playbackUrl,
     processedAt: timestamp,
     updatedAt: timestamp,
-  });
+  };
+
+  await movieRef.set(moviePayload);
+  await upsertMovieInCatalogCache({ id: movieRef.id, ...moviePayload });
 
   return movieRef.id;
 }
@@ -157,7 +161,7 @@ async function createDirectSeriesDocument(options: {
   metadata: AdminMovieMetadata;
   seasons: SeriesSeasonInput[];
 }) {
-  const movieRef = adminDb.collection('movies').doc();
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
   const normalizedSeasons: Season[] = options.seasons.map((season) => ({
     seasonNumber: season.seasonNumber,
@@ -188,7 +192,7 @@ async function createDirectSeriesDocument(options: {
     })),
   }));
 
-  await movieRef.set({
+  const moviePayload = {
     movieId: movieRef.id,
     ...normalizeDirectMetadata({ ...options.metadata, contentType: 'series' }),
     sourceType: 'remote_link',
@@ -197,7 +201,10 @@ async function createDirectSeriesDocument(options: {
     seasons: normalizedSeasons,
     processedAt: timestamp,
     updatedAt: timestamp,
-  });
+  };
+
+  await movieRef.set(moviePayload);
+  await upsertMovieInCatalogCache({ id: movieRef.id, ...moviePayload });
 
   return movieRef.id;
 }
