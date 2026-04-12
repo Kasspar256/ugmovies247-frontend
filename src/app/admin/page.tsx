@@ -1157,16 +1157,37 @@ export default function AdminDashboard() {
     await loadVideoJobs();
   };
 
-  const handleDeleteLibraryMovie = async (movieId: string, title: string) => {
-    if (!confirm(`Delete "${title}" from the library? This will remove the movie record and any matching R2 files we can safely identify.`)) {
+  const handleDeleteLibraryMovie = async (options: {
+    movieId: string;
+    title: string;
+    kind: 'movie' | 'series' | 'episode';
+    seasonNumber?: number;
+    episodeNumber?: number;
+  }) => {
+    const isEpisodeDelete =
+      options.kind === 'episode' &&
+      typeof options.seasonNumber === 'number' &&
+      typeof options.episodeNumber === 'number';
+    const confirmMessage = isEpisodeDelete
+      ? `Delete "${options.title}" from this series? This removes that episode and any matching R2 files we can safely identify.`
+      : `Delete "${options.title}" from the library? This will remove the title and any matching R2 files we can safely identify.`;
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
-    setLibraryActionId(movieId);
+    const actionId = isEpisodeDelete
+      ? `${options.movieId}:s${options.seasonNumber}:e${options.episodeNumber}`
+      : options.movieId;
+
+    setLibraryActionId(actionId);
     setLibraryStatus('');
 
     try {
-      const response = await fetch(`/api/admin/movies/${movieId}`, {
+      const deleteUrl = isEpisodeDelete
+        ? `/api/admin/movies/${options.movieId}?seasonNumber=${options.seasonNumber}&episodeNumber=${options.episodeNumber}`
+        : `/api/admin/movies/${options.movieId}`;
+      const response = await fetch(deleteUrl, {
         method: 'DELETE',
       });
       const payload = await parseApiResponse(response);
@@ -1175,8 +1196,39 @@ export default function AdminDashboard() {
         throw new Error(payload.payload.detail || payload.payload.error || 'Failed to delete movie.');
       }
 
-      setLibraryMovies((current) => current.filter((movie) => movie.id !== movieId));
-      setLibraryStatus(`Deleted "${title}" successfully.`);
+      if (isEpisodeDelete) {
+        setLibraryMovies((current) =>
+          current.map((movie) => {
+            if (movie.id !== options.movieId) {
+              return movie;
+            }
+
+            const nextSeasons = (movie.seasons || [])
+              .map((season) => {
+                if (Number(season.seasonNumber) !== options.seasonNumber) {
+                  return season;
+                }
+
+                return {
+                  ...season,
+                  episodes: (season.episodes || []).filter(
+                    (episode) => Number(episode.episodeNumber) !== options.episodeNumber
+                  ),
+                };
+              })
+              .filter((season) => (season.episodes || []).length > 0);
+
+            return {
+              ...movie,
+              seasons: nextSeasons,
+            };
+          })
+        );
+      } else {
+        setLibraryMovies((current) => current.filter((movie) => movie.id !== options.movieId));
+      }
+
+      setLibraryStatus(`Deleted "${options.title}" successfully.`);
     } catch (error) {
       setLibraryStatus(error instanceof Error ? error.message : 'Failed to delete movie.');
     } finally {
@@ -1333,6 +1385,8 @@ export default function AdminDashboard() {
       updatedAt: string;
       subtitle: string;
       canDelete: boolean;
+      seasonNumber?: number;
+      episodeNumber?: number;
     }> = [];
 
     for (const movie of libraryMovies) {
@@ -1370,7 +1424,9 @@ export default function AdminDashboard() {
               sourcePipeline: episode.sourcePipeline || movie.sourcePipeline,
               status: episodeStatus,
               updatedAt: episode.updatedAt || movie.updatedAt || '',
-              canDelete: false,
+              canDelete: true,
+              seasonNumber: season.seasonNumber,
+              episodeNumber: episode.episodeNumber,
               subtitle: `Season ${season.seasonNumber} • Episode ${episode.episodeNumber}`,
             });
           }
@@ -2191,17 +2247,35 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-start lg:justify-end">
-                          {movie.canDelete ? (
-                            <button
-                              onClick={() => handleDeleteLibraryMovie(movie.movieId, movie.title)}
-                              disabled={libraryActionId === movie.movieId}
-                              className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-900/60 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {libraryActionId === movie.movieId ? 'Deleting...' : 'Delete'}
-                            </button>
-                          ) : (
-                            <span className="text-xs uppercase tracking-[0.18em] text-gray-600">Episode item</span>
+                          <div className="flex items-center justify-start lg:justify-end">
+                            {movie.canDelete ? (
+                              <button
+                                onClick={() =>
+                                  handleDeleteLibraryMovie({
+                                    movieId: movie.movieId,
+                                    title: movie.title,
+                                    kind: movie.kind,
+                                    seasonNumber: movie.seasonNumber,
+                                    episodeNumber: movie.episodeNumber,
+                                  })
+                                }
+                                disabled={
+                                  libraryActionId ===
+                                  (movie.kind === 'episode'
+                                    ? `${movie.movieId}:s${movie.seasonNumber}:e${movie.episodeNumber}`
+                                    : movie.movieId)
+                                }
+                                className="rounded-lg border border-red-800 bg-red-950/40 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-900/60 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {libraryActionId ===
+                                (movie.kind === 'episode'
+                                  ? `${movie.movieId}:s${movie.seasonNumber}:e${movie.episodeNumber}`
+                                  : movie.movieId)
+                                  ? 'Deleting...'
+                                  : 'Delete'}
+                              </button>
+                            ) : (
+                              <span className="text-xs uppercase tracking-[0.18em] text-gray-600">Episode item</span>
                           )}
                         </div>
                       </div>

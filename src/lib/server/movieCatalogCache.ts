@@ -48,6 +48,48 @@ export async function persistMovieCatalog(cache: CachedMovieCatalog) {
 }
 
 export async function removeMovieFromCatalogCache(movieId: string) {
+  await updateMovieInCatalogCache(movieId, () => null);
+}
+
+export async function removeEpisodeFromCatalogCache(
+  movieId: string,
+  seasonNumber: number,
+  episodeNumber: number
+) {
+  await updateMovieInCatalogCache(movieId, (movie) => {
+    const seasons = Array.isArray(movie.seasons)
+      ? movie.seasons
+          .map((season) => {
+            if (Number(season?.seasonNumber) !== seasonNumber) {
+              return season;
+            }
+
+            const episodes = Array.isArray(season.episodes)
+              ? season.episodes.filter(
+                  (episode) => Number(episode?.episodeNumber) !== episodeNumber
+                )
+              : [];
+
+            return {
+              ...season,
+              episodes,
+            };
+          })
+          .filter((season) => Array.isArray(season?.episodes) && season.episodes.length > 0)
+      : [];
+
+    return {
+      ...movie,
+      seasons,
+      updatedAt: new Date().toISOString(),
+    };
+  });
+}
+
+async function updateMovieInCatalogCache(
+  movieId: string,
+  updater: (movie: Record<string, unknown>) => Record<string, unknown> | null
+) {
   const currentCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
 
   if (!currentCache?.movies?.length) {
@@ -55,7 +97,15 @@ export async function removeMovieFromCatalogCache(movieId: string) {
   }
 
   const nextCache: CachedMovieCatalog = {
-    movies: currentCache.movies.filter((movie) => String(movie.id || '') !== movieId),
+    movies: currentCache.movies
+      .map((movie) => {
+        if (String(movie.id || '') !== movieId) {
+          return movie;
+        }
+
+        return updater(movie);
+      })
+      .filter((movie): movie is Record<string, unknown> => Boolean(movie)),
     cachedAt: new Date().toISOString(),
   };
 
