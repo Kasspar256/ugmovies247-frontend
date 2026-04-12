@@ -5,6 +5,7 @@ import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import {
   removeEpisodeFromCatalogCache,
   removeMovieFromCatalogCache,
+  upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { Episode, Movie } from '@/types/movie';
@@ -42,6 +43,17 @@ function collectCandidateUrlsFromEpisode(episode: Partial<Episode>) {
   }
 
   return [...urls].filter(Boolean);
+}
+
+function parseOptionalInteger(requestUrl: URL, name: string) {
+  const rawValue = requestUrl.searchParams.get(name);
+
+  if (rawValue === null || rawValue.trim() === '') {
+    return null;
+  }
+
+  const parsedValue = Number(rawValue);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
 function collectCandidateUrls(movie: Movie) {
@@ -118,12 +130,12 @@ export async function DELETE(
 
     const movie = { id: snapshot.id, ...(snapshot.data() || {}) } as Movie;
     const requestUrl = new URL(request.url);
-    const seasonNumber = Number(requestUrl.searchParams.get('seasonNumber') || '');
-    const episodeNumber = Number(requestUrl.searchParams.get('episodeNumber') || '');
+    const seasonNumber = parseOptionalInteger(requestUrl, 'seasonNumber');
+    const episodeNumber = parseOptionalInteger(requestUrl, 'episodeNumber');
 
     const deletedObjectKeys: string[] = [];
 
-    if (Number.isFinite(seasonNumber) && Number.isFinite(episodeNumber)) {
+    if (seasonNumber !== null && episodeNumber !== null) {
       const targetSeason = (movie.seasons || []).find(
         (season) => Number(season.seasonNumber) === seasonNumber
       );
@@ -219,6 +231,182 @@ export async function DELETE(
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Failed to delete movie.',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: { movieId: string } }
+) {
+  try {
+    const session = await getCurrentAuthSession();
+
+    if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const adminSetupError = getFirebaseAdminSetupError();
+
+    if (adminSetupError) {
+      return NextResponse.json(
+        {
+          error: 'Admin backend is not configured yet.',
+          detail: adminSetupError,
+        },
+        { status: 500 }
+      );
+    }
+
+    const { movieId } = context.params;
+
+    if (!movieId) {
+      return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
+    }
+
+    const body = (await request.json().catch(() => ({}))) as {
+      title?: string;
+      description?: string;
+      poster?: string;
+      vj?: string;
+    };
+
+    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
+    const snapshot = await movieRef.get();
+
+    if (!snapshot.exists) {
+      return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
+    }
+
+    const movie = { id: snapshot.id, ...(snapshot.data() || {}) } as Movie;
+    const requestUrl = new URL(request.url);
+    const seasonNumber = parseOptionalInteger(requestUrl, 'seasonNumber');
+    const episodeNumber = parseOptionalInteger(requestUrl, 'episodeNumber');
+    const nextUpdatedAt = new Date().toISOString();
+
+    const nextTitle = typeof body.title === 'string' ? body.title.trim() : undefined;
+    const nextDescription =
+      typeof body.description === 'string' ? body.description.trim() : undefined;
+    const nextPoster = typeof body.poster === 'string' ? body.poster.trim() : undefined;
+    const nextVj = typeof body.vj === 'string' ? body.vj.trim() : undefined;
+
+    if (nextTitle !== undefined && !nextTitle) {
+      return NextResponse.json({ error: 'Title cannot be empty.' }, { status: 400 });
+    }
+
+    if (seasonNumber !== null && episodeNumber !== null) {
+      const targetSeason = (movie.seasons || []).find(
+        (season) => Number(season.seasonNumber) === seasonNumber
+      );
+      const targetEpisode = targetSeason?.episodes?.find(
+        (episode) => Number(episode.episodeNumber) === episodeNumber
+      );
+
+      if (!targetSeason || !targetEpisode) {
+        return NextResponse.json({ error: 'Episode not found.' }, { status: 404 });
+      }
+
+      const updatedSeasons = (movie.seasons || []).map((season) => {
+        if (Number(season.seasonNumber) !== seasonNumber) {
+          return season;
+        }
+
+        return {
+          ...season,
+          episodes: (season.episodes || []).map((episode) => {
+            if (Number(episode.episodeNumber) !== episodeNumber) {
+              return episode;
+            }
+
+            const updatedEpisode = {
+              ...episode,
+              title: nextTitle ?? episode.title,
+              description: nextDescription ?? episode.description ?? '',
+              poster: nextPoster ?? episode.poster ?? '',
+              thumbnail:
+                nextPoster !== undefined &&
+                (!episode.thumbnail || episode.thumbnail === episode.poster)
+                  ? nextPoster
+                  : episode.thumbnail ?? '',
+              updatedAt: nextUpdatedAt,
+            };
+
+            return updatedEpisode;
+          }),
+        };
+      });
+
+      await movieRef.set(
+        {
+          seasons: updatedSeasons,
+          updatedAt: nextUpdatedAt,
+        },
+        { merge: true }
+      );
+
+      const updatedMovie = {
+        ...movie,
+        seasons: updatedSeasons,
+        updatedAt: nextUpdatedAt,
+      };
+
+      await upsertMovieInCatalogCache(updatedMovie);
+
+      return NextResponse.json({
+        success: true,
+        movie: {
+          id: movie.id,
+          ...updatedMovie,
+        },
+      });
+    }
+
+    const updates: Record<string, unknown> = {
+      updatedAt: nextUpdatedAt,
+    };
+
+    if (nextTitle !== undefined) {
+      updates.title = nextTitle;
+      updates.original_title = nextTitle;
+      updates.name = nextTitle;
+    }
+
+    if (nextDescription !== undefined) {
+      updates.description = nextDescription;
+      updates.overview = nextDescription;
+    }
+
+    if (nextPoster !== undefined) {
+      updates.poster = nextPoster;
+    }
+
+    if (nextVj !== undefined) {
+      updates.vj = nextVj || 'Unknown';
+    }
+
+    await movieRef.set(updates, { merge: true });
+
+    const updatedMovie = {
+      ...movie,
+      ...updates,
+    };
+
+    await upsertMovieInCatalogCache(updatedMovie);
+
+    return NextResponse.json({
+      success: true,
+      movie: {
+        id: movie.id,
+        ...updatedMovie,
+      },
+    });
+  } catch (error) {
+    console.error('[admin] failed to update movie metadata', error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Failed to update movie metadata.',
       },
       { status: 500 }
     );

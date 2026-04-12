@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { db } from '@/lib/firebase';
 import Link from 'next/link';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
 import type { FirebaseError } from 'firebase/app';
@@ -11,6 +10,8 @@ import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
 import { Bookmark, Cast, Heart, Share2 } from 'lucide-react';
 import { fetchPublicMovies } from '@/lib/publicMovies';
+import MobileBackButton from '@/components/MobileBackButton';
+import { startCasting } from '@/lib/cast';
 
 export default function MoviePlayerPage({ params }: { params: { id: string } }) {
 const [movie, setMovie] = useState<Movie | null>(null);
@@ -384,7 +385,7 @@ const handleDownload = async () => {
   }
 
   if (!playbackVideoUrl) {
-    alert("No in-app download data found for this movie.");
+    setActionMessage('No in-app download data was found for this movie yet.');
     return;
   }
 
@@ -415,7 +416,7 @@ const handleDownload = async () => {
       message: firebaseError?.message || String(err),
       fullError: err,
     });
-    alert("Failed to save this movie to downloads.");
+    setActionMessage(firebaseError?.message || 'We could not save this movie to your downloads right now.');
   } finally {
     setIsDownloading(false);
   }
@@ -454,7 +455,7 @@ const handleWatchlist = async () => {
       message: firebaseError?.message || String(err),
       fullError: err,
     });
-    alert('Failed to save this movie to My List.');
+    setActionMessage(firebaseError?.message || 'We could not update My List right now.');
   } finally {
     setIsSavingToList(false);
   }
@@ -471,7 +472,7 @@ const handleLike = async () => {
     if (isLiked) {
       await removeMovieLike(movie.movieId || movie.id);
       setIsLiked(false);
-      setActionMessage('Movie removed from liked data.');
+      setActionMessage('Movie removed from your Likes.');
       return;
     }
 
@@ -482,7 +483,7 @@ const handleLike = async () => {
     });
 
     setIsLiked(true);
-    setActionMessage('Movie liked.');
+    setActionMessage('Movie added to your Likes. Open Likes from your profile anytime.');
   } catch (err) {
     const firebaseError = err as FirebaseError;
     console.error('[movie-page] like save failed', {
@@ -492,7 +493,7 @@ const handleLike = async () => {
       message: firebaseError?.message || String(err),
       fullError: err,
     });
-    alert('Failed to like this movie.');
+    setActionMessage(firebaseError?.message || 'We could not update your likes right now.');
   } finally {
     setIsLiking(false);
   }
@@ -526,76 +527,30 @@ const handleShare = async () => {
 };
 
 const handleCast = async () => {
-  const videoElement = videoRef.current;
-
-  if (!videoElement) {
-    setActionMessage('No active player available for casting.');
+  if (isPlaybackLocked) {
+    setActionMessage('Unlock this movie first before casting it.');
     return;
   }
 
-  const remotePlayback = (videoElement as HTMLVideoElement & {
-    remote?: { prompt?: () => Promise<void>; watchAvailability?: (callback: (available: boolean) => void) => Promise<number> };
-    webkitShowPlaybackTargetPicker?: () => void;
-    webkitCurrentPlaybackTargetIsWireless?: boolean;
-  }).remote;
+  if (!playbackVideoUrl) {
+    setActionMessage('This movie is not ready for casting yet.');
+    return;
+  }
+
+  setActionMessage('Looking for cast devices...');
 
   try {
-    if (!playbackVideoUrl) {
-      setActionMessage('This movie is not ready for casting.');
-      return;
-    }
-
-    if (remotePlayback && typeof remotePlayback.prompt === 'function') {
-      if (typeof remotePlayback.watchAvailability === 'function') {
-        try {
-          const isAvailable = await new Promise<boolean>((resolve) => {
-            let settled = false;
-
-            remotePlayback.watchAvailability!((available: boolean) => {
-              if (!settled) {
-                settled = true;
-                resolve(available);
-              }
-            }).catch(() => {
-              if (!settled) {
-                settled = true;
-                resolve(true);
-              }
-            });
-
-            setTimeout(() => {
-              if (!settled) {
-                settled = true;
-                resolve(true);
-              }
-            }, 1200);
-          });
-
-          if (!isAvailable) {
-            setActionMessage('No cast devices were found for this browser right now. Check that a compatible device is on the same network.');
-            return;
-          }
-        } catch (availabilityError) {
-          console.error('Cast availability check failed:', availabilityError);
-        }
-      }
-
-      await remotePlayback.prompt();
-      setActionMessage('Casting device picker opened.');
-      return;
-    }
-
-    if (typeof (videoElement as HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void; webkitCurrentPlaybackTargetIsWireless?: boolean }).webkitShowPlaybackTargetPicker === 'function') {
-      (videoElement as HTMLVideoElement & { webkitShowPlaybackTargetPicker: () => void }).webkitShowPlaybackTargetPicker();
-      const isWirelessTarget = Boolean((videoElement as HTMLVideoElement & { webkitCurrentPlaybackTargetIsWireless?: boolean }).webkitCurrentPlaybackTargetIsWireless);
-      setActionMessage(isWirelessTarget ? 'AirPlay target selected.' : 'AirPlay device picker opened.');
-      return;
-    }
-
-    setActionMessage('Casting is not available in this browser. Try Chrome with a Cast device or Safari with AirPlay.');
+    const message = await startCasting({
+      videoElement: videoRef.current,
+      playbackUrl: playbackVideoUrl,
+      title: playbackTitle || movie?.title || movie?.name || 'UG Movies 247',
+      poster: playbackPoster,
+      playbackType,
+    });
+    setActionMessage(message);
   } catch (err) {
     console.error('Cast failed:', err);
-    setActionMessage('A casting target could not be started. Make sure a Cast or AirPlay device is available on the same network.');
+    setActionMessage(err instanceof Error ? err.message : 'A casting target could not be started right now.');
   }
 };
 
@@ -606,21 +561,31 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 404 PAYLOAD NOT FOUND </main>
 );
 
+const currentMovieHref = `/movie/${movie.id}`;
+const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
+const billingHref = `/profile/billing?returnTo=${encodeURIComponent(currentMovieHref)}`;
+
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 md:pb-8">
 
   {/* Mobile Header */}
   <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
     <div className="flex items-center justify-between gap-3">
-      <Link
-        href="/"
-        className="pointer-events-auto h-[38px] w-[68px] rounded-[22px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center overflow-hidden"
-      >
-        <img
-          src="/logow.png"
-          alt="UG Movies 247"
-          className="w-14 h-14 object-cover scale-125 translate-y-2"
+      <div className="flex items-center gap-2">
+        <MobileBackButton
+          fallbackHref="/"
+          className="pointer-events-auto h-[38px] w-[38px] rounded-[22px] border border-white/10 bg-[#1B2230]/62 p-0 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
         />
-      </Link>
+        <Link
+          href="/"
+          className="pointer-events-auto h-[38px] w-[68px] rounded-[22px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center overflow-hidden"
+        >
+          <img
+            src="/logow.png"
+            alt="UG Movies 247"
+            className="w-14 h-14 object-cover scale-125 translate-y-2"
+          />
+        </Link>
+      </div>
 
       <div className="pointer-events-auto h-[34px] px-2 rounded-[20px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-2">
         <Link href="/watchlist" className="text-white/90 hover:text-white transition-colors" aria-label="My List">
@@ -683,13 +648,13 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link
-            href="/subscribe"
+            href={subscribeHref}
             className="rounded-xl bg-[#D90429] px-6 py-3 text-sm font-black uppercase tracking-[0.24em] text-white"
           >
             Unlock Now
           </Link>
           <Link
-            href="/profile/billing"
+            href={billingHref}
             className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black uppercase tracking-[0.24em] text-white"
           >
             View Plans
@@ -720,16 +685,27 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
         <button
           onClick={handleDownload}
           disabled={isPlaybackLocked || isDownloading || isSavedToDownloads}
-          className="min-w-[220px] sm:min-w-[260px] bg-white/5 hover:bg-[#D90429] active:bg-[#a50320] disabled:bg-[#2B2F38] disabled:border-white/5 disabled:cursor-not-allowed text-white px-6 py-3.5 rounded-xl text-sm font-black tracking-wide border border-white/10 hover:border-[#D90429] transition-colors duration-200"
+          className="relative flex w-full max-w-[620px] items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-r from-[#24344A] via-[#1E2A3B] to-[#131B28] px-5 py-4 text-sm font-black tracking-[0.18em] text-white shadow-[0_18px_35px_rgba(0,0,0,0.28)] transition-colors duration-200 hover:from-[#2D4059] hover:to-[#182334] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#2B2F38] disabled:text-white/45"
         >
-          {isPlaybackLocked ? 'Subscription Required' : isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : 'Download'}
+          <span className="text-center">
+            {isPlaybackLocked ? 'Subscription Required' : isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : 'Download'}
+          </span>
+          <span className="pointer-events-none absolute right-5">
+            <DownloadIcon />
+          </span>
         </button>
+
+        {actionMessage && (
+          <div className="w-full max-w-[620px] rounded-2xl border border-[#7AA2D6]/20 bg-[#182334]/88 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-[#D9E7FF] shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
+            {actionMessage}
+          </div>
+        )}
 
         <div className="flex flex-wrap justify-center gap-3">
           <button
             onClick={handleWatchlist}
             disabled={isSavingToList}
-            className="border border-gray-600 hover:border-white disabled:border-[#6B1020] disabled:text-gray-400 disabled:cursor-not-allowed text-gray-300 px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2 bg-white/5"
+            className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white disabled:cursor-not-allowed disabled:border-white/5 disabled:text-gray-500"
           >
             <Bookmark size={16} />
             {isSavingToList ? 'Working...' : isSavedToWatchlist ? 'Remove from My List' : 'Add to My List'}
@@ -745,7 +721,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
           <button
             onClick={handleLike}
             disabled={isLiking}
-            className="border border-gray-600 hover:border-white disabled:border-[#6B1020] disabled:text-gray-400 disabled:cursor-not-allowed text-gray-300 px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2 bg-white/5"
+            className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white disabled:cursor-not-allowed disabled:border-white/5 disabled:text-gray-500"
           >
             <Heart size={16} className={isLiked ? 'fill-[#D90429] text-[#D90429]' : ''} />
             {isLiking ? 'Working...' : isLiked ? 'Unlike' : 'Like'}
@@ -753,7 +729,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
 
           <button
             onClick={handleCast}
-            className="border border-gray-600 hover:border-white text-gray-300 px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2 bg-white/5"
+            className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white"
           >
             <Cast size={16} />
             Cast
@@ -761,7 +737,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
 
           <button
             onClick={handleShare}
-            className="border border-gray-600 hover:border-white text-gray-300 px-4 py-2 rounded-lg text-sm font-bold inline-flex items-center gap-2 bg-white/5"
+            className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white"
           >
             <Share2 size={16} />
             Share
@@ -859,10 +835,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
         </div>
       </section>
     )}
-
-    {actionMessage && (
-      <p className="text-sm text-[#888888] mt-4">{actionMessage}</p>
-    )}
   </div>
 
   <section className="px-4 md:px-8 max-w-6xl mx-auto mt-2">
@@ -908,30 +880,15 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
     </div>
   </section>
 
-  <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#0B0C10] border-t border-white/5 flex items-center justify-around px-2 z-50 md:hidden pb-safe">
-    <Link href="/" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-      <span className="text-[10px] font-bold">Home</span>
-    </Link>
-    <Link href="/vjs" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-      <span className="text-[10px] font-bold">VJs</span>
-    </Link>
-    <Link href="/genres" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
-      <span className="text-[10px] font-bold">Genres</span>
-    </Link>
-    <Link href="/search" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-      <span className="text-[10px] font-bold">Search</span>
-    </Link>
-    <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-      <span className="text-[10px] font-bold">Profile</span>
-    </Link>
-  </div>
-
 </main>
 
 );
+}
+
+function DownloadIcon() {
+  return (
+    <svg className="h-[18px] w-[18px] text-white/90" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v11m0 0 4-4m-4 4-4-4M5 19h14" />
+    </svg>
+  );
 }

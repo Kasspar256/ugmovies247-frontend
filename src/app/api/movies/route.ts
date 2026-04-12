@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession } from '@/lib/auth/server';
-import { getSubscriptionSnapshotFromData, getViewerEntitlement } from '@/lib/server/subscriptions';
+import {
+  getViewerEntitlement,
+  getSubscriptionSnapshotFromData,
+} from '@/lib/server/subscriptions';
 import { sanitizeMovieForViewer } from '@/lib/server/contentAccess';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
 import {
@@ -22,6 +25,33 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   requiresSubscription: true,
   subscription: getSubscriptionSnapshotFromData(null),
 };
+
+function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
+  const movieJobStatus = typeof movieDoc.jobStatus === 'string' ? movieDoc.jobStatus : '';
+  const hasPrimaryPlaybackAsset = Boolean(movieDoc.masterPlaylistUrl || movieDoc.video_url);
+
+  if ((!movieJobStatus || movieJobStatus === 'ready') && hasPrimaryPlaybackAsset) {
+    return true;
+  }
+
+  const seasons = Array.isArray(movieDoc.seasons) ? movieDoc.seasons : [];
+
+  return seasons.some((season) => {
+    const rawSeason = season as Record<string, unknown>;
+    const episodes = Array.isArray(rawSeason.episodes) ? rawSeason.episodes : [];
+
+    return episodes.some((episode) => {
+      const rawEpisode = episode as Record<string, unknown>;
+      const episodeJobStatus =
+        typeof rawEpisode.jobStatus === 'string' ? rawEpisode.jobStatus : '';
+
+      return (
+        (!episodeJobStatus || episodeJobStatus === 'ready') &&
+        Boolean(rawEpisode.masterPlaylistUrl || rawEpisode.video_url)
+      );
+    });
+  });
+}
 
 async function fetchMovieCatalog() {
   if (isFreshMovieCache(inMemoryMovieCache)) {
@@ -60,10 +90,12 @@ async function fetchMovieCatalog() {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await getCurrentAuthSession();
-    const entitlement = session ? await getViewerEntitlement(session.uid) : DEFAULT_ENTITLEMENT;
+    const entitlement = session
+      ? await getViewerEntitlement(session.uid)
+      : DEFAULT_ENTITLEMENT;
 
     const adminSetupError = getFirebaseAdminSetupError();
 
@@ -75,12 +107,14 @@ export async function GET() {
     }
 
     const catalog = await fetchMovieCatalog();
-    const movies = catalog.movies.map((movieDoc) =>
-      sanitizeMovieForViewer(
-        movieDoc,
-        entitlement
-      )
-    );
+    const movies = catalog.movies
+      .filter((movieDoc) => hasPublicPlaybackAsset(movieDoc))
+      .map((movieDoc) =>
+        sanitizeMovieForViewer(
+          movieDoc,
+          entitlement
+        )
+      );
 
     return NextResponse.json({ movies, entitlement });
   } catch (error) {

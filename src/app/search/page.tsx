@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Search as SearchIcon, X, Play, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -13,6 +13,13 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
+
+    if (cachedMovies.length) {
+      setAllMovies(cachedMovies);
+      setLoading(false);
+    }
+
     const fetchMovies = async () => {
       try {
         const data = dedupeSeriesMovies(await fetchPublicMovies());
@@ -65,24 +72,42 @@ export default function SearchPage() {
       </header>
 
       {/* Search Bar Container (Mobile) */}
-      <div className="md:hidden fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] p-4 shadow-xl">
-        <div className="relative flex items-center bg-[#1F2833] rounded-full border border-[#D90429]/30 focus-within:border-[#D90429] focus-within:ring-2 focus-within:ring-[#D90429]/20 transition-all p-1">
-          <div className="pl-3 text-[#888888] flex-shrink-0">
-             <SearchIcon size={20} />
+      <div className="md:hidden fixed top-4 left-4 right-4 z-50">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="flex h-[46px] w-[68px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-[#1B2230]/62 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
+            aria-label="Go home"
+          >
+            <img
+              src="/logow.png"
+              alt="UG Movies 247"
+              className="h-14 w-14 object-cover scale-125 translate-y-2"
+            />
+          </Link>
+
+          <div className="relative flex flex-1 items-center rounded-[26px] border border-white/10 bg-[#1B2230]/62 px-2 py-1.5 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl transition-all focus-within:border-[#7AA2D6]/45">
+            <div className="pl-2 text-white/55 flex-shrink-0">
+              <SearchIcon size={18} />
+            </div>
+            <input 
+              type="text" 
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search VJs, Movies, Genres..." 
+              className="w-full bg-transparent py-2 pl-3 pr-10 text-sm text-white focus:outline-none placeholder:text-white/45"
+              autoFocus
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/65 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Clear search"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
-          <input 
-            type="text" 
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search VJs, Movies, Genres..." 
-            className="w-full bg-transparent text-white py-2 pl-3 pr-10 focus:outline-none placeholder-[#888888]/60 text-base appearance-none"
-            autoFocus
-          />
-          {query && (
-            <button onClick={() => setQuery('')} className="absolute right-2 text-[#888888] hover:text-white p-1 rounded-full bg-black/50">
-              <X size={16} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -171,31 +196,6 @@ export default function SearchPage() {
           </div>
         )}
       </div>
-      
-      {/* Shared Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#0B0C10] border-t border-white/5 flex items-center justify-around px-2 z-50 md:hidden pb-safe">
-        <Link href="/" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-           <span className="text-[10px] font-bold">Home</span>
-        </Link>
-        <Link href="/vjs" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-           <span className="text-[10px] font-bold">VJs</span>
-        </Link>
-        <Link href="/genres" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
-           <span className="text-[10px] font-bold">Genres</span>
-        </Link>
-        <Link href="/search" className="flex flex-col items-center gap-1 text-[#D90429] w-16 transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-           <span className="text-[10px] font-bold">Search</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-           <span className="text-[10px] font-bold">Profile</span>
-        </Link>
-      </div>
-
     </div>
   );
 }

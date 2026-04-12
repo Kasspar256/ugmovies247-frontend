@@ -1,10 +1,33 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Play, ArrowLeft, Film } from 'lucide-react';
+import { Play, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import MobilePageHeader from '@/components/MobilePageHeader';
+
+function getGenreMovies(genreId: string, allMovies: Movie[]) {
+  if (genreId.toLowerCase() === 'indian') {
+    return allMovies.filter(
+      (movie) =>
+        movie.country === 'India' ||
+        movie.genres?.map((genre) => genre.toLowerCase()).includes('indian')
+    );
+  }
+
+  if (genreId.toLowerCase() === 'k-drama' || genreId.toLowerCase() === 'k drama') {
+    return allMovies.filter(
+      (movie) =>
+        movie.country === 'South Korea' ||
+        movie.genres?.map((genre) => genre.toLowerCase()).includes('k-drama')
+    );
+  }
+
+  return allMovies.filter((movie) =>
+    movie.genres?.map((genre) => genre.toLowerCase()).includes(genreId.toLowerCase())
+  );
+}
 
 export default function GenreDetail({ params }: { params: { id: string } }) {
   const genreId = decodeURIComponent(params.id);
@@ -12,21 +35,18 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cachedMovies = dedupeSeriesMovies(getGenreMovies(genreId, readCachedPublicMovies()));
+
+    if (cachedMovies.length) {
+      setMovies(cachedMovies);
+      setLoading(false);
+    }
+
     const fetchMovies = async () => {
       try {
         const allMovies = await fetchPublicMovies();
-        
-        let filtered: Movie[];
-        // Special mapping for Indian
-        if (genreId.toLowerCase() === 'indian') {
-           filtered = allMovies.filter(m => m.country === 'India' || m.genres?.map((g) => g.toLowerCase()).includes('indian'));
-        } else if (genreId.toLowerCase() === 'k-drama' || genreId.toLowerCase() === 'k drama') {
-           filtered = allMovies.filter(m => m.country === 'South Korea' || m.genres?.map((g) => g.toLowerCase()).includes('k-drama'));
-        } else {
-           filtered = allMovies.filter(m => m.genres?.map((g) => g.toLowerCase()).includes(genreId.toLowerCase()));
-        }
-        
-        setMovies(dedupeSeriesMovies(filtered));
+
+        setMovies(dedupeSeriesMovies(getGenreMovies(genreId, allMovies)));
       } catch (err) {
         console.error("Error fetching genre movies:", err);
       } finally {
@@ -67,16 +87,11 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
         </div>
       </header>
 
-      {/* Mobile Header fixed */}
-      <header className="fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] p-4 flex items-center gap-4 shadow-xl md:hidden">
-        <Link href="/genres" className="text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
-          <ArrowLeft size={20} />
-        </Link>
-        <div>
-          <h1 className="text-xl font-black text-white uppercase tracking-wider">{genreId}</h1>
-          <p className="text-[#D90429] text-[10px] font-bold uppercase tracking-widest">{movies.length} Vaulted Files</p>
-        </div>
-      </header>
+      <MobilePageHeader
+        title={genreId}
+        subtitle={`${movies.length} Vaulted Files`}
+        fallbackHref="/genres"
+      />
 
       {/* Desktop Info */}
       <div className="hidden md:block mb-8">
@@ -109,31 +124,6 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
           </div>
         )}
       </div>
-
-      {/* Shared Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#0B0C10] border-t border-white/5 flex items-center justify-around px-2 z-50 md:hidden pb-safe">
-        <Link href="/" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-           <span className="text-[10px] font-bold">Home</span>
-        </Link>
-        <Link href="/vjs" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-           <span className="text-[10px] font-bold">VJs</span>
-        </Link>
-        <Link href="/genres" className="flex flex-col items-center gap-1 text-[#D90429] w-16 transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
-           <span className="text-[10px] font-bold">Genres</span>
-        </Link>
-        <Link href="/search" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-           <span className="text-[10px] font-bold">Search</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-           <span className="text-[10px] font-bold">Profile</span>
-        </Link>
-      </div>
-
     </div>
   );
 }

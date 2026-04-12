@@ -10,6 +10,7 @@ export const AUTH_PROTECTED_PATHS = [
   '/',
   '/movie',
   '/downloads',
+  '/likes',
   '/watchlist',
   '/profile',
   '/request',

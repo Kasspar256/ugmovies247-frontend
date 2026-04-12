@@ -1,5 +1,6 @@
 import './globals.css';
 import AuthGate from '@/components/AuthGate';
+import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 
 export const metadata = {
@@ -22,9 +23,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className="bg-[#0B0C10] text-white antialiased min-h-screen pb-16 md:pb-0">
+      <body className="min-h-screen bg-[#0B0C10] pb-[calc(4.5rem+env(safe-area-inset-bottom))] text-white antialiased md:pb-0">
         <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
-          <AuthGate>{children}</AuthGate>
+          <AuthGate>
+            <AppChrome>{children}</AppChrome>
+          </AuthGate>
           <EnvironmentBadge />
         </main>
       </body>

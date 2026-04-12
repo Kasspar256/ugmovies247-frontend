@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, Loader2, LockKeyhole, Smartphone } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { CheckCircle2, Loader2, LockKeyhole, Smartphone } from 'lucide-react';
+import MobilePageHeader from '@/components/MobilePageHeader';
+import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import type {
   PaymentMethodProvider,
   PaymentMethodProviderOption,
@@ -38,7 +41,23 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   },
 };
 
+async function refreshUnlockedCatalog() {
+  clearPublicMovieCache();
+
+  try {
+    await fetchPublicMovies({ force: true, refreshEntitlement: true });
+  } catch (error) {
+    console.warn('[subscribe] failed to refresh public movie catalog after subscription change', error);
+  }
+}
+
+function getSafeReturnTo(value?: string | null) {
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : '';
+}
+
 export default function SubscribePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>([]);
   const [entitlement, setEntitlement] = useState<SubscriptionEntitlement>(DEFAULT_ENTITLEMENT);
   const [selectedPlan, setSelectedPlan] = useState('daily');
@@ -50,6 +69,12 @@ export default function SubscribePage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [activePayment, setActivePayment] = useState<PaymentState | null>(null);
+  const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
+  const safeReturnTo = getSafeReturnTo(searchParams.get('returnTo'));
+  const billingHref = safeReturnTo
+    ? `/profile/billing?returnTo=${encodeURIComponent(safeReturnTo)}`
+    : '/profile/billing';
 
   useEffect(() => {
     let mounted = true;
@@ -74,6 +99,10 @@ export default function SubscribePage() {
         setProviders(payload.providers || []);
         setProvider(payload.providers?.[0]?.id || '');
         setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
+
+        if (payload.entitlement) {
+          void refreshUnlockedCatalog();
+        }
       } catch (loadError) {
         if (mounted) {
           setError(loadError instanceof Error ? loadError.message : 'Failed to load subscription plans.');
@@ -123,7 +152,7 @@ export default function SubscribePage() {
         });
 
         if (payment.status === 'completed') {
-          setMessage('Payment confirmed. Your subscription is now active.');
+          setMessage('Payment confirmed. Your subscription is now active. Redirecting you to home...');
           setError('');
           const subscriptionResponse = await fetch('/api/subscriptions/me', {
             credentials: 'include',
@@ -132,7 +161,11 @@ export default function SubscribePage() {
           const subscriptionPayload = (await subscriptionResponse.json()) as SubscriptionResponse;
 
           if (subscriptionResponse.ok) {
-            setEntitlement(subscriptionPayload.entitlement || DEFAULT_ENTITLEMENT);
+            const nextEntitlement = subscriptionPayload.entitlement || DEFAULT_ENTITLEMENT;
+            setEntitlement(nextEntitlement);
+            await refreshUnlockedCatalog();
+            setShowUpgradeSuccess(true);
+            setRedirectCountdown(4);
           }
         } else if (payment.status === 'failed' || payment.status === 'cancelled') {
           setError(payment.providerMessage || 'Payment was not completed.');
@@ -146,6 +179,31 @@ export default function SubscribePage() {
     return () => clearInterval(interval);
   }, [activePayment]);
 
+  useEffect(() => {
+    if (!showUpgradeSuccess) {
+      return;
+    }
+
+    const countdownInterval = window.setInterval(() => {
+      setRedirectCountdown((current) => {
+        if (current === null) {
+          return current;
+        }
+
+        return current > 1 ? current - 1 : 1;
+      });
+    }, 1000);
+
+    const redirectTimer = window.setTimeout(() => {
+      router.replace('/');
+    }, 4000);
+
+    return () => {
+      window.clearInterval(countdownInterval);
+      window.clearTimeout(redirectTimer);
+    };
+  }, [router, showUpgradeSuccess]);
+
   const selectedPlanDefinition = useMemo(
     () => plans.find((plan) => plan.type === selectedPlan) || null,
     [plans, selectedPlan]
@@ -156,6 +214,8 @@ export default function SubscribePage() {
     setSubmitting(true);
     setError('');
     setMessage('');
+    setShowUpgradeSuccess(false);
+    setRedirectCountdown(null);
 
     try {
       const response = await fetch('/api/subscriptions/checkout', {
@@ -198,17 +258,61 @@ export default function SubscribePage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-16 md:pt-24">
+      {showUpgradeSuccess && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#0B0C10]/88 px-4 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-[28px] border border-emerald-500/20 bg-[#11141C] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-300">
+              <CheckCircle2 size={32} />
+            </div>
+            <div className="mt-5 text-[11px] font-black uppercase tracking-[0.3em] text-emerald-300">
+              Plan Upgraded
+            </div>
+            <h2 className="mt-3 text-3xl font-black uppercase tracking-[0.12em] text-white">
+              Premium Unlocked
+            </h2>
+            <p className="mt-4 text-sm leading-6 text-white/70">
+              Your payment has been approved and your account now has premium access. We are taking you to the home page so you can start watching right away.
+            </p>
+            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.22em] text-white/70">
+              Redirecting in {redirectCountdown ?? 4}s
+            </div>
+            <button
+              type="button"
+              onClick={() => router.replace('/')}
+              className="mt-5 w-full rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.28em] text-white"
+            >
+              Go Home Now
+            </button>
+            {safeReturnTo && (
+              <Link
+                href={safeReturnTo}
+                className="mt-3 block text-xs font-black uppercase tracking-[0.22em] text-emerald-200/80"
+              >
+                Return To Your Movie Instead
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      <MobilePageHeader
+        title="Unlock Premium"
+        fallbackHref="/profile/billing"
+        returnTo={safeReturnTo}
+        actionHref={billingHref}
+        actionLabel="Billing"
+      />
+
       <div className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-between gap-3">
+        <div className="hidden items-center justify-between gap-3 md:flex">
           <Link
-            href="/profile"
+            href={billingHref}
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
           >
-            <ArrowLeft size={16} />
             Back
           </Link>
           <Link
-            href="/profile/billing"
+            href={billingHref}
             className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-[#FFB3C1]"
           >
             Billing Status
@@ -304,6 +408,15 @@ export default function SubscribePage() {
                 <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
                   {message}
                 </div>
+              )}
+
+              {safeReturnTo && entitlement.subscription.isActive && (
+                <Link
+                  href={safeReturnTo}
+                  className="flex w-full items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-black uppercase tracking-[0.22em] text-emerald-100"
+                >
+                  Continue Watching
+                </Link>
               )}
 
               <button

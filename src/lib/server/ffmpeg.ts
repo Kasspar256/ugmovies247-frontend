@@ -5,6 +5,9 @@ export type FfprobeStream = {
   width?: number;
   height?: number;
   codec_name?: string;
+  pix_fmt?: string;
+  channels?: number;
+  profile?: string;
 };
 
 export type FfprobeFormat = {
@@ -110,6 +113,33 @@ export async function convertVideoToMp4(inputPath: string, outputPath: string, t
       'aac',
       '-b:a',
       '160k',
+      outputPath,
+    ],
+    timeoutMs
+  );
+}
+
+export async function rewriteMp4ForStreaming(
+  inputPath: string,
+  outputPath: string,
+  timeoutMs: number
+) {
+  return runFfmpeg(
+    [
+      '-y',
+      '-i',
+      inputPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a?',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'copy',
+      '-movflags',
+      '+faststart',
+      '-sn',
       outputPath,
     ],
     timeoutMs

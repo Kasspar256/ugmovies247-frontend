@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Clock3, CreditCard, ShieldCheck } from 'lucide-react';
+import { Clock3, CreditCard, ShieldCheck } from 'lucide-react';
+import MobilePageHeader from '@/components/MobilePageHeader';
+import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import type { SubscriptionEntitlement, SubscriptionPlanDefinition } from '@/types/subscriptions';
 
 type BillingPayload = {
@@ -25,10 +28,29 @@ const EMPTY_ENTITLEMENT: SubscriptionEntitlement = {
   },
 };
 
+async function refreshMovieAccessCatalog() {
+  clearPublicMovieCache();
+
+  try {
+    await fetchPublicMovies({ force: true, refreshEntitlement: true });
+  } catch (error) {
+    console.warn('[billing] failed to refresh public movie catalog after entitlement check', error);
+  }
+}
+
+function getSafeReturnTo(value?: string | null) {
+  return value && value.startsWith('/') && !value.startsWith('//') ? value : '';
+}
+
 export default function BillingPage() {
+  const searchParams = useSearchParams();
   const [payload, setPayload] = useState<BillingPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const safeReturnTo = getSafeReturnTo(searchParams.get('returnTo'));
+  const subscribeHref = safeReturnTo
+    ? `/subscribe?returnTo=${encodeURIComponent(safeReturnTo)}`
+    : '/subscribe';
 
   useEffect(() => {
     let mounted = true;
@@ -50,6 +72,7 @@ export default function BillingPage() {
         }
 
         setPayload(data);
+        void refreshMovieAccessCatalog();
       } catch (billingError) {
         if (mounted) {
           setError(billingError instanceof Error ? billingError.message : 'Failed to load billing information.');
@@ -83,17 +106,24 @@ export default function BillingPage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-16 md:pt-24">
+      <MobilePageHeader
+        title="Billing Status"
+        fallbackHref="/profile"
+        returnTo={safeReturnTo}
+        actionHref={subscribeHref}
+        actionLabel="Buy Plan"
+      />
+
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-center justify-between gap-3">
+        <div className="hidden items-center justify-between gap-3 md:flex">
           <Link
             href="/profile"
             className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white"
           >
-            <ArrowLeft size={16} />
             Back
           </Link>
           <Link
-            href="/subscribe"
+            href={subscribeHref}
             className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-[#FFB3C1]"
           >
             Buy Plan

@@ -1,12 +1,14 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { HOME_ROW_ORDER } from '@/lib/homeCategories';
-import { Clapperboard } from 'lucide-react';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { Bell, Cast, Clapperboard, Download } from 'lucide-react';
+import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
+import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 
 type SessionUser = {
   role: 'user' | 'admin';
@@ -21,8 +23,17 @@ export default function Home() {
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [headerActionMessage, setHeaderActionMessage] = useState('');
+  const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
+
+    if (cachedMovies.length) {
+      setMovies(cachedMovies);
+      setLoading(false);
+    }
+
     const fetchMovies = async () => {
       try {
         const data = dedupeSeriesMovies(await fetchPublicMovies());
@@ -40,25 +51,29 @@ export default function Home() {
     let mounted = true;
 
     const loadSessionUser = async () => {
-      try {
-        const response = await fetch('/api/auth/me', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
+      const cachedStatus = readCachedAuthStatus();
 
-        if (!mounted || !response.ok) {
+      if (mounted && cachedStatus?.authenticated) {
+        setSessionUser({
+          role: cachedStatus.user?.role === 'admin' ? 'admin' : 'user',
+          name: cachedStatus.user?.name || 'User',
+        });
+      }
+
+      try {
+        const status = await fetchAuthStatus();
+
+        if (!mounted || !status.authenticated) {
           return;
         }
-
-        const payload = await response.json();
 
         if (!mounted) {
           return;
         }
 
         setSessionUser({
-          role: payload.user?.role === 'admin' ? 'admin' : 'user',
-          name: payload.user?.name || 'User',
+          role: status.user?.role === 'admin' ? 'admin' : 'user',
+          name: status.user?.name || 'User',
         });
       } catch (error) {
         if (mounted) {
@@ -96,11 +111,22 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [latestForHero.length]);
 
+  useEffect(() => {
+    if (!headerActionMessage) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setHeaderActionMessage('');
+    }, 3200);
+
+    return () => window.clearTimeout(timeout);
+  }, [headerActionMessage]);
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#0B0C10] flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#1F2833] border-t-[#D90429] rounded-full animate-spin mb-4"></div>
-        <p className="text-[#D90429] font-bold tracking-widest animate-pulse">BOOTING UG MOVIES 247...</p>
       </main>
     );
   }
@@ -139,13 +165,105 @@ export default function Home() {
 
   // Hero Movie
   const heroMovie = latestForHero.length > 0 ? latestForHero[heroIndex] : (movies[0] || null);
+  const heroPlaybackUrl =
+    heroMovie?.video_url ||
+    heroMovie?.sourceUrl ||
+    heroMovie?.masterPlaylistUrl ||
+    '';
+  const unreadLatestUploadCount = countUnreadLatestUploads(movies);
+
+  const handleHeaderCast = async () => {
+    const videoElement = homeCastVideoRef.current;
+
+    if (!heroMovie) {
+      setHeaderActionMessage('Pick a movie first before casting.');
+      return;
+    }
+
+    if (heroMovie.isLocked) {
+      setHeaderActionMessage('Unlock this movie first before casting it.');
+      return;
+    }
+
+    if (!videoElement || !heroPlaybackUrl) {
+      setHeaderActionMessage('Casting is available when the featured movie has a playable source.');
+      return;
+    }
+
+    const castVideo = videoElement as HTMLVideoElement & {
+      remote?: {
+        prompt?: () => Promise<void>;
+        watchAvailability?: (callback: (available: boolean) => void) => Promise<number>;
+      };
+      webkitShowPlaybackTargetPicker?: () => void;
+      webkitCurrentPlaybackTargetIsWireless?: boolean;
+    };
+
+    try {
+      if (videoElement.src !== heroPlaybackUrl) {
+        videoElement.src = heroPlaybackUrl;
+        videoElement.load();
+      }
+
+      if (castVideo.remote && typeof castVideo.remote.prompt === 'function') {
+        if (typeof castVideo.remote.watchAvailability === 'function') {
+          const isAvailable = await new Promise<boolean>((resolve) => {
+            let settled = false;
+
+            castVideo.remote!.watchAvailability!((available: boolean) => {
+              if (!settled) {
+                settled = true;
+                resolve(available);
+              }
+            }).catch(() => {
+              if (!settled) {
+                settled = true;
+                resolve(true);
+              }
+            });
+
+            window.setTimeout(() => {
+              if (!settled) {
+                settled = true;
+                resolve(true);
+              }
+            }, 1200);
+          });
+
+          if (!isAvailable) {
+            setHeaderActionMessage('No cast devices were found on this network right now.');
+            return;
+          }
+        }
+
+        await castVideo.remote.prompt();
+        setHeaderActionMessage(`Casting picker opened for ${heroMovie.title}.`);
+        return;
+      }
+
+      if (typeof castVideo.webkitShowPlaybackTargetPicker === 'function') {
+        castVideo.webkitShowPlaybackTargetPicker();
+        setHeaderActionMessage(
+          castVideo.webkitCurrentPlaybackTargetIsWireless
+            ? `Casting ${heroMovie.title} to your connected device.`
+            : 'AirPlay device picker opened.'
+        );
+        return;
+      }
+
+      setHeaderActionMessage('Casting is not available in this browser. Open the movie page to cast from the player.');
+    } catch (error) {
+      console.error('[home] cast failed', error);
+      setHeaderActionMessage('We could not start casting. Check that your cast device is ready on the same network.');
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-24 md:pb-8">
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
-        <div className="flex items-center justify-between gap-3 gap-3">
+        <div className="flex items-center justify-between gap-3">
           <Link
             href="/"
             className="pointer-events-auto h-[38px] w-[68px] rounded-[22px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center overflow-hidden"
@@ -155,29 +273,46 @@ export default function Home() {
               alt="UG Movies 247"
               className="w-14 h-14 object-cover scale-125 translate-y-2"
             />
-</Link>
+          </Link>
 
-          <div className="pointer-events-auto h-[34px] w-[96px] px-1 rounded-[20px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-1.5">
-            <button className="text-white/90 hover:text-white transition-colors" aria-label="Cast">
-              <svg className="w-[20px] h-[20px]" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm18-6H5c-1.1 0-2 .9-2 2v3h2V6h14v12h-5v2h5c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2z"/>
-              </svg>
+          <div className="pointer-events-auto h-[46px] min-w-[138px] px-2.5 rounded-[24px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-3">
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              aria-label="Cast"
+              onClick={handleHeaderCast}
+            >
+              <Cast size={20} strokeWidth={2.2} />
             </button>
 
-            <Link href="/downloads" className="text-white/90 hover:text-white transition-colors" aria-label="Download">
-              <svg className="w-[20px] h-[20px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/>
-              </svg>
+            <Link
+              href="/downloads"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              aria-label="Download"
+            >
+              <Download size={20} strokeWidth={2.2} />
             </Link>
 
-            <Link href="/notifications" className="relative text-white/90 hover:text-white transition-colors" aria-label="Notifications">
-              <svg className="w-[20px] h-[20px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-              </svg>
-              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-[#1B2230]"></span>
+            <Link
+              href="/notifications"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              aria-label="Notifications"
+            >
+              <Bell size={20} strokeWidth={2.2} />
+              {unreadLatestUploadCount > 0 && (
+                <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full border border-[#1B2230] bg-red-500 px-1 py-[1px] text-center text-[9px] font-black leading-none text-white">
+                  {unreadLatestUploadCount > 9 ? '9+' : unreadLatestUploadCount}
+                </span>
+              )}
             </Link>
           </div>
         </div>
+        {headerActionMessage && (
+          <div className="mt-2 flex justify-end">
+            <div className="pointer-events-none max-w-[78vw] rounded-[18px] bg-[#1B2230]/62 px-3.5 py-2 text-right text-[10px] font-black uppercase tracking-[0.18em] text-white/85 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)]">
+              {headerActionMessage}
+            </div>
+          </div>
+        )}
         {sessionUser?.role === 'admin' && (
           <div className="mt-2 flex justify-end">
             <Link
@@ -188,6 +323,13 @@ export default function Home() {
             </Link>
           </div>
         )}
+        <video
+          ref={homeCastVideoRef}
+          className="hidden"
+          playsInline
+          preload="metadata"
+          crossOrigin="anonymous"
+        />
       </header>
 
       {/* Desktop Header */}
@@ -404,30 +546,6 @@ export default function Home() {
           />
         )}
 
-      </div>
-
-      {/* Mobile Bottom Navigation - Exact match to screenshot */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#0B0C10] border-t border-white/5 flex items-center justify-around px-2 z-50 md:hidden pb-safe">
-        <Link href="/" className="flex flex-col items-center gap-1 text-[#D90429] w-16">
-           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-           <span className="text-[10px] font-bold">Home</span>
-        </Link>
-        <Link href="/vjs" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-           <span className="text-[10px] font-bold">VJs</span>
-        </Link>
-        <Link href="/genres" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
-           <span className="text-[10px] font-bold">Genres</span>
-        </Link>
-        <Link href="/search" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-           <span className="text-[10px] font-bold">Search</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-           <span className="text-[10px] font-bold">Profile</span>
-        </Link>
       </div>
     </main>
   );

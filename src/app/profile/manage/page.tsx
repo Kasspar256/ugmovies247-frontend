@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { ArrowLeft, Bell, Smartphone, MonitorPlay, Maximize, AlertCircle, Save } from 'lucide-react';
 import { useState } from 'react';
+import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function SubSettingsPage() {
   const [loading, setLoading] = useState(false);
@@ -18,8 +19,9 @@ export default function SubSettingsPage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24">
-      {/* Universal Floating Header */}
-      <header className="fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] p-4 flex items-center gap-4 shadow-xl">
+      <MobilePageHeader title="App Settings" fallbackHref="/profile" />
+
+      <header className="hidden fixed top-0 left-0 w-full z-40 items-center gap-4 border-b border-[#1F2833] bg-[#0B0C10]/95 p-4 shadow-xl backdrop-blur-md md:flex">
         <Link href="/profile" className="text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
           <ArrowLeft size={20} />
         </Link>

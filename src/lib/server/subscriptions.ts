@@ -71,6 +71,20 @@ export function getSubscriptionSnapshotFromData(
   };
 }
 
+export function getEntitlementFromSubscriptionData(
+  data?: Partial<UserSubscriptionDocument> | Partial<SubscriptionSnapshot> | null
+): SubscriptionEntitlement {
+  const snapshot = getSubscriptionSnapshotFromData(
+    data as Partial<UserSubscriptionDocument> | null | undefined
+  );
+
+  return {
+    hasPremiumAccess: snapshot.isActive,
+    requiresSubscription: !snapshot.isActive,
+    subscription: snapshot,
+  };
+}
+
 export async function getCurrentSubscription(userId: string) {
   try {
     const snapshot = await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).get();

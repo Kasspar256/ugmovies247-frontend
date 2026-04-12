@@ -18,6 +18,7 @@ import { downloadRemoteSource } from './downloadSource';
 import { uploadDirectoryToR2 } from './r2';
 import { getFreeDiskSpace } from './system';
 import { prepareDirectMp4Source, uploadDirectMp4Asset } from './directVideoProcessor';
+import { upsertMovieInCatalogCache } from './movieCatalogCache';
 import {
   MOVIES_COLLECTION,
   VIDEO_JOBS_COLLECTION,
@@ -327,6 +328,8 @@ function buildR2Prefix(job: VideoJobDocument) {
 async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoAssetMetadata) {
   const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(target.movieId);
   const movieSnapshot = await movieRef.get();
+  const shouldRefreshCatalogCache =
+    asset.jobStatus === 'ready' || Boolean(asset.video_url || asset.masterPlaylistUrl);
 
   if (!movieSnapshot.exists) {
     throw new Error(`Movie ${target.movieId} no longer exists.`);
@@ -334,11 +337,21 @@ async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoA
 
   if (target.kind === 'movie') {
     await movieRef.set(asset, { merge: true });
+
+    if (shouldRefreshCatalogCache) {
+      await upsertMovieInCatalogCache({
+        id: target.movieId,
+        ...(movieSnapshot.data() || {}),
+        ...asset,
+      });
+    }
+
     return;
   }
 
   const movieData = movieSnapshot.data() as { seasons?: Array<Record<string, unknown>> };
   const seasons = Array.isArray(movieData.seasons) ? movieData.seasons : [];
+  const cacheUpdatedAt = isoNow();
 
   const updatedSeasons = seasons.map((season) => {
     if (Number(season.seasonNumber) !== target.seasonNumber) {
@@ -361,7 +374,16 @@ async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoA
     };
   });
 
-  await movieRef.set({ seasons: updatedSeasons, updatedAt: isoNow() }, { merge: true });
+  await movieRef.set({ seasons: updatedSeasons, updatedAt: cacheUpdatedAt }, { merge: true });
+
+  if (shouldRefreshCatalogCache) {
+    await upsertMovieInCatalogCache({
+      id: target.movieId,
+      ...movieData,
+      seasons: updatedSeasons,
+      updatedAt: cacheUpdatedAt,
+    });
+  }
 }
 
 function inferSourcePipeline(job: VideoJobDocument): SourcePipeline {

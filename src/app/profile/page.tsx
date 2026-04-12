@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft,
   Bell,
   Bookmark,
   Download,
+  Heart,
   LogOut,
   Mail,
   Save,
@@ -15,6 +15,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { logoutCurrentUser } from '@/lib/auth/client';
+import MobilePageHeader from '@/components/MobilePageHeader';
 
 type ProfileUser = {
   id: string;
@@ -139,15 +140,7 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
-      <header className="md:hidden fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] flex items-center p-4 shadow-xl">
-        <button
-          onClick={() => router.back()}
-          className="text-white hover:text-[#D90429] transition-colors absolute left-4 bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <h1 className="text-lg font-black text-white tracking-widest uppercase w-full text-center">My Account</h1>
-      </header>
+      <MobilePageHeader title="My Account" fallbackHref="/" />
 
       <div className="max-w-4xl mx-auto md:grid md:grid-cols-[0.9fr_1.1fr] md:gap-8 mt-4 md:mt-10">
         <div className="rounded-3xl border border-white/10 bg-[#11141C]/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
@@ -195,7 +188,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Link href="/watchlist" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold text-white hover:border-[#D90429] flex items-center gap-2">
               <Bookmark size={16} />
               My List
@@ -203,6 +196,10 @@ export default function ProfilePage() {
             <Link href="/downloads" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold text-white hover:border-[#D90429] flex items-center gap-2">
               <Download size={16} />
               Downloads
+            </Link>
+            <Link href="/likes" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold text-white hover:border-[#D90429] flex items-center gap-2">
+              <Heart size={16} />
+              My liked movies
             </Link>
           </div>
 

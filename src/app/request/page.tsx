@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Send, Clapperboard, Mic2, AlertCircle } from 'lucide-react';
+import { Send, Clapperboard, Mic2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { VJ_DIRECTORY } from '@/config/constants';
+import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function RequestPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,13 +55,7 @@ export default function RequestPage() {
         </div>
       )}
 
-      {/* Mobile Top App Bar */}
-      <header className="fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] flex items-center p-4 shadow-xl md:hidden">
-        <Link href="/profile" className="text-white hover:text-[#D90429] transition-colors absolute left-4 bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-black text-white tracking-widest uppercase w-full text-center">Request Movie</h1>
-      </header>
+      <MobilePageHeader title="Request Movie" fallbackHref="/" />
 
       {/* Main Content */}
       <div className="pt-24 md:pt-32 px-4 max-w-2xl mx-auto">

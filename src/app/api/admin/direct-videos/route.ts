@@ -198,6 +198,7 @@ async function createDirectSeriesDocument(options: {
     sourceType: 'remote_link',
     sourcePipeline: 'remote_mp4_ingest',
     video_url: '',
+    sourceUrl: '',
     seasons: normalizedSeasons,
     processedAt: timestamp,
     updatedAt: timestamp,

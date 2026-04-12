@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Film, Home, Search as SearchIcon } from 'lucide-react';
+import { Search as SearchIcon } from 'lucide-react';
 import { type Movie } from '@/types/movie';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import MobilePageHeader from '@/components/MobilePageHeader';
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Comedy", "Crime", 
@@ -22,6 +23,13 @@ export default function GenresDirectory() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cachedMovies = readCachedPublicMovies();
+
+    if (cachedMovies.length) {
+      setMovies(cachedMovies);
+      setLoading(false);
+    }
+
     const fetchMovies = async () => {
       try {
         const data = await fetchPublicMovies();
@@ -66,16 +74,14 @@ export default function GenresDirectory() {
         </div>
       </header>
       
-      {/* Mobile Header fixed static */}
-      <header className="md:hidden fixed top-0 left-0 w-full z-40 bg-[#0B0C10]/95 backdrop-blur-md border-b border-[#1F2833] flex items-center justify-between p-4 shadow-xl">
-        <div className="flex items-center">
-           <Film className="text-[#D90429] mr-3" size={24} />
-           <h1 className="text-xl font-black text-white tracking-widest uppercase truncate">Movie Genres</h1>
-        </div>
-        <Link href="/search" className="text-[#888888] hover:text-white transition-colors">
-           <SearchIcon size={24} />
-        </Link>
-      </header>
+      <MobilePageHeader
+        title="Movie Genres"
+        subtitle="Browse by category"
+        fallbackHref="/"
+        actionHref="/search"
+        actionIcon={<SearchIcon size={18} />}
+        actionAriaLabel="Search movies"
+      />
 
       <div className="mt-4 md:mt-10 max-w-7xl mx-auto">
         <h2 className="hidden md:block text-3xl font-black text-white uppercase tracking-widest mb-2 border-l-4 border-[#D90429] pl-4 drop-shadow-md">Explore Categories</h2>
@@ -129,31 +135,6 @@ export default function GenresDirectory() {
           ))}
         </div>
       </div>
-      
-      {/* Shared Bottom Nav */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#0B0C10] border-t border-white/5 flex items-center justify-around px-2 z-50 md:hidden pb-safe">
-        <Link href="/" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-           <span className="text-[10px] font-bold">Home</span>
-        </Link>
-        <Link href="/vjs" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-           <span className="text-[10px] font-bold">VJs</span>
-        </Link>
-        <Link href="/genres" className="flex flex-col items-center gap-1 text-[#D90429] w-16 transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
-           <span className="text-[10px] font-bold">Genres</span>
-        </Link>
-        <Link href="/search" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-           <span className="text-[10px] font-bold">Search</span>
-        </Link>
-        <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 w-16 hover:text-[#D90429] transition-colors">
-           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-           <span className="text-[10px] font-bold">Profile</span>
-        </Link>
-      </div>
-
     </div>
   );
 }

@@ -1,11 +1,18 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
-import { getAuthDevDiagnostics, getFirebaseAuthErrorMessage, signupWithEmailPassword } from '@/lib/auth/client';
+import GoogleAuthButton from '@/components/GoogleAuthButton';
+import {
+  completeGoogleRedirectSignIn,
+  continueWithGoogle,
+  getAuthDevDiagnostics,
+  getFirebaseAuthErrorMessage,
+  signupWithEmailPassword,
+} from '@/lib/auth/client';
 
 export default function SignupPage() {
   const searchParams = useSearchParams();
@@ -17,8 +24,44 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    const finishRedirectSignup = async () => {
+      setGoogleLoading(true);
+
+      try {
+        const result = await completeGoogleRedirectSignIn();
+
+        if (!active || !result?.session) {
+          return;
+        }
+
+        window.location.assign(redirectTarget);
+      } catch (authError) {
+        if (!active) {
+          return;
+        }
+
+        setError(getFirebaseAuthErrorMessage(authError));
+        setDevDiagnostics(getAuthDevDiagnostics(authError));
+      } finally {
+        if (active) {
+          setGoogleLoading(false);
+        }
+      }
+    };
+
+    void finishRedirectSignup();
+
+    return () => {
+      active = false;
+    };
+  }, [redirectTarget]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,6 +105,26 @@ export default function SignupPage() {
     }
   };
 
+  const handleGoogleSignup = async () => {
+    setError('');
+    setDevDiagnostics([]);
+    setGoogleLoading(true);
+
+    try {
+      const result = await continueWithGoogle({ rememberMe: true });
+
+      if (result.redirected) {
+        return;
+      }
+
+      window.location.assign(redirectTarget);
+    } catch (authError) {
+      setError(getFirebaseAuthErrorMessage(authError));
+      setDevDiagnostics(getAuthDevDiagnostics(authError));
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0B0C10] relative overflow-hidden">
       <div
@@ -100,7 +163,23 @@ export default function SignupPage() {
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-4">
+              <GoogleAuthButton
+                onClick={handleGoogleSignup}
+                disabled={loading}
+                loading={googleLoading}
+                idleLabel="Sign up with Google"
+                loadingLabel="Connecting with Google..."
+              />
+
+              <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.26em] text-white/35">
+                <div className="h-px flex-1 bg-white/10" />
+                <span>Or create with email</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
               <label className="block">
                 <span className="mb-2 block text-xs font-bold uppercase tracking-[0.25em] text-white/60">
                   Name
@@ -197,7 +276,7 @@ export default function SignupPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || googleLoading}
                 className="w-full rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-colors hover:bg-[#b00320] disabled:cursor-not-allowed disabled:bg-[#5E1623]"
               >
                 {loading ? 'Creating Account...' : 'Create Account'}

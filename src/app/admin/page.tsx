@@ -36,6 +36,39 @@ type AdminSeasonInput = {
   episodes: AdminEpisodeInput[];
 };
 
+type LibraryItemKind = 'movie' | 'series' | 'episode';
+
+type LibraryItem = {
+  key: string;
+  movieId: string;
+  title: string;
+  editorTitle: string;
+  kind: LibraryItemKind;
+  playbackType: 'hls' | 'mp4';
+  sourcePipeline?: SourcePipeline;
+  status: 'failed' | 'processing' | 'ready' | 'draft';
+  updatedAt: string;
+  subtitle: string;
+  canDelete: boolean;
+  poster: string;
+  description: string;
+  vj: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+};
+
+type LibraryEditorState = {
+  key: string;
+  movieId: string;
+  kind: LibraryItemKind;
+  title: string;
+  description: string;
+  poster: string;
+  vj: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+};
+
 async function parseApiResponse(response: Response) {
   const rawText = await response.text();
 
@@ -184,9 +217,9 @@ type MultipartUploadInitPayload = {
 };
 
 const PART_UPLOAD_REQUEST_TIMEOUT_MS = 1000 * 60 * 10;
-const PART_UPLOAD_MAX_RETRIES = 3;
-const PART_UPLOAD_CONCURRENCY = 5;
-const DIRECT_MULTIPART_PART_SIZE_BYTES = 25 * 1024 * 1024;
+const PART_UPLOAD_MAX_RETRIES = 4;
+const PART_UPLOAD_CONCURRENCY = 3;
+const DIRECT_MULTIPART_PART_SIZE_BYTES = 10 * 1024 * 1024;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -388,6 +421,9 @@ export default function AdminDashboard() {
   const [libraryStatus, setLibraryStatus] = useState('');
   const [libraryLoadError, setLibraryLoadError] = useState('');
   const [libraryActionId, setLibraryActionId] = useState('');
+  const [libraryEditor, setLibraryEditor] = useState<LibraryEditorState | null>(null);
+  const [libraryEditorStatus, setLibraryEditorStatus] = useState('');
+  const [libraryEditSaving, setLibraryEditSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const clearCustomPosterOverride = () => {
@@ -416,6 +452,33 @@ export default function AdminDashboard() {
     setIsTrending(false);
     setSeriesSeasons(getSeasonStarter());
     setContentType('movie');
+  };
+
+  const closeLibraryEditor = () => {
+    setLibraryEditor(null);
+    setLibraryEditorStatus('');
+    setLibraryEditSaving(false);
+  };
+
+  const openLibraryEditor = (item: LibraryItem) => {
+    setLibraryEditorStatus('');
+    setLibraryEditor({
+      key: item.key,
+      movieId: item.movieId,
+      kind: item.kind,
+      title: item.editorTitle,
+      description: item.description,
+      poster: item.poster,
+      vj: item.vj,
+      seasonNumber: item.seasonNumber,
+      episodeNumber: item.episodeNumber,
+    });
+  };
+
+  const replaceLibraryMovie = (updatedMovie: Movie) => {
+    setLibraryMovies((current) =>
+      current.map((movie) => (movie.id === updatedMovie.id ? updatedMovie : movie))
+    );
   };
 
   const resetHlsForm = () => {
@@ -1058,7 +1121,10 @@ export default function AdminDashboard() {
       }
 
       setDirectStatus('Direct MP4 upload published successfully.');
-      setDirectDiagnostics((prev) => `${prev}\n[PUBLISH] Direct MP4 saved and ready for playback.`);
+      setDirectDiagnostics(
+        (prev) =>
+          `${prev}\n[PUBLISH] Direct MP4 saved and ready for playback.`
+      );
       await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
 
       setTimeout(resetDirectForm, 1200);
@@ -1242,6 +1308,123 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleLibraryEditorPosterUpload = async (file: File) => {
+    if (!libraryEditor) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setLibraryEditorStatus('Choose an image file for the replacement poster.');
+      return;
+    }
+
+    const extensionFromType = file.type.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'jpg';
+    const posterKeySeed =
+      slugifyPosterKey(libraryEditor.title || libraryEditor.movieId) || libraryEditor.movieId;
+    const posterFileName = `library-poster-${posterKeySeed}.${extensionFromType}`;
+
+    setLibraryEditorStatus('Uploading replacement poster...');
+
+    try {
+      const response = await fetch('/api/admin/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: posterFileName,
+          fileType: file.type || 'image/jpeg',
+        }),
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          payload.payload.error || payload.payload.detail || 'Failed to prepare poster upload.'
+        );
+      }
+
+      const { signedUrl, publicUrl } = payload.payload as {
+        signedUrl?: string;
+        publicUrl?: string;
+      };
+
+      if (!signedUrl || !publicUrl) {
+        throw new Error('Poster upload URL response was incomplete.');
+      }
+
+      await uploadImageToSignedUrl(file, signedUrl);
+
+      setLibraryEditor((current) =>
+        current
+          ? {
+              ...current,
+              poster: publicUrl,
+            }
+          : current
+      );
+      setLibraryEditorStatus('Replacement poster uploaded. Save changes to publish it.');
+    } catch (error) {
+      setLibraryEditorStatus(
+        error instanceof Error ? error.message : 'Replacement poster upload failed.'
+      );
+    }
+  };
+
+  const handleSaveLibraryEdit = async () => {
+    if (!libraryEditor) {
+      return;
+    }
+
+    setLibraryEditSaving(true);
+    setLibraryEditorStatus('');
+    setLibraryStatus('');
+
+    try {
+      const query =
+        libraryEditor.kind === 'episode' &&
+        typeof libraryEditor.seasonNumber === 'number' &&
+        typeof libraryEditor.episodeNumber === 'number'
+          ? `?seasonNumber=${libraryEditor.seasonNumber}&episodeNumber=${libraryEditor.episodeNumber}`
+          : '';
+
+      const response = await fetch(`/api/admin/movies/${libraryEditor.movieId}${query}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: libraryEditor.title,
+          description: libraryEditor.description,
+          poster: libraryEditor.poster,
+          ...(libraryEditor.kind === 'episode' ? {} : { vj: libraryEditor.vj }),
+        }),
+      });
+      const payload = await parseApiResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          payload.payload.detail || payload.payload.error || 'Failed to save library changes.'
+        );
+      }
+
+      const updatedMoviePayload = payload.payload.movie as Record<string, unknown> | undefined;
+
+      if (updatedMoviePayload) {
+        replaceLibraryMovie(
+          normalizeMovie(String(updatedMoviePayload.id || libraryEditor.movieId), updatedMoviePayload)
+        );
+      } else {
+        await loadLibraryMovies();
+      }
+
+      setLibraryStatus(`Saved changes to "${libraryEditor.title}" successfully.`);
+      closeLibraryEditor();
+    } catch (error) {
+      setLibraryEditorStatus(
+        error instanceof Error ? error.message : 'Failed to save library changes.'
+      );
+    } finally {
+      setLibraryEditSaving(false);
+    }
+  };
+
   const getJobTypeLabel = (job: VideoJobDocument) => {
     switch (job.jobType || 'hls_transcode') {
       case 'hls_transcode':
@@ -1380,26 +1563,14 @@ export default function AdminDashboard() {
   }, [videoJobs]);
 
   const libraryItems = useMemo(() => {
-    const items: Array<{
-      key: string;
-      movieId: string;
-      title: string;
-      kind: 'movie' | 'series' | 'episode';
-      playbackType: 'hls' | 'mp4';
-      sourcePipeline?: SourcePipeline;
-      status: 'failed' | 'processing' | 'ready' | 'draft';
-      updatedAt: string;
-      subtitle: string;
-      canDelete: boolean;
-      seasonNumber?: number;
-      episodeNumber?: number;
-    }> = [];
+    const items: LibraryItem[] = [];
 
     for (const movie of libraryMovies) {
       items.push({
         key: movie.id,
         movieId: movie.id,
         title: movie.title,
+        editorTitle: movie.title,
         kind: movie.contentType === 'series' ? 'series' : 'movie',
         playbackType: movie.playbackType || 'mp4',
         sourcePipeline: movie.sourcePipeline,
@@ -1407,6 +1578,9 @@ export default function AdminDashboard() {
         updatedAt: movie.updatedAt || movie.date_added || '',
         subtitle: movie.vj || 'Unknown VJ',
         canDelete: true,
+        poster: movie.poster || '',
+        description: movie.description || movie.overview || '',
+        vj: movie.vj || 'Unknown',
       });
 
       if (movie.contentType === 'series' && Array.isArray(movie.seasons)) {
@@ -1425,6 +1599,7 @@ export default function AdminDashboard() {
               key: `${movie.id}-s${season.seasonNumber}-e${episode.episodeNumber}`,
               movieId: movie.id,
               title: `${movie.title} - ${episode.title}`,
+              editorTitle: episode.title,
               kind: 'episode',
               playbackType: episode.playbackType || 'mp4',
               sourcePipeline: episode.sourcePipeline || movie.sourcePipeline,
@@ -1433,6 +1608,9 @@ export default function AdminDashboard() {
               canDelete: true,
               seasonNumber: season.seasonNumber,
               episodeNumber: episode.episodeNumber,
+              poster: episode.poster || movie.poster || '',
+              description: episode.description || '',
+              vj: movie.vj || 'Unknown',
               subtitle: `Season ${season.seasonNumber} • Episode ${episode.episodeNumber}`,
             });
           }
@@ -2168,7 +2346,7 @@ export default function AdminDashboard() {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <h2 className="text-red-500 font-bold text-lg">Library</h2>
-                  <p className="text-sm text-gray-500">Review your published titles and delete them directly from admin when needed.</p>
+                  <p className="text-sm text-gray-500">Review your published titles, fix metadata mistakes, and delete them directly from admin when needed.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {([
@@ -2203,7 +2381,7 @@ export default function AdminDashboard() {
             </section>
 
             <section className="bg-black p-6 rounded-md border border-neutral-800">
-              <div className="hidden lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_140px] gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-500 border-b border-neutral-800">
+              <div className="hidden lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_220px] gap-4 px-4 py-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-500 border-b border-neutral-800">
                 <div>Title</div>
                 <div>Kind</div>
                 <div>Playback</div>
@@ -2224,7 +2402,7 @@ export default function AdminDashboard() {
                       key={movie.key}
                       className="rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-4"
                     >
-                      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_140px] lg:items-center lg:gap-4">
+                      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[1.4fr_100px_110px_180px_120px_140px_220px] lg:items-center lg:gap-4">
                         <div className="min-w-0">
                           <div className="font-bold text-white truncate">{movie.title}</div>
                           <div className="text-xs text-gray-500 truncate mt-1">{movie.subtitle}</div>
@@ -2253,7 +2431,13 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                          <div className="flex items-center justify-start lg:justify-end">
+                          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                            <button
+                              onClick={() => openLibraryEditor(movie)}
+                              className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-gray-200 transition-colors hover:bg-neutral-800"
+                            >
+                              Edit
+                            </button>
                             {movie.canDelete ? (
                               <button
                                 onClick={() =>
@@ -2290,6 +2474,188 @@ export default function AdminDashboard() {
                 )}
               </div>
             </section>
+
+            {libraryEditor && (
+              <div className="fixed inset-0 z-[90] overflow-y-auto bg-black/80 p-3 backdrop-blur-sm md:flex md:items-center md:justify-center md:p-4">
+                <div className="mx-auto flex min-h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col rounded-3xl border border-neutral-800 bg-neutral-950 shadow-[0_30px_80px_rgba(0,0,0,0.6)] md:min-h-0 md:max-h-[calc(100dvh-2rem)]">
+                  <div className="flex flex-col gap-3 border-b border-neutral-800 p-6 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.24em] text-red-400">
+                        Library Editor
+                      </div>
+                      <h3 className="mt-2 text-xl font-black text-white">
+                        {libraryEditor.kind === 'episode' ? 'Edit Episode Metadata' : 'Edit Title Metadata'}
+                      </h3>
+                      <p className="mt-2 text-sm text-gray-400">
+                        Fix the poster, title, VJ, or description without deleting and uploading again.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={closeLibraryEditor}
+                      className="rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-gray-300 hover:bg-neutral-800"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="grid flex-1 gap-6 overflow-y-auto p-6 pb-4 md:grid-cols-[220px_1fr]">
+                    <div className="space-y-4">
+                      <div className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
+                        <img
+                          src={libraryEditor.poster || getPosterFallbackUrl()}
+                          alt={libraryEditor.title}
+                          className="aspect-[2/3] w-full object-cover"
+                        />
+                      </div>
+
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.22em] text-gray-500">
+                          Replace Poster Image
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+
+                            if (file) {
+                              void handleLibraryEditorPosterUpload(file);
+                            }
+
+                            event.currentTarget.value = '';
+                          }}
+                          className="block w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-3 text-xs text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-red-700 file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="space-y-4">
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.22em] text-gray-500">
+                          Title
+                        </span>
+                        <input
+                          type="text"
+                          value={libraryEditor.title}
+                          onChange={(event) =>
+                            setLibraryEditor((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    title: event.target.value,
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-white outline-none focus:border-red-700"
+                        />
+                      </label>
+
+                      {libraryEditor.kind !== 'episode' && (
+                        <label className="block">
+                          <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.22em] text-gray-500">
+                            VJ
+                          </span>
+                          <input
+                            type="text"
+                            value={libraryEditor.vj}
+                            onChange={(event) =>
+                              setLibraryEditor((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      vj: event.target.value,
+                                    }
+                                  : current
+                              )
+                            }
+                            className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-white outline-none focus:border-red-700"
+                          />
+                        </label>
+                      )}
+
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.22em] text-gray-500">
+                          Poster URL
+                        </span>
+                        <input
+                          type="text"
+                          value={libraryEditor.poster}
+                          onChange={(event) =>
+                            setLibraryEditor((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    poster: event.target.value,
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-white outline-none focus:border-red-700"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.22em] text-gray-500">
+                          Description
+                        </span>
+                        <textarea
+                          rows={5}
+                          value={libraryEditor.description}
+                          onChange={(event) =>
+                            setLibraryEditor((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    description: event.target.value,
+                                  }
+                                : current
+                            )
+                          }
+                          className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-white outline-none focus:border-red-700"
+                        />
+                      </label>
+
+                    </div>
+                  </div>
+
+                  <div className="border-t border-neutral-800 bg-neutral-950 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] md:px-6 md:pb-6">
+                    {libraryEditorStatus && (
+                      <div
+                        className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                          libraryEditorStatus.toLowerCase().includes('failed') ||
+                          libraryEditorStatus.toLowerCase().includes('error')
+                            ? 'border-red-800 bg-red-950/40 text-red-200'
+                            : 'border-emerald-800 bg-emerald-950/30 text-emerald-200'
+                        }`}
+                      >
+                        {libraryEditorStatus}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={closeLibraryEditor}
+                        className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-gray-300 hover:bg-neutral-800 sm:w-auto"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveLibraryEdit()}
+                        disabled={libraryEditSaving}
+                        className="w-full rounded-lg bg-red-700 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      >
+                        {libraryEditSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

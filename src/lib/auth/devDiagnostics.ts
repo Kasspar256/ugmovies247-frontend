@@ -26,7 +26,17 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
     case 'auth/quota-exceeded':
       return 'Firebase auth quota is temporarily exhausted. Please wait a bit and try again.';
     case 'auth/operation-not-allowed':
-      return 'Email/Password sign-in is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
+      return 'This sign-in method is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
+    case 'auth/popup-blocked':
+      return 'The Google sign-in popup was blocked. Allow popups or retry and the app will redirect you to Google.';
+    case 'auth/popup-closed-by-user':
+      return 'Google sign-in was closed before it finished.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorized for Google sign-in in Firebase Authentication settings.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account with this email already exists with a different sign-in method.';
+    case 'auth/network-request-failed':
+      return 'Network request failed. Check your internet connection and try again.';
     default:
       if (/RESOURCE_EXHAUSTED|quota exceeded/i.test(message)) {
         return 'Firebase auth quota is temporarily exhausted. Please wait a bit and try again.';
@@ -58,7 +68,11 @@ export function getAuthDevDiagnostics(error: unknown) {
   }
 
   if (code === 'auth/operation-not-allowed') {
-    diagnostics.push('DEV action needed: enable Email/Password in Firebase Console > Authentication > Sign-in method for this DEV project.');
+    diagnostics.push('DEV action needed: enable Email/Password and Google in Firebase Console > Authentication > Sign-in method for this DEV project.');
+  }
+
+  if (code === 'auth/unauthorized-domain') {
+    diagnostics.push('DEV action needed: add your current domain to Firebase Console > Authentication > Settings > Authorized domains.');
   }
 
   if (/secure session|session/i.test(message)) {

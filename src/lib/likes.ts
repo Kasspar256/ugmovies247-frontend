@@ -1,152 +1,51 @@
-import { db } from '@/lib/firebase';
-import { getClientDownloadUserId } from '@/lib/downloads';
 import type { LikeMovieInput, LikeRecord } from '@/types/likes';
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  type DocumentData,
-} from 'firebase/firestore';
-import type { FirebaseError } from 'firebase/app';
 
-export function getLikeDocumentId(userId: string, movieId: string) {
-  return encodeURIComponent(`${userId}__${movieId}`);
+async function parseResponse<T>(response: Response) {
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Request failed.');
+  }
+
+  return payload;
 }
 
-function normalizeLikeRecord(id: string, data: DocumentData): LikeRecord {
-  return {
-    id,
-    movieId: String(data.movieId || ''),
-    title: String(data.title || 'Untitled movie'),
-    poster: String(data.poster || ''),
-    userId: String(data.userId || ''),
-    likedAt: data.likedAt || null,
-  };
-}
-
-function logLikeFirebaseError(stage: string, error: unknown, context: Record<string, unknown>) {
-  const firebaseError = error as FirebaseError & { customData?: unknown };
-
-  console.error(`[likes] ${stage} failed`, {
-    context,
-    code: firebaseError?.code || 'unknown',
-    message: firebaseError?.message || String(error),
-    customData: firebaseError?.customData || null,
-    fullError: error,
+export async function getUserLikedMovie(movieId: string) {
+  const response = await fetch(`/api/user/likes?movieId=${encodeURIComponent(movieId)}`, {
+    credentials: 'include',
+    cache: 'no-store',
   });
-}
 
-export async function getUserLikedMovie(movieId: string, userId?: string) {
-  const resolvedUserId = userId || (await getClientDownloadUserId());
-  const likeRef = doc(db, 'likes', getLikeDocumentId(resolvedUserId, movieId));
-  let snapshot;
-
-  try {
-    snapshot = await getDoc(likeRef);
-  } catch (error) {
-    logLikeFirebaseError('getDoc(like state)', error, {
-      movieId,
-      userId: resolvedUserId,
-      likeId: getLikeDocumentId(resolvedUserId, movieId),
-      collection: 'likes',
-    });
-    throw error;
-  }
-
-  if (!snapshot.exists()) {
-    return null;
-  }
-
-  return normalizeLikeRecord(snapshot.id, snapshot.data());
+  const payload = await parseResponse<{ record: LikeRecord | null }>(response);
+  return payload.record;
 }
 
 export async function saveMovieLike(movie: LikeMovieInput) {
-  const userId = await getClientDownloadUserId();
-  const likeId = getLikeDocumentId(userId, movie.movieId);
-  const likeRef = doc(db, 'likes', likeId);
-  const payload = {
-    movieId: String(movie.movieId),
-    title: String(movie.title || 'Untitled movie'),
-    poster: String(movie.poster || ''),
-    userId,
-    likedAt: serverTimestamp(),
-  };
-
-  console.log('[likes] saveMovieLike:start', {
-    movieId: payload.movieId,
-    userId,
-    likeId,
-    collection: 'likes',
-    payload: {
-      ...payload,
-      likedAt: 'serverTimestamp()',
-    },
+  const response = await fetch('/api/user/likes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(movie),
   });
 
-  try {
-    await setDoc(likeRef, payload);
-    console.log('[likes] saveMovieLike:write-success', {
-      movieId: payload.movieId,
-      userId,
-      likeId,
-    });
-  } catch (error) {
-    logLikeFirebaseError('setDoc(like write)', error, {
-      movieId: payload.movieId,
-      userId,
-      likeId,
-      collection: 'likes',
-      payloadKeys: Object.keys(payload),
-    });
-    throw error;
-  }
-
-  return { alreadyExists: false, userId, id: likeId };
+  return parseResponse<{ alreadyExists: boolean; record: LikeRecord }>(response);
 }
 
 export async function removeMovieLike(movieId: string) {
-  const userId = await getClientDownloadUserId();
-  const likeId = getLikeDocumentId(userId, movieId);
-  const likeRef = doc(db, 'likes', likeId);
+  const response = await fetch(`/api/user/likes?movieId=${encodeURIComponent(movieId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
 
-  try {
-    await deleteDoc(likeRef);
-    console.log('[likes] removeMovieLike:delete-success', {
-      movieId,
-      userId,
-      likeId,
-    });
-  } catch (error) {
-    logLikeFirebaseError('deleteDoc(like remove)', error, {
-      movieId,
-      userId,
-      likeId,
-      collection: 'likes',
-    });
-    throw error;
-  }
-
-  return { removed: true, userId, id: likeId };
+  return parseResponse<{ removed: boolean }>(response);
 }
 
-export async function fetchUserLikes(userId: string) {
-  const likesQuery = query(
-    collection(db, 'likes'),
-    where('userId', '==', userId)
-  );
-  const snapshot = await getDocs(likesQuery);
+export async function fetchUserLikes(_userId?: string) {
+  const response = await fetch('/api/user/likes', {
+    credentials: 'include',
+    cache: 'no-store',
+  });
 
-  return snapshot.docs
-    .map((likeDoc) => normalizeLikeRecord(likeDoc.id, likeDoc.data()))
-    .sort((a, b) => {
-      const first = a.likedAt?.seconds || 0;
-      const second = b.likedAt?.seconds || 0;
-      return second - first;
-    });
+  const payload = await parseResponse<{ records: LikeRecord[] }>(response);
+  return payload.records || [];
 }
