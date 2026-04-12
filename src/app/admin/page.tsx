@@ -2,10 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { extractMovieData } from '@/lib/movieUtils';
-import type { Season, Movie } from '@/types/movie';
+import { normalizeMovie, type Season, type Movie } from '@/types/movie';
 import { MANUAL_HOME_CATEGORIES, type ManualHomeCategory } from '@/lib/homeCategories';
 import type { SourcePipeline, VideoJobDocument } from '@/types/videoJobs';
-import { fetchPublicMovies } from '@/lib/publicMovies';
 
 type AdminTab = 'direct' | 'queue' | 'library' | 'hls';
 type HlsMode = 'upload' | 'link';
@@ -471,27 +470,50 @@ export default function AdminDashboard() {
     contentType,
   });
 
-  const loadAdminData = async () => {
+  const loadVideoJobs = async () => {
     try {
-      const [jobsResponse, movies] = await Promise.all([
-        fetch('/api/admin/video-jobs', { cache: 'no-store' }),
-        fetchPublicMovies(),
-      ]);
+      const jobsResponse = await fetch('/api/admin/video-jobs', { cache: 'no-store' });
       const jobsPayload = await parseApiResponse(jobsResponse);
 
       if (jobsResponse.ok) {
         setVideoJobs(jobsPayload.payload.jobs || []);
       }
+    } catch (error) {
+      console.error('[admin] jobs refresh failed', error);
+    }
+  };
+
+  const loadLibraryMovies = async () => {
+    try {
+      const response = await fetch('/api/admin/movies', {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.detail || payload.error || 'Failed to load admin movies.');
+      }
+
+      const movies = Array.isArray(payload.movies)
+        ? payload.movies.map((movie: Record<string, unknown>) =>
+            normalizeMovie(String(movie.id || ''), movie)
+          )
+        : [];
 
       setLibraryMovies(movies);
     } catch (error) {
-      console.error('[admin] data refresh failed', error);
+      console.error('[admin] library refresh failed', error);
     }
+  };
+
+  const loadAdminData = async () => {
+    await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
   };
 
   useEffect(() => {
     loadAdminData();
-    const interval = setInterval(loadAdminData, 5000);
+    const interval = setInterval(loadVideoJobs, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -680,7 +702,7 @@ export default function AdminDashboard() {
       setHlsProgress(100);
       setHlsStatus(`Queued ${queuePayload.payload.queued || 1} HLS job(s).`);
       setHlsDiagnostics((prev) => `${prev}\n[UPLOAD] Source received by backend.\n[QUEUE] HLS job created successfully.`);
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
       await triggerQueueProcessor();
       setTimeout(resetHlsForm, 1200);
     } catch (error) {
@@ -751,7 +773,7 @@ export default function AdminDashboard() {
         setHlsStatus(`Queued ${payload.payload.queued || 1} HLS job(s).`);
       }
 
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
       await triggerQueueProcessor();
       setTimeout(resetHlsForm, 1200);
     } catch (error) {
@@ -809,7 +831,7 @@ export default function AdminDashboard() {
       }
 
       setHlsStatus(`Queued ${queued} HLS bulk job(s).`);
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
       await triggerQueueProcessor();
       setHlsBulkFiles([]);
     } catch (error) {
@@ -858,7 +880,7 @@ export default function AdminDashboard() {
 
       setHlsStatus(`Queued ${payload.payload.queued || links.length} HLS remote job(s).`);
       setHlsBulkRemoteLinks('');
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
       await triggerQueueProcessor();
     } catch (error) {
       setHlsStatus(error instanceof Error ? error.message : 'Failed to queue remote HLS links.');
@@ -1028,7 +1050,7 @@ export default function AdminDashboard() {
 
       setDirectStatus('Direct MP4 upload published successfully.');
       setDirectDiagnostics((prev) => `${prev}\n[PUBLISH] Direct MP4 saved and ready for playback.`);
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
 
       setTimeout(resetDirectForm, 1200);
     } catch (error) {
@@ -1112,7 +1134,7 @@ export default function AdminDashboard() {
         setDirectStatus('Existing cloud MP4 linked successfully.');
       }
 
-      await loadAdminData();
+      await Promise.all([loadVideoJobs(), loadLibraryMovies()]);
       setTimeout(resetDirectForm, 1200);
     } catch (error) {
       setDirectStatus(error instanceof Error ? error.message : 'Failed to publish direct content.');
@@ -1123,13 +1145,13 @@ export default function AdminDashboard() {
 
   const handleRetryJob = async (jobId: string) => {
     await fetch(`/api/admin/video-jobs/${jobId}/retry`, { method: 'POST' });
-    await loadAdminData();
+    await loadVideoJobs();
     await triggerQueueProcessor();
   };
 
   const handleCancelJob = async (jobId: string) => {
     await fetch(`/api/admin/video-jobs/${jobId}/cancel`, { method: 'POST' });
-    await loadAdminData();
+    await loadVideoJobs();
   };
 
   const handleDeleteLibraryMovie = async (movieId: string, title: string) => {
@@ -1150,8 +1172,8 @@ export default function AdminDashboard() {
         throw new Error(payload.payload.detail || payload.payload.error || 'Failed to delete movie.');
       }
 
+      setLibraryMovies((current) => current.filter((movie) => movie.id !== movieId));
       setLibraryStatus(`Deleted "${title}" successfully.`);
-      await loadAdminData();
     } catch (error) {
       setLibraryStatus(error instanceof Error ? error.message : 'Failed to delete movie.');
     } finally {
