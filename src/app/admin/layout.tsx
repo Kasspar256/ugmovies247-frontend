@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
+const ADMIN_VERIFY_TIMEOUT_MS = 8000;
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -11,6 +13,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     let mounted = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ADMIN_VERIFY_TIMEOUT_MS);
 
     const verifyAdmin = async () => {
       if (pathname === '/admin/login') {
@@ -20,14 +24,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       try {
-        const response = await fetch('/api/auth/me');
-        const payload = await response.json();
+        const response = await fetch('/api/admin', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
 
         if (!mounted) {
           return;
         }
 
-        if (!response.ok || payload.user?.role !== 'admin') {
+        if (!response.ok) {
           router.replace(`/admin/login?redirect=${encodeURIComponent(pathname)}`);
           setAllowed(false);
           setLoading(false);
@@ -41,6 +47,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           setAllowed(false);
         }
       } finally {
+        clearTimeout(timeout);
+
         if (mounted) {
           setLoading(false);
         }
@@ -51,6 +59,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     return () => {
       mounted = false;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [pathname, router]);
 
