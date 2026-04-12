@@ -385,6 +385,7 @@ export default function AdminDashboard() {
   const [libraryMovies, setLibraryMovies] = useState<Movie[]>([]);
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'mp4' | 'failed' | 'ready' | 'processing'>('all');
   const [libraryStatus, setLibraryStatus] = useState('');
+  const [libraryLoadError, setLibraryLoadError] = useState('');
   const [libraryActionId, setLibraryActionId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -485,6 +486,7 @@ export default function AdminDashboard() {
 
   const loadLibraryMovies = async () => {
     try {
+      setLibraryLoadError('');
       const response = await fetch('/api/admin/movies', {
         credentials: 'include',
         cache: 'no-store',
@@ -504,6 +506,7 @@ export default function AdminDashboard() {
       setLibraryMovies(movies);
     } catch (error) {
       console.error('[admin] library refresh failed', error);
+      setLibraryLoadError(error instanceof Error ? error.message : 'Failed to load library movies.');
     }
   };
 
@@ -2127,6 +2130,12 @@ export default function AdminDashboard() {
               {libraryStatus && (
                 <div className={`mt-4 rounded-md border p-3 text-sm ${libraryStatus.toLowerCase().includes('failed') || libraryStatus.toLowerCase().includes('error') ? 'border-red-700 bg-red-950/40 text-red-200' : 'border-emerald-800 bg-emerald-950/30 text-emerald-200'}`}>
                   {libraryStatus}
+                </div>
+              )}
+
+              {libraryLoadError && (
+                <div className="mt-4 rounded-md border border-amber-700 bg-amber-950/30 p-3 text-sm text-amber-200">
+                  {libraryLoadError}
                 </div>
               )}
             </section>

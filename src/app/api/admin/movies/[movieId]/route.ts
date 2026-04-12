@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
+import { removeMovieFromCatalogCache } from '@/lib/server/movieCatalogCache';
 import type { Episode, Movie } from '@/types/movie';
 
 export const runtime = 'nodejs';
@@ -92,6 +93,8 @@ export async function DELETE(
         });
       }
     }
+
+    await removeMovieFromCatalogCache(movieId);
 
     return NextResponse.json({
       success: true,

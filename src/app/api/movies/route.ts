@@ -1,24 +1,20 @@
 import { NextResponse } from 'next/server';
-import { mkdir, readFile, writeFile } from 'fs/promises';
-import path from 'path';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession } from '@/lib/auth/server';
 import { getSubscriptionSnapshotFromData, getViewerEntitlement } from '@/lib/server/subscriptions';
 import { sanitizeMovieForViewer } from '@/lib/server/contentAccess';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
+import {
+  type CachedMovieCatalog,
+  inMemoryMovieCache,
+  isFreshMovieCache,
+  persistMovieCatalog,
+  readMovieCatalogFromDisk,
+  setInMemoryMovieCache,
+} from '@/lib/server/movieCatalogCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const MOVIE_CACHE_TTL_MS = 1000 * 60 * 2;
-const MOVIE_CACHE_PATH = path.join(process.cwd(), '.runtime-cache', 'movies-catalog.json');
-
-type CachedMovieCatalog = {
-  movies: Array<Record<string, unknown>>;
-  cachedAt: string;
-};
-
-let inMemoryMovieCache: CachedMovieCatalog | null = null;
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   hasPremiumAccess: false,
@@ -26,47 +22,15 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   subscription: getSubscriptionSnapshotFromData(null),
 };
 
-function isFreshCache(cache: CachedMovieCatalog | null) {
-  if (!cache?.cachedAt) {
-    return false;
-  }
-
-  return Date.now() - new Date(cache.cachedAt).getTime() < MOVIE_CACHE_TTL_MS;
-}
-
-async function readMovieCatalogFromDisk() {
-  try {
-    const raw = await readFile(MOVIE_CACHE_PATH, 'utf8');
-    const parsed = JSON.parse(raw) as CachedMovieCatalog;
-
-    if (!Array.isArray(parsed.movies) || typeof parsed.cachedAt !== 'string') {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-async function persistMovieCatalog(cache: CachedMovieCatalog) {
-  try {
-    await mkdir(path.dirname(MOVIE_CACHE_PATH), { recursive: true });
-    await writeFile(MOVIE_CACHE_PATH, JSON.stringify(cache), 'utf8');
-  } catch (error) {
-    console.warn('[movies-api] failed to persist movie cache', error);
-  }
-}
-
 async function fetchMovieCatalog() {
-  if (isFreshCache(inMemoryMovieCache)) {
+  if (isFreshMovieCache(inMemoryMovieCache)) {
     return inMemoryMovieCache;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
 
-  if (isFreshCache(diskCache)) {
-    inMemoryMovieCache = diskCache;
+  if (isFreshMovieCache(diskCache)) {
+    setInMemoryMovieCache(diskCache);
     return diskCache;
   }
 
@@ -80,7 +44,7 @@ async function fetchMovieCatalog() {
       cachedAt: new Date().toISOString(),
     };
 
-    inMemoryMovieCache = cache;
+    setInMemoryMovieCache(cache);
     await persistMovieCatalog(cache);
     return cache;
   } catch (error) {

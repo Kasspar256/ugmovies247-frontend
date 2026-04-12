@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
+import {
+  type CachedMovieCatalog,
+  inMemoryMovieCache,
+  persistMovieCatalog,
+  readMovieCatalogFromDisk,
+  setInMemoryMovieCache,
+} from '@/lib/server/movieCatalogCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,11 +32,32 @@ export async function GET() {
       );
     }
 
-    const snapshot = await adminDb.collection('movies').orderBy('date_added', 'desc').get();
-    const movies = snapshot.docs.map((movieDoc) => ({
-      id: movieDoc.id,
-      ...movieDoc.data(),
-    }));
+    let movies: Array<Record<string, unknown>>;
+
+    try {
+      const snapshot = await adminDb.collection('movies').orderBy('date_added', 'desc').get();
+      movies = snapshot.docs.map((movieDoc) => ({
+        id: movieDoc.id,
+        ...movieDoc.data(),
+      }));
+
+      const cache: CachedMovieCatalog = {
+        movies,
+        cachedAt: new Date().toISOString(),
+      };
+
+      setInMemoryMovieCache(cache);
+      await persistMovieCatalog(cache);
+    } catch (firestoreError) {
+      const staleCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+
+      if (!staleCache?.movies?.length) {
+        throw firestoreError;
+      }
+
+      console.warn('[admin] Firestore unavailable, serving stale admin movie cache', firestoreError);
+      movies = staleCache.movies;
+    }
 
     return NextResponse.json({ movies });
   } catch (error) {
