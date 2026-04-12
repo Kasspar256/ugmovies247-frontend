@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
+  type UploadPartCommandOutput,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs/promises';
@@ -248,6 +249,44 @@ export async function completeMultipartR2Upload(options: {
   return {
     key: options.key,
     publicUrl: getR2PublicUrl(options.key),
+  };
+}
+
+export async function uploadMultipartR2Part(options: {
+  key: string;
+  uploadId: string;
+  partNumber: number;
+  body: Uint8Array;
+}) {
+  if (!options.uploadId) {
+    throw new Error('Missing multipart upload ID.');
+  }
+
+  if (!Number.isInteger(options.partNumber) || options.partNumber <= 0) {
+    throw new Error('Missing multipart upload part number.');
+  }
+
+  const response = await sendR2Command<UploadPartCommandOutput>(
+    new UploadPartCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: options.key,
+      UploadId: options.uploadId,
+      PartNumber: options.partNumber,
+      Body: options.body,
+      ContentLength: options.body.byteLength,
+    }),
+    `multipart:part:${options.key}:${options.partNumber}`
+  );
+
+  const etag = response.ETag?.trim();
+
+  if (!etag) {
+    throw new Error('R2 did not return an ETag for the uploaded part.');
+  }
+
+  return {
+    partNumber: options.partNumber,
+    etag,
   };
 }
 

@@ -94,7 +94,10 @@ export async function GET(request: Request) {
   try {
     const session = await getCurrentAuthSession();
     const entitlement = session
-      ? await getViewerEntitlement(session.uid)
+      ? await getViewerEntitlement(session.uid, {
+          email: session.email,
+          role: session.role,
+        })
       : DEFAULT_ENTITLEMENT;
 
     const adminSetupError = getFirebaseAdminSetupError();

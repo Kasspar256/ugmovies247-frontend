@@ -9,7 +9,10 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Unauthorized', { status: 401 });
   }
 
-  const entitlement = await getViewerEntitlement(session.uid);
+  const entitlement = await getViewerEntitlement(session.uid, {
+    email: session.email,
+    role: session.role,
+  });
 
   if (!entitlement.hasPremiumAccess) {
     return new NextResponse('Subscription required', { status: 403 });

@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { isAdminEmail } from '@/lib/auth/server';
 import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
 import type {
   PaymentAttemptDocument,
@@ -29,6 +30,19 @@ function blankSubscriptionSnapshot(): SubscriptionSnapshot {
     expiresAt: '',
     paymentProvider: '',
     updatedAt: '',
+  };
+}
+
+function adminAccessSnapshot(): SubscriptionSnapshot {
+  return {
+    planType: null,
+    planName: 'Admin Access',
+    status: 'active',
+    isActive: true,
+    startsAt: '',
+    expiresAt: '',
+    paymentProvider: 'admin',
+    updatedAt: nowIso(),
   };
 }
 
@@ -114,7 +128,18 @@ export async function syncUserSubscriptionSnapshot(userId: string, subscription?
   return snapshot;
 }
 
-export async function getViewerEntitlement(userId: string): Promise<SubscriptionEntitlement> {
+export async function getViewerEntitlement(
+  userId: string,
+  viewer?: { email?: string; role?: string }
+): Promise<SubscriptionEntitlement> {
+  if (viewer?.role === 'admin' || isAdminEmail(viewer?.email)) {
+    return {
+      hasPremiumAccess: true,
+      requiresSubscription: false,
+      subscription: adminAccessSnapshot(),
+    };
+  }
+
   const subscription = await getCurrentSubscription(userId);
   const snapshot = getSubscriptionSnapshotFromData(subscription);
 

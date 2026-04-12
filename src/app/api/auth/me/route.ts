@@ -12,7 +12,10 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const entitlement = await getViewerEntitlement(session.uid);
+  const entitlement = await getViewerEntitlement(session.uid, {
+    email: session.email,
+    role: session.role,
+  });
 
   return NextResponse.json({
     user: {
