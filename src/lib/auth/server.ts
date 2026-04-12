@@ -57,6 +57,34 @@ export function isAdminEmail(email?: string | null) {
   return Boolean(email && ADMIN_EMAILS.includes(email.toLowerCase()));
 }
 
+function buildFallbackUserRecord(
+  uid: string,
+  fallback: { email?: string; name?: string; role?: UserRole }
+): AppUserRecord {
+  const now = new Date().toISOString();
+  const fallbackRole = normalizeUserRole(
+    fallback.role || (isAdminEmail(fallback.email) ? 'admin' : 'user')
+  );
+
+  return {
+    id: uid,
+    name: fallback.name || 'User',
+    email: fallback.email || '',
+    authProvider: 'password',
+    role: fallbackRole,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: now,
+    isActive: true,
+    avatarUrl: '',
+    notificationPreferences: {
+      marketing: false,
+      productUpdates: true,
+    },
+    subscription: undefined,
+  };
+}
+
 async function fetchUserRecord(uid: string, fallback: { email?: string; name?: string }) {
   const now = new Date().toISOString();
   const fallbackRole = normalizeUserRole(isAdminEmail(fallback.email) ? 'admin' : 'user');
@@ -89,26 +117,17 @@ async function fetchUserRecord(uid: string, fallback: { email?: string; name?: s
     console.warn('[auth] failed to read user profile from Firestore, using session fallback', error);
   }
 
-  return {
-    id: uid,
-    name: fallback.name || 'User',
-    email: fallback.email || '',
-    authProvider: 'password',
+  return buildFallbackUserRecord(uid, {
+    email: fallback.email,
+    name: fallback.name,
     role: fallbackRole,
-    createdAt: now,
-    updatedAt: now,
-    lastLoginAt: now,
-    isActive: true,
-    avatarUrl: '',
-    notificationPreferences: {
-      marketing: false,
-      productUpdates: true,
-    },
-    subscription: undefined,
-  };
+  });
 }
 
-export async function getAuthSessionFromSessionCookie(sessionCookie: string) {
+export async function getAuthSessionFromSessionCookie(
+  sessionCookie: string,
+  options?: { roleHint?: string }
+) {
   if (!sessionCookie) {
     return null;
   }
@@ -117,7 +136,11 @@ export async function getAuthSessionFromSessionCookie(sessionCookie: string) {
     const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
     const email = decoded.email || '';
     const name = typeof decoded.name === 'string' ? decoded.name : '';
-    const userRecord = await fetchUserRecord(decoded.uid, { email, name });
+    const hintedRole = normalizeUserRole(options?.roleHint);
+    const shouldSkipFirestoreProfileRead = hintedRole === 'admin' || isAdminEmail(email);
+    const userRecord = shouldSkipFirestoreProfileRead
+      ? buildFallbackUserRecord(decoded.uid, { email, name, role: 'admin' })
+      : await fetchUserRecord(decoded.uid, { email, name });
 
     if (!userRecord.isActive) {
       return null;
@@ -137,7 +160,8 @@ export async function getAuthSessionFromSessionCookie(sessionCookie: string) {
 
 export async function getRequestAuthSession(request: Request | NextRequest) {
   const sessionCookie = getCookieValueFromRequest(request, AUTH_SESSION_COOKIE);
-  return getAuthSessionFromSessionCookie(sessionCookie);
+  const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
+  return getAuthSessionFromSessionCookie(sessionCookie, { roleHint: roleCookie });
 }
 
 export async function getCurrentAuthSession() {
@@ -148,7 +172,13 @@ export async function getCurrentAuthSession() {
       .map((cookie) => cookie.value)
       .filter(Boolean)
       .at(-1) || '';
-  return getAuthSessionFromSessionCookie(sessionCookie);
+  const roleCookie =
+    cookieStore
+      .getAll(AUTH_ROLE_COOKIE)
+      .map((cookie) => cookie.value)
+      .filter(Boolean)
+      .at(-1) || '';
+  return getAuthSessionFromSessionCookie(sessionCookie, { roleHint: roleCookie });
 }
 
 export async function requireUserPage(redirectTo: string) {
