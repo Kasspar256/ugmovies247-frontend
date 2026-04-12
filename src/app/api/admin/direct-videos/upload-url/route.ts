@@ -7,7 +7,6 @@ import {
   completeMultipartR2Upload,
   createMultipartR2Upload,
   R2_MULTIPART_PART_SIZE_BYTES,
-  uploadMultipartR2Part,
 } from '@/lib/server/r2';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 
@@ -130,58 +129,6 @@ export async function PUT(request: Request) {
       {
         error: 'Failed to finalize direct upload.',
         detail: error instanceof Error ? error.message : 'Unknown multipart completion error.',
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
-    const authFailure = await requireAdminSession();
-
-    if (authFailure) {
-      return authFailure;
-    }
-
-    const requestUrl = new URL(request.url);
-    const key = String(requestUrl.searchParams.get('key') || '');
-    const uploadId = String(requestUrl.searchParams.get('uploadId') || '');
-    const partNumber = Number(requestUrl.searchParams.get('partNumber') || 0);
-
-    if (!key || !uploadId || !Number.isInteger(partNumber) || partNumber <= 0) {
-      return NextResponse.json(
-        { error: 'Missing multipart upload part payload.' },
-        { status: 400 }
-      );
-    }
-
-    const body = new Uint8Array(await request.arrayBuffer());
-
-    if (!body.byteLength) {
-      return NextResponse.json(
-        { error: 'Multipart upload part body was empty.' },
-        { status: 400 }
-      );
-    }
-
-    const uploadedPart = await uploadMultipartR2Part({
-      key,
-      uploadId,
-      partNumber,
-      body,
-    });
-
-    return NextResponse.json({
-      success: true,
-      ...uploadedPart,
-    });
-  } catch (error) {
-    console.error('[direct-videos] failed to upload multipart part', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to upload direct video part.',
-        detail: error instanceof Error ? error.message : 'Unknown multipart part upload error.',
       },
       { status: 500 }
     );

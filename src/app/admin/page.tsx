@@ -159,81 +159,6 @@ function uploadFileToSignedUrl(
   });
 }
 
-function uploadMultipartPartViaProxy(
-  blob: Blob,
-  multipartUpload: MultipartUploadInitPayload,
-  partNumber: number,
-  onProgress?: (loadedBytes: number, totalBytes: number) => void
-) {
-  return new Promise<{ etag: string; uploadHost: string }>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const uploadHost = 'app-upload-relay';
-    const requestUrl = `/api/admin/direct-videos/upload-url?key=${encodeURIComponent(
-      multipartUpload.key
-    )}&uploadId=${encodeURIComponent(multipartUpload.uploadId)}&partNumber=${encodeURIComponent(
-      String(partNumber)
-    )}`;
-
-    xhr.open('PATCH', requestUrl);
-    xhr.timeout = PART_UPLOAD_REQUEST_TIMEOUT_MS;
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) {
-        return;
-      }
-
-      onProgress?.(event.loaded, event.total);
-    };
-
-    xhr.onload = () => {
-      let payload: Record<string, unknown> = {};
-
-      try {
-        payload = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-      } catch {
-        payload = {};
-      }
-
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const etag = String(payload.etag || '').trim();
-
-        if (!etag) {
-          reject(new Error('Upload relay completed but did not return the multipart ETag.'));
-          return;
-        }
-
-        onProgress?.(blob.size, blob.size);
-        resolve({ etag, uploadHost });
-        return;
-      }
-
-      reject(
-        new Error(
-          String(payload.detail || payload.error || `Upload relay failed with status ${xhr.status}.`)
-        )
-      );
-    };
-
-    xhr.onerror = () => {
-      reject(
-        new Error('Source upload relay failed before the next step while contacting the app server.')
-      );
-    };
-
-    xhr.ontimeout = () => {
-      reject(
-        new Error(
-          `Source upload relay timed out after ${Math.round(PART_UPLOAD_REQUEST_TIMEOUT_MS / 1000)} seconds.`
-        )
-      );
-    };
-
-    xhr.onabort = () => reject(new Error('Source upload relay was aborted before completion.'));
-    xhr.send(blob);
-  });
-}
-
 function uploadImageToSignedUrl(file: File, uploadUrl: string) {
   return new Promise<{ uploadHost: string }>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -292,9 +217,9 @@ type MultipartUploadInitPayload = {
 };
 
 const PART_UPLOAD_REQUEST_TIMEOUT_MS = 1000 * 60 * 10;
-const PART_UPLOAD_MAX_RETRIES = 4;
-const PART_UPLOAD_CONCURRENCY = 3;
-const DIRECT_MULTIPART_PART_SIZE_BYTES = 10 * 1024 * 1024;
+const PART_UPLOAD_MAX_RETRIES = 3;
+const PART_UPLOAD_CONCURRENCY = 5;
+const DIRECT_MULTIPART_PART_SIZE_BYTES = 25 * 1024 * 1024;
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -318,15 +243,14 @@ async function uploadMultipartPartWithRetry(options: {
       `[PART ${options.part.partNumber}] Attempt ${attempt}/${PART_UPLOAD_MAX_RETRIES} uploading ${Math.ceil(fileChunk.size / (1024 * 1024))} MB...`
     );
 
-      try {
-        const uploadedPart = await uploadMultipartPartViaProxy(
-          fileChunk,
-          options.multipartUpload,
-          options.part.partNumber,
-          (loadedBytes) => {
-            options.onPartProgress(options.part.partNumber, loadedBytes);
-          }
-        );
+    try {
+      const uploadedPart = await uploadFileToSignedUrl(
+        fileChunk,
+        options.part.uploadUrl,
+        (loadedBytes) => {
+          options.onPartProgress(options.part.partNumber, loadedBytes);
+        }
+      );
 
       options.onPartProgress(options.part.partNumber, fileChunk.size);
       options.onDiagnostic(`[PART ${options.part.partNumber}] Completed successfully.`);
@@ -1099,7 +1023,7 @@ export default function AdminDashboard() {
         (prev) =>
           `${prev}\n[INIT] Multipart session created with ${multipartUpload.parts.length} part(s) at ${Math.ceil(
             multipartUpload.partSize / (1024 * 1024)
-          )} MB each.\n[PART] Uploading multipart data through the app relay...`
+          )} MB each.\n[PART] Uploading multipart data directly to storage...`
         );
       setDirectStatus(
         `Uploading MP4 source parts with ${PART_UPLOAD_CONCURRENCY} parallel connection(s)...`
