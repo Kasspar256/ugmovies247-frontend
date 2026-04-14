@@ -564,7 +564,10 @@ export function AdminSeriesUploadView() {
   }, [categories]);
 
   const categoryLabelMap = useMemo(
-    () => new Map(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
+    () =>
+      new Map<string, string>(
+        SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])
+      ),
     []
   );
 
@@ -659,7 +662,8 @@ export function AdminSeriesUploadView() {
         );
       }
 
-      applySeriesTmdbDetails(payload, result);
+      const details = payload as TmdbTvDetails;
+      applySeriesTmdbDetails(details, result);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Failed to load TMDb series details.'
@@ -802,10 +806,11 @@ export function AdminSeriesUploadView() {
           return;
         }
 
-        setUploadEpisodeSeasonTmdb(payload);
+        const seasonDetails = payload as TmdbSeasonDetails;
+        setUploadEpisodeSeasonTmdb(seasonDetails);
         const storedSeason = getSeasonByNumber(selectedSeries, seasonNumber);
         const storedSeasonPoster = getStoredSeasonPoster(storedSeason);
-        const tmdbPosterUrl = buildTmdbPosterUrl(payload.poster_path);
+        const tmdbPosterUrl = buildTmdbPosterUrl(seasonDetails.poster_path);
 
         if (!storedSeasonPoster && tmdbPosterUrl) {
           setUploadEpisodeDraft((current) =>
@@ -874,15 +879,16 @@ export function AdminSeriesUploadView() {
           return;
         }
 
-        const tmdbPosterUrl = buildTmdbPosterUrl(payload.poster_path);
-        setAddSeasonTmdb(payload);
+        const seasonDetails = payload as TmdbSeasonDetails;
+        const tmdbPosterUrl = buildTmdbPosterUrl(seasonDetails.poster_path);
+        setAddSeasonTmdb(seasonDetails);
         setAddSeasonDraft((current) => {
           const nextTitle =
             !current.seasonTitle.trim() || current.seasonTitle === `Season ${seasonNumber}`
-              ? payload.name || `Season ${seasonNumber}`
+              ? seasonDetails.name || `Season ${seasonNumber}`
               : current.seasonTitle;
           const nextOverview = !current.seasonOverview.trim()
-            ? payload.overview || ''
+            ? seasonDetails.overview || ''
             : current.seasonOverview;
           const nextPosterUrl = current.seasonPosterUrl || tmdbPosterUrl;
 

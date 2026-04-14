@@ -221,12 +221,12 @@ export async function listMultipartR2UploadParts(options: {
   uploadId: string;
 }) {
   const parts: Array<{ partNumber: number; etag: string }> = [];
-  let nextPartNumberMarker: number | undefined;
+  let nextPartNumberMarker: string | undefined;
 
   while (true) {
     const response = await sendR2Command<{
       IsTruncated?: boolean;
-      NextPartNumberMarker?: number;
+      NextPartNumberMarker?: string | number;
       Parts?: Array<{ PartNumber?: number; ETag?: string }>;
     }>(
       new ListPartsCommand({
@@ -251,7 +251,7 @@ export async function listMultipartR2UploadParts(options: {
       break;
     }
 
-    nextPartNumberMarker = response.NextPartNumberMarker;
+    nextPartNumberMarker = String(response.NextPartNumberMarker);
   }
 
   return parts.sort((left, right) => left.partNumber - right.partNumber);
