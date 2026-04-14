@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
+import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { extractMovieData } from '@/lib/movieUtils';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
-import { createMovieDocumentRef } from '@/lib/server/movieCollection';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { SourcePipeline } from '@/types/videoJobs';
 import type { Season } from '@/types/movie';
 
@@ -100,20 +100,25 @@ async function validateRemoteVideoUrl(remoteUrl: string) {
 }
 
 function normalizeDirectMetadata(input?: AdminMovieMetadata) {
+  const categories = input?.category || [];
+  const isTrendingTikTok =
+    Boolean(input?.isTrendingTikTok) ||
+    categories.some((category) => category.toLowerCase() === 'trending on tiktok');
+
   return {
     title: input?.title || 'Untitled movie',
     original_title: input?.originalTitle || input?.title || 'Untitled movie',
     description: input?.description || '',
     poster: input?.poster || '',
     genres: input?.genres || [],
-    category: input?.category || [],
+    category: categories,
     vj: input?.vj || 'Unknown',
     release_date: input?.releaseDate || '',
     date_added: isoNow(),
     country: input?.country || 'Unknown',
     tmdb_id: typeof input?.tmdbId === 'number' ? input.tmdbId : null,
     status: input?.status || 'published',
-    is_trending_tiktok: Boolean(input?.isTrendingTikTok),
+    is_trending_tiktok: isTrendingTikTok,
     contentType: input?.contentType === 'series' ? 'series' : 'movie',
     accessTier: 'premium',
     sourceType: 'direct_upload',
@@ -137,7 +142,7 @@ async function createDirectMovieDocument(options: {
   sourcePipeline: SourcePipeline;
   sourceUrl?: string;
 }) {
-  const movieRef = await createMovieDocumentRef();
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
   const moviePayload = {
     movieId: movieRef.id,
@@ -161,7 +166,7 @@ async function createDirectSeriesDocument(options: {
   metadata: AdminMovieMetadata;
   seasons: SeriesSeasonInput[];
 }) {
-  const movieRef = await createMovieDocumentRef();
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
   const normalizedSeasons: Season[] = options.seasons.map((season) => ({
     seasonNumber: season.seasonNumber,

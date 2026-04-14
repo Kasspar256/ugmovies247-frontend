@@ -1,14 +1,15 @@
 import { randomUUID } from 'crypto';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import { HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { getSubscriptionSnapshotFromData, listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
 import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
+import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
 import {
   CATEGORIES_COLLECTION,
   MEDIA_LIBRARY_COLLECTION,
+  MOVIES_COLLECTION,
   REQUESTS_COLLECTION,
 } from '@/lib/server/firestoreNamespaces';
-import { getMoviesCollectionRef } from '@/lib/server/movieCollection';
 import { normalizeMovie, type Movie } from '@/types/movie';
 import type {
   AdminCategory,
@@ -35,6 +36,26 @@ function slugify(value: string) {
     .slice(0, 80);
 }
 
+function sortCategories(categories: AdminCategory[]) {
+  return categories.slice().sort((left, right) => {
+    if (left.type === 'home_row' || right.type === 'home_row') {
+      const leftOrder = left.homeOrder ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = right.homeOrder ?? Number.MAX_SAFE_INTEGER;
+
+      if (leftOrder !== rightOrder) {
+        return leftOrder - rightOrder;
+      }
+    }
+
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function findHomeCategoryConfig(value: string) {
+  const slug = slugify(value);
+  return HOME_PAGE_CATEGORY_CONFIG.find((category) => slugify(category.name) === slug) || null;
+}
+
 function parseStringList(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
@@ -47,7 +68,13 @@ function buildDefaultCategories(movies: Movie[]) {
   const categories = new Map<string, AdminCategory>();
   const timestamp = nowIso();
 
-  const addCategory = (name: string, type: AdminCategoryType, description: string, isSystem = true) => {
+  const addCategory = (
+    name: string,
+    type: AdminCategoryType,
+    description: string,
+    isSystem = true,
+    options?: Partial<Pick<AdminCategory, 'displayLabel' | 'homeOrder' | 'isVisible'>>
+  ) => {
     const normalizedName = name.trim();
 
     if (!normalizedName) {
@@ -60,20 +87,27 @@ function buildDefaultCategories(movies: Movie[]) {
       return;
     }
 
-    categories.set(slug, {
-      id: slug,
-      name: normalizedName,
-      slug,
-      description,
-      type,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      isSystem,
-    });
-  };
+      categories.set(slug, {
+        id: slug,
+        name: normalizedName,
+        slug,
+        displayLabel: options?.displayLabel || normalizedName,
+        description,
+        type,
+        homeOrder: options?.homeOrder ?? null,
+        isVisible: options?.isVisible ?? true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        isSystem,
+      });
+    };
 
-  for (const category of MANUAL_HOME_CATEGORIES) {
-    addCategory(category, 'home_row', 'Homepage shelf category', true);
+  for (const category of HOME_PAGE_CATEGORY_CONFIG) {
+    addCategory(category.name, 'home_row', 'Homepage shelf category', true, {
+      displayLabel: category.displayLabel,
+      homeOrder: category.homeOrder,
+      isVisible: true,
+    });
   }
 
   for (const movie of movies) {
@@ -86,12 +120,11 @@ function buildDefaultCategories(movies: Movie[]) {
     }
   }
 
-  return [...categories.values()].sort((left, right) => left.name.localeCompare(right.name));
+  return sortCategories([...categories.values()]);
 }
 
 export async function listAllMoviesForAdmin() {
-  const moviesCollection = await getMoviesCollectionRef();
-  const snapshot = await moviesCollection.get();
+  const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
   const movies = snapshot.docs.map((doc) =>
     normalizeMovie(doc.id, {
       id: doc.id,
@@ -104,10 +137,9 @@ export async function listAllMoviesForAdmin() {
 
 export async function listCategoriesForAdmin(movies?: Movie[]) {
   const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
+  const defaults = buildDefaultCategories(movies || []);
 
   if (snapshot.empty) {
-    const defaults = buildDefaultCategories(movies || []);
-
     if (defaults.length > 0) {
       const batch = adminDb.batch();
 
@@ -122,32 +154,64 @@ export async function listCategoriesForAdmin(movies?: Movie[]) {
     return defaults;
   }
 
-  return snapshot.docs
+  const existingCategories = snapshot.docs
     .map((doc): AdminCategory => {
       const data = doc.data() as Partial<AdminCategory>;
+      const homeCategoryDefaults = findHomeCategoryConfig(data.name || doc.id);
 
       return {
         id: doc.id,
         name: data.name || doc.id,
         slug: data.slug || slugify(data.name || doc.id),
+        displayLabel:
+          data.displayLabel ||
+          homeCategoryDefaults?.displayLabel ||
+          data.name ||
+          doc.id,
         description: data.description || '',
         type:
           data.type === 'home_row' || data.type === 'genre' || data.type === 'custom'
             ? data.type
-            : 'custom',
+            : homeCategoryDefaults
+              ? 'home_row'
+              : 'custom',
+        homeOrder:
+          typeof data.homeOrder === 'number'
+            ? data.homeOrder
+            : homeCategoryDefaults?.homeOrder ?? null,
+        isVisible: data.isVisible !== false,
         createdAt: data.createdAt || '',
         updatedAt: data.updatedAt || '',
-        isSystem: data.isSystem === true,
+        isSystem: data.isSystem === true || Boolean(homeCategoryDefaults),
       };
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
+    });
+
+  const categoryMap = new Map(existingCategories.map((category) => [category.slug, category]));
+  const missingDefaults = defaults.filter((category) => !categoryMap.has(category.slug));
+
+  if (missingDefaults.length > 0) {
+    const batch = adminDb.batch();
+
+    for (const category of missingDefaults) {
+      const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
+      batch.set(ref, category, { merge: true });
+      categoryMap.set(category.slug, category);
+    }
+
+    await batch.commit();
+  }
+
+  return sortCategories([...categoryMap.values()]);
 }
 
 export async function upsertCategoryForAdmin(input: {
   id?: string;
   name: string;
+  displayLabel?: string;
   description?: string;
   type?: AdminCategoryType;
+  homeOrder?: number | null;
+  isVisible?: boolean;
 }) {
   const name = input.name.trim();
 
@@ -160,20 +224,103 @@ export async function upsertCategoryForAdmin(input: {
   const categoryId = input.id?.trim() || slug;
   const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(categoryId);
   const existing = await ref.get();
+  const existingData = existing.data() as Partial<AdminCategory> | undefined;
+  const homeCategoryDefaults = findHomeCategoryConfig(name);
+  const nextType = input.type || existingData?.type || 'custom';
 
   const payload: AdminCategory = {
     id: categoryId,
     name,
     slug,
+    displayLabel:
+      input.displayLabel?.trim() ||
+      existingData?.displayLabel ||
+      homeCategoryDefaults?.displayLabel ||
+      name,
     description: input.description?.trim() || '',
-    type: input.type || 'custom',
-    createdAt: existing.exists ? ((existing.data() as Partial<AdminCategory>)?.createdAt || timestamp) : timestamp,
+    type: nextType,
+    homeOrder:
+      typeof input.homeOrder === 'number'
+        ? input.homeOrder
+        : existingData?.homeOrder ??
+          (nextType === 'home_row' ? homeCategoryDefaults?.homeOrder ?? null : null),
+    isVisible: input.isVisible ?? existingData?.isVisible ?? true,
+    createdAt: existing.exists ? (existingData?.createdAt || timestamp) : timestamp,
     updatedAt: timestamp,
-    isSystem: false,
+    isSystem: existingData?.isSystem === true || (nextType === 'home_row' && Boolean(homeCategoryDefaults)),
   };
 
   await ref.set(payload, { merge: true });
   return payload;
+}
+
+export async function reorderHomeCategoriesForAdmin(categoryIds: string[]) {
+  if (!categoryIds.length) {
+    throw new Error('No homepage categories provided for reorder.');
+  }
+
+  const batch = adminDb.batch();
+  const timestamp = nowIso();
+
+  for (const [index, categoryId] of categoryIds.entries()) {
+    const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(categoryId);
+    batch.set(
+      ref,
+      {
+        homeOrder: HOME_PAGE_CATEGORY_CONFIG[index]?.homeOrder ?? (index + 1) * 10,
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
+  }
+
+  await batch.commit();
+}
+
+export async function removeMovieFromCategoryForAdmin(categoryId: string, movieId: string) {
+  const [categorySnapshot, movieSnapshot] = await Promise.all([
+    adminDb.collection(CATEGORIES_COLLECTION).doc(categoryId).get(),
+    adminDb.collection(MOVIES_COLLECTION).doc(movieId).get(),
+  ]);
+
+  if (!categorySnapshot.exists) {
+    throw new Error('Category not found.');
+  }
+
+  if (!movieSnapshot.exists) {
+    throw new Error('Movie or series not found.');
+  }
+
+  const category = categorySnapshot.data() as Partial<AdminCategory>;
+  const movie = normalizeMovie(movieSnapshot.id, {
+    id: movieSnapshot.id,
+    ...movieSnapshot.data(),
+  });
+  const categoryName = String(category.name || '').trim();
+
+  if (!categoryName) {
+    throw new Error('Category name is required.');
+  }
+
+  const updates: Record<string, unknown> = {
+    updatedAt: nowIso(),
+  };
+
+  if (category.type === 'genre') {
+    updates.genres = (movie.genres || []).filter((entry) => entry !== categoryName);
+  } else {
+    updates.category = (movie.category || []).filter((entry) => entry !== categoryName);
+
+    if (slugify(categoryName) === 'trending-on-tiktok') {
+      updates.is_trending_tiktok = false;
+    }
+  }
+
+  await movieSnapshot.ref.set(updates, { merge: true });
+  await upsertMovieInCatalogCache({
+    ...movie,
+    ...updates,
+  });
 }
 
 export async function deleteCategoryForAdmin(categoryId: string) {
@@ -188,8 +335,10 @@ export async function deleteCategoryForAdmin(categoryId: string) {
   const categoryName = String(data.name || '').trim();
 
     if (categoryName) {
-    const moviesCollection = await getMoviesCollectionRef();
-    const impactedMovies = await moviesCollection.where('category', 'array-contains', categoryName).get();
+    const impactedMovies = await adminDb
+      .collection(MOVIES_COLLECTION)
+      .where('category', 'array-contains', categoryName)
+      .get();
 
     if (!impactedMovies.empty) {
       const batch = adminDb.batch();

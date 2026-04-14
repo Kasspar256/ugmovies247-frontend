@@ -4,6 +4,7 @@ import {
   CreateMultipartUploadCommand,
   type CreateMultipartUploadCommandOutput,
   DeleteObjectCommand,
+  ListPartsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -213,6 +214,69 @@ export async function createMultipartR2Upload(options: {
     partSize: options.partSize || R2_MULTIPART_PART_SIZE_BYTES,
     parts,
   };
+}
+
+export async function listMultipartR2UploadParts(options: {
+  key: string;
+  uploadId: string;
+}) {
+  const parts: Array<{ partNumber: number; etag: string }> = [];
+  let nextPartNumberMarker: number | undefined;
+
+  while (true) {
+    const response = await sendR2Command<{
+      IsTruncated?: boolean;
+      NextPartNumberMarker?: number;
+      Parts?: Array<{ PartNumber?: number; ETag?: string }>;
+    }>(
+      new ListPartsCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: options.key,
+        UploadId: options.uploadId,
+        PartNumberMarker: nextPartNumberMarker,
+      }),
+      `multipart:list:${options.key}`
+    );
+
+    for (const part of response.Parts || []) {
+      if (typeof part.PartNumber === 'number' && part.ETag) {
+        parts.push({
+          partNumber: part.PartNumber,
+          etag: String(part.ETag).trim(),
+        });
+      }
+    }
+
+    if (!response.IsTruncated || !response.NextPartNumberMarker) {
+      break;
+    }
+
+    nextPartNumberMarker = response.NextPartNumberMarker;
+  }
+
+  return parts.sort((left, right) => left.partNumber - right.partNumber);
+}
+
+export async function getMultipartR2UploadPartUrls(options: {
+  key: string;
+  uploadId: string;
+  partNumbers: number[];
+}) {
+  return Promise.all(
+    options.partNumbers.map(async (partNumber) => ({
+      partNumber,
+      uploadUrl: await getSignedUrl(
+        s3Client,
+        new UploadPartCommand({
+          Bucket: process.env.R2_BUCKET_NAME,
+          Key: options.key,
+          UploadId: options.uploadId,
+          PartNumber: partNumber,
+        }),
+        { expiresIn: R2_PRESIGNED_UPLOAD_EXPIRES_SECONDS }
+      ),
+    }))
+  );
 }
 
 export async function completeMultipartR2Upload(options: {

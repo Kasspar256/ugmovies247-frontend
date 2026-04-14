@@ -3,11 +3,17 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowLeft,
+  ArrowRight,
   Clapperboard,
   DollarSign,
   Film,
+  FolderOpen,
+  Inbox,
+  LayoutDashboard,
   Loader2,
   RefreshCw,
+  Tags,
   Users,
 } from 'lucide-react';
 import type {
@@ -19,7 +25,6 @@ import type {
 } from '@/types/admin';
 import type { Movie } from '@/types/movie';
 import {
-  DIRECT_MULTIPART_PART_SIZE_BYTES,
   parseApiResponse,
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
@@ -31,6 +36,7 @@ import {
   SeriesDraft,
   createEmptyMovieDraft,
   createEmptySeriesDraft,
+  moveArrayItem,
   movieToDraft,
   seriesToDraft,
   splitCommaList,
@@ -38,7 +44,6 @@ import {
 import {
   Card,
   StatTile,
-  TabButton,
 } from '@/components/admin/controlCenterFields';
 import { AdminMoviesTab } from '@/components/admin/AdminMoviesTab';
 import { AdminSeriesTab } from '@/components/admin/AdminSeriesTab';
@@ -48,11 +53,26 @@ import { AdminUsersTab } from '@/components/admin/AdminUsersTab';
 import { AdminRequestsTab } from '@/components/admin/AdminRequestsTab';
 import { AdminRevenueTab } from '@/components/admin/AdminRevenueTab';
 
-export default function AdminControlCenter() {
+type AdminControlCenterProps = {
+  section?: AdminTab;
+};
+
+function createEmptyCategoryDraft(): CategoryDraft {
+  return {
+    id: '',
+    name: '',
+    displayLabel: '',
+    description: '',
+    type: 'custom',
+    homeOrder: null,
+    isVisible: true,
+  };
+}
+
+export default function AdminControlCenter({ section }: AdminControlCenterProps) {
   const [payload, setPayload] = useState<AdminControlCenterPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -60,12 +80,7 @@ export default function AdminControlCenter() {
   const [editingSeriesId, setEditingSeriesId] = useState('');
   const [movieDraft, setMovieDraft] = useState<MovieDraft>(createEmptyMovieDraft);
   const [seriesDraft, setSeriesDraft] = useState<SeriesDraft>(createEmptySeriesDraft);
-  const [categoryDraft, setCategoryDraft] = useState<CategoryDraft>({
-    id: '',
-    name: '',
-    description: '',
-    type: 'custom',
-  });
+  const [categoryDraft, setCategoryDraft] = useState<CategoryDraft>(createEmptyCategoryDraft);
 
   const [movieSearch, setMovieSearch] = useState('');
   const [seriesSearch, setSeriesSearch] = useState('');
@@ -206,6 +221,88 @@ export default function AdminControlCenter() {
     () => movieItems.find((movie) => movie.id === editingMovieId) || null,
     [movieItems, editingMovieId]
   );
+  const activeTab = section ?? null;
+  const navCards = useMemo(
+    () => [
+      {
+        id: 'overview' as AdminTab,
+        href: '/admin/overview',
+        label: 'Overview',
+        description: 'Command snapshot, recent requests, and latest payments.',
+        meta: `${movieItems.length + seriesItems.length} catalog entries`,
+        icon: <LayoutDashboard size={20} />,
+      },
+      {
+        id: 'movies' as AdminTab,
+        href: '/admin/movies',
+        label: 'Movies',
+        description: 'Create, edit, and manage standalone movie releases.',
+        meta: `${movieItems.length} movie entries`,
+        icon: <Film size={20} />,
+      },
+      {
+        id: 'series' as AdminTab,
+        href: '/admin/series',
+        label: 'Series',
+        description: 'Control seasons, episodes, and serialized releases.',
+        meta: `${seriesItems.length} series entries`,
+        icon: <Clapperboard size={20} />,
+      },
+      {
+        id: 'library' as AdminTab,
+        href: '/admin/library',
+        label: 'Library',
+        description: 'Reusable uploaded MP4 assets ready for assignment.',
+        meta: `${payload?.libraryAssets.length || 0} stored assets`,
+        icon: <FolderOpen size={20} />,
+      },
+      {
+        id: 'categories' as AdminTab,
+        href: '/admin/categories',
+        label: 'Categories',
+        description: 'Manage browse categories and content grouping.',
+        meta: `${payload?.categories.length || 0} categories`,
+        icon: <Tags size={20} />,
+      },
+      {
+        id: 'users' as AdminTab,
+        href: '/admin/users',
+        label: 'Users',
+        description: 'Search members, plans, and account activity.',
+        meta: `${payload?.users.length || 0} users`,
+        icon: <Users size={20} />,
+      },
+      {
+        id: 'requests' as AdminTab,
+        href: '/admin/requests',
+        label: 'Requests',
+        description: 'Review viewer demand and update request status.',
+        meta: `${payload?.requests.length || 0} requests`,
+        icon: <Inbox size={20} />,
+      },
+      {
+        id: 'revenue' as AdminTab,
+        href: '/admin/revenue',
+        label: 'Revenue',
+        description: 'Track subscriptions, payments, and active plans.',
+        meta: payload?.revenue.monthLabel
+          ? `Month: ${payload.revenue.monthLabel}`
+          : 'Revenue summary',
+        icon: <DollarSign size={20} />,
+      },
+    ],
+    [
+      movieItems.length,
+      seriesItems.length,
+      payload?.categories.length,
+      payload?.libraryAssets.length,
+      payload?.requests.length,
+      payload?.revenue.monthLabel,
+      payload?.users.length,
+    ]
+  );
+
+  const activeTabMeta = navCards.find((card) => card.id === activeTab) || null;
 
   const parseYear = (value: string) => {
     const normalized = Number(value);
@@ -229,7 +326,6 @@ export default function AdminControlCenter() {
   const startEditingMovie = (movie: Movie) => {
     setEditingMovieId(movie.id);
     setMovieDraft(movieToDraft(movie));
-    setActiveTab('movies');
     setStatusMessage(`Editing "${movie.title}".`);
     setErrorMessage('');
   };
@@ -237,7 +333,6 @@ export default function AdminControlCenter() {
   const startEditingSeries = (movie: Movie) => {
     setEditingSeriesId(movie.id);
     setSeriesDraft(seriesToDraft(movie));
-    setActiveTab('series');
     setStatusMessage(`Editing series "${movie.title}".`);
     setErrorMessage('');
   };
@@ -261,7 +356,6 @@ export default function AdminControlCenter() {
       const uploadedAsset = await uploadMultipartFileToAdmin({
         file: source.file,
         stage,
-        partSize: DIRECT_MULTIPART_PART_SIZE_BYTES,
         onProgress,
         onDiagnostic,
       });
@@ -666,7 +760,7 @@ export default function AdminControlCenter() {
       }
 
       await loadControlCenter(false);
-      setCategoryDraft({ id: '', name: '', description: '', type: 'custom' });
+      setCategoryDraft(createEmptyCategoryDraft());
       setStatusMessage(
         categoryDraft.id
           ? `Updated category "${categoryDraft.name}".`
@@ -697,12 +791,131 @@ export default function AdminControlCenter() {
       await loadControlCenter(false);
 
       if (categoryDraft.id === category.id) {
-        setCategoryDraft({ id: '', name: '', description: '', type: 'custom' });
+        setCategoryDraft(createEmptyCategoryDraft());
       }
 
       setStatusMessage(`Deleted category "${category.name}".`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to delete category.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleMoveHomeCategory = async (categoryId: string, direction: -1 | 1) => {
+    const homeCategories = (payload?.categories || [])
+      .filter((category) => category.type === 'home_row')
+      .slice()
+      .sort(
+        (left, right) =>
+          (left.homeOrder ?? Number.MAX_SAFE_INTEGER) -
+            (right.homeOrder ?? Number.MAX_SAFE_INTEGER) ||
+          left.name.localeCompare(right.name)
+      );
+    const currentIndex = homeCategories.findIndex((category) => category.id === categoryId);
+
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const nextCategories = moveArrayItem(homeCategories, currentIndex, direction);
+
+    if (nextCategories === homeCategories) {
+      return;
+    }
+
+    setActionBusy(true);
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/admin/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reorderHomeRows',
+          categoryIds: nextCategories.map((category) => category.id),
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to reorder homepage categories.');
+      }
+
+      await loadControlCenter(false);
+      setStatusMessage('Homepage categories reordered.');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to reorder homepage categories.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleToggleCategoryVisibility = async (category: AdminCategory) => {
+    setActionBusy(true);
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/admin/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: category.id,
+          name: category.name,
+          displayLabel: category.displayLabel,
+          description: category.description,
+          type: category.type,
+          homeOrder: category.homeOrder,
+          isVisible: !category.isVisible,
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to update category visibility.');
+      }
+
+      await loadControlCenter(false);
+      setStatusMessage(
+        `${category.displayLabel || category.name} ${category.isVisible ? 'hidden' : 'shown'}.`
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to update category visibility.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRemoveMovieFromCategory = async (category: AdminCategory, movie: Movie) => {
+    setActionBusy(true);
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/admin/categories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'removeAssignment',
+          categoryId: category.id,
+          movieId: movie.id,
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to remove title from category.');
+      }
+
+      await loadControlCenter(false);
+      setStatusMessage(`Removed "${movie.title}" from ${category.displayLabel || category.name}.`);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to remove title from category.'
+      );
     } finally {
       setActionBusy(false);
     }
@@ -758,7 +971,6 @@ export default function AdminControlCenter() {
       const uploadedAsset = await uploadMultipartFileToAdmin({
         file: libraryUploadFile,
         stage: 'library',
-        partSize: DIRECT_MULTIPART_PART_SIZE_BYTES,
         onProgress: setLibraryUploadProgress,
         onDiagnostic: (message) =>
           setLibraryUploadStatus((current) => `${current}${current ? '\n' : ''}${message}`),
@@ -888,174 +1100,217 @@ export default function AdminControlCenter() {
           </div>
         )}
 
-        <nav className="flex flex-wrap gap-2">
-          <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>Overview</TabButton>
-          <TabButton active={activeTab === 'movies'} onClick={() => setActiveTab('movies')}>Movies</TabButton>
-          <TabButton active={activeTab === 'series'} onClick={() => setActiveTab('series')}>Series</TabButton>
-          <TabButton active={activeTab === 'library'} onClick={() => setActiveTab('library')}>Library</TabButton>
-          <TabButton active={activeTab === 'categories'} onClick={() => setActiveTab('categories')}>Categories</TabButton>
-          <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')}>Users</TabButton>
-          <TabButton active={activeTab === 'requests'} onClick={() => setActiveTab('requests')}>Requests</TabButton>
-          <TabButton active={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')}>Revenue</TabButton>
-        </nav>
-
-        {activeTab === 'overview' && (
-          <>
-            <Card title="Command Snapshot" description="High-signal overview of catalog, revenue, and activity.">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <StatTile title="Movies" value={movieItems.length} icon={<Film size={18} />} />
-                <StatTile title="Series" value={seriesItems.length} icon={<Clapperboard size={18} />} />
-                <StatTile title="Users" value={payload?.users.length || 0} icon={<Users size={18} />} />
-                <StatTile title="Monthly Revenue" value={`UGX ${(payload?.revenue.monthRevenue || 0).toLocaleString()}`} icon={<DollarSign size={18} />} subcopy={payload?.revenue.monthLabel || ''} />
+        {activeTab === null ? (
+          <section className="space-y-4">
+            <div className="px-1">
+              <div className="text-[11px] font-black uppercase tracking-[0.26em] text-white/45">
+                Sections
               </div>
-            </Card>
-
-            <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-              <Card title="Recent Requests" description="Newest viewer demand flowing into the queue.">
-                <div className="space-y-3">
-                  {(payload?.requests || []).slice(0, 5).map((request) => (
-                    <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-bold text-white">{request.title}</div>
-                          <div className="mt-1 text-xs text-white/50">{request.requesterEmail || request.requesterName || 'Anonymous'}</div>
-                        </div>
-                        <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-white/75">{request.status}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-
-              <Card title="Latest Payments" description="Most recent real subscription payments.">
-                <div className="space-y-3">
-                  {(payload?.revenue.recentPayments || []).slice(0, 5).map((payment) => (
-                    <div key={payment.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-bold text-white">{payment.planName}</div>
-                          <div className="mt-1 text-xs text-white/50">{payment.phoneNumber || payment.userId}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-black text-white">{payment.currency} {Number(payment.amount || 0).toLocaleString()}</div>
-                          <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">{payment.status}</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Open a section to manage its content with the same tools already wired into the
+                control center.
+              </p>
             </div>
-          </>
-        )}
 
-        {activeTab === 'movies' && (
-          <AdminMoviesTab
-            movies={filteredMovies}
-            categories={payload?.categories || []}
-            libraryAssets={payload?.libraryAssets || []}
-            search={movieSearch}
-            editingMovieId={editingMovieId}
-            activeMovie={activeMovie}
-            draft={movieDraft}
-            diagnostics={movieDiagnostics}
-            progress={movieProgress}
-            actionBusy={actionBusy}
-            onSearchChange={setMovieSearch}
-            onStartNew={resetMovieEditor}
-            onEditMovie={startEditingMovie}
-            onDeleteMovie={handleDeleteMovie}
-            onChangeDraft={setMovieDraft}
-            onReset={resetMovieEditor}
-            onSave={handleSaveMovie}
-            onDeleteStoredPart={handleDeleteStoredPart}
-          />
-        )}
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              {navCards.map((card) => (
+                <Link
+                  key={card.id}
+                  href={card.href}
+                  className="group block w-full rounded-[28px] border border-white/10 bg-[#11141C] px-4 py-4 text-left shadow-[0_18px_40px_rgba(0,0,0,0.24)] transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:bg-[#141924] hover:shadow-[0_26px_52px_rgba(0,0,0,0.34)] md:min-h-[132px] md:px-5 md:py-5"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-white/72 transition-all duration-200 group-hover:border-[#D90429]/20 group-hover:bg-[#D90429]/10 group-hover:text-white group-hover:shadow-[0_10px_24px_rgba(217,4,41,0.12)]">
+                      {card.icon}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-base font-bold text-white">{card.label}</div>
+                      <div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/42">
+                        {card.meta}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-white/58">{card.description}</p>
+                    </div>
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-black/15 text-white/35 transition-all duration-200 group-hover:border-white/15 group-hover:bg-white/5 group-hover:text-white/70">
+                      <ArrowRight size={16} />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <section className="space-y-5">
+            <div className="rounded-[28px] border border-white/10 bg-[#11141C] px-4 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:px-5">
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/admin"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-white/78 transition-colors hover:bg-white/5 hover:text-white"
+                  aria-label="Back to admin sections"
+                >
+                  <ArrowLeft size={18} />
+                </Link>
+                <div>
+                  <div className="text-base font-bold text-white">
+                    {activeTabMeta?.label || 'Admin Section'}
+                  </div>
+                  <div className="mt-1 text-xs uppercase tracking-[0.18em] text-white/42">
+                    {activeTabMeta?.meta || 'Control Center'}
+                  </div>
+                </div>
+              </div>
+            </div>
 
-        {activeTab === 'series' && (
-          <AdminSeriesTab
-            seriesItems={filteredSeries}
-            categories={payload?.categories || []}
-            libraryAssets={payload?.libraryAssets || []}
-            search={seriesSearch}
-            editingSeriesId={editingSeriesId}
-            draft={seriesDraft}
-            diagnostics={seriesDiagnostics}
-            progress={seriesProgress}
-            actionBusy={actionBusy}
-            onSearchChange={setSeriesSearch}
-            onStartNew={resetSeriesEditor}
-            onEditSeries={startEditingSeries}
-            onDeleteSeries={handleDeleteMovie}
-            onChangeDraft={setSeriesDraft}
-            onReset={resetSeriesEditor}
-            onSave={handleSaveSeries}
-            onDeleteStoredEpisode={handleDeleteStoredEpisode}
-          />
-        )}
+            {activeTab === 'overview' && (
+              <>
+                <Card title="Command Snapshot" description="High-signal overview of catalog, revenue, and activity.">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <StatTile title="Movies" value={movieItems.length} icon={<Film size={18} />} />
+                    <StatTile title="Series" value={seriesItems.length} icon={<Clapperboard size={18} />} />
+                    <StatTile title="Users" value={payload?.users.length || 0} icon={<Users size={18} />} />
+                    <StatTile title="Monthly Revenue" value={`UGX ${(payload?.revenue.monthRevenue || 0).toLocaleString()}`} icon={<DollarSign size={18} />} subcopy={payload?.revenue.monthLabel || ''} />
+                  </div>
+                </Card>
 
-        {activeTab === 'library' && (
-          <AdminLibraryTab
-            assets={filteredLibraryAssets}
-            search={librarySearch}
-            onSearchChange={setLibrarySearch}
-            uploadFile={libraryUploadFile}
-            onUploadFileChange={setLibraryUploadFile}
-            uploadProgress={libraryUploadProgress}
-            uploadStatus={libraryUploadStatus}
-            onUploadAsset={handleUploadLibraryAsset}
-            onCopyUrl={handleCopyToClipboard}
-            onDeleteAsset={handleDeleteLibraryAsset}
-            actionBusy={actionBusy}
-          />
-        )}
+                <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+                  <Card title="Recent Requests" description="Newest viewer demand flowing into the queue.">
+                    <div className="space-y-3">
+                      {(payload?.requests || []).slice(0, 5).map((request) => (
+                        <div key={request.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-bold text-white">{request.title}</div>
+                              <div className="mt-1 text-xs text-white/50">{request.requesterEmail || request.requesterName || 'Anonymous'}</div>
+                            </div>
+                            <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-white/75">{request.status}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
 
-        {activeTab === 'categories' && (
-          <AdminCategoriesTab
-            categories={payload?.categories || []}
-            categoryDraft={categoryDraft}
-            onChangeDraft={setCategoryDraft}
-            onResetDraft={() =>
-              setCategoryDraft({ id: '', name: '', description: '', type: 'custom' })
-            }
-            onEditCategory={(category) =>
-              setCategoryDraft({
-                id: category.id,
-                name: category.name,
-                description: category.description,
-                type: category.type,
-              })
-            }
-            onSaveCategory={handleSaveCategory}
-            onDeleteCategory={handleDeleteCategory}
-            actionBusy={actionBusy}
-          />
-        )}
+                  <Card title="Latest Payments" description="Most recent real subscription payments.">
+                    <div className="space-y-3">
+                      {(payload?.revenue.recentPayments || []).slice(0, 5).map((payment) => (
+                        <div key={payment.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-bold text-white">{payment.planName}</div>
+                              <div className="mt-1 text-xs text-white/50">{payment.phoneNumber || payment.userId}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-black text-white">{payment.currency} {Number(payment.amount || 0).toLocaleString()}</div>
+                              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-white/45">{payment.status}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              </>
+            )}
 
-        {activeTab === 'users' && (
-          <AdminUsersTab
-            users={filteredUsers}
-            search={userSearch}
-            onSearchChange={setUserSearch}
-          />
-        )}
+            {activeTab === 'movies' && (
+              <AdminMoviesTab
+                movies={filteredMovies}
+                search={movieSearch}
+                actionBusy={actionBusy}
+                onSearchChange={setMovieSearch}
+                onDeleteMovie={handleDeleteMovie}
+              />
+            )}
 
-        {activeTab === 'requests' && (
-          <AdminRequestsTab
-            requests={filteredRequests}
-            search={requestSearch}
-            onSearchChange={setRequestSearch}
-            requestEdits={requestEdits}
-            onChangeRequestEdit={(requestId, nextEdit) =>
-              setRequestEdits((current) => ({ ...current, [requestId]: nextEdit }))
-            }
-            onSaveRequest={handleSaveRequest}
-            actionBusy={actionBusy}
-          />
-        )}
+            {activeTab === 'series' && (
+              <AdminSeriesTab
+                seriesItems={filteredSeries}
+                categories={payload?.categories || []}
+                libraryAssets={payload?.libraryAssets || []}
+                search={seriesSearch}
+                editingSeriesId={editingSeriesId}
+                draft={seriesDraft}
+                diagnostics={seriesDiagnostics}
+                progress={seriesProgress}
+                actionBusy={actionBusy}
+                onSearchChange={setSeriesSearch}
+                onStartNew={resetSeriesEditor}
+                onEditSeries={startEditingSeries}
+                onDeleteSeries={handleDeleteMovie}
+                onChangeDraft={setSeriesDraft}
+                onReset={resetSeriesEditor}
+                onSave={handleSaveSeries}
+                onDeleteStoredEpisode={handleDeleteStoredEpisode}
+              />
+            )}
 
-        {activeTab === 'revenue' && payload?.revenue && (
-          <AdminRevenueTab revenue={payload.revenue} />
+            {activeTab === 'library' && (
+              <AdminLibraryTab
+                assets={filteredLibraryAssets}
+                search={librarySearch}
+                onSearchChange={setLibrarySearch}
+                uploadFile={libraryUploadFile}
+                onUploadFileChange={setLibraryUploadFile}
+                uploadProgress={libraryUploadProgress}
+                uploadStatus={libraryUploadStatus}
+                onUploadAsset={handleUploadLibraryAsset}
+                onCopyUrl={handleCopyToClipboard}
+                onDeleteAsset={handleDeleteLibraryAsset}
+                actionBusy={actionBusy}
+              />
+            )}
+
+            {activeTab === 'categories' && (
+              <AdminCategoriesTab
+                categories={payload?.categories || []}
+                movies={payload?.movies || []}
+                categoryDraft={categoryDraft}
+                onChangeDraft={setCategoryDraft}
+                onResetDraft={() => setCategoryDraft(createEmptyCategoryDraft())}
+                onEditCategory={(category) =>
+                  setCategoryDraft({
+                    id: category.id,
+                    name: category.name,
+                    displayLabel: category.displayLabel,
+                    description: category.description,
+                    type: category.type,
+                    homeOrder: category.homeOrder,
+                    isVisible: category.isVisible,
+                  })
+                }
+                onSaveCategory={handleSaveCategory}
+                onDeleteCategory={handleDeleteCategory}
+                onMoveHomeCategory={handleMoveHomeCategory}
+                onToggleCategoryVisibility={handleToggleCategoryVisibility}
+                onRemoveMovieFromCategory={handleRemoveMovieFromCategory}
+                actionBusy={actionBusy}
+              />
+            )}
+
+            {activeTab === 'users' && (
+              <AdminUsersTab
+                users={filteredUsers}
+                search={userSearch}
+                onSearchChange={setUserSearch}
+              />
+            )}
+
+            {activeTab === 'requests' && (
+              <AdminRequestsTab
+                requests={filteredRequests}
+                search={requestSearch}
+                onSearchChange={setRequestSearch}
+                requestEdits={requestEdits}
+                onChangeRequestEdit={(requestId, nextEdit) =>
+                  setRequestEdits((current) => ({ ...current, [requestId]: nextEdit }))
+                }
+                onSaveRequest={handleSaveRequest}
+                actionBusy={actionBusy}
+              />
+            )}
+
+            {activeTab === 'revenue' && payload?.revenue && (
+              <AdminRevenueTab revenue={payload.revenue} />
+            )}
+          </section>
         )}
       </div>
     </main>

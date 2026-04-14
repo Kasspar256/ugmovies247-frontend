@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import { HOME_ROW_ORDER } from '@/lib/homeCategories';
+import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
@@ -14,6 +14,22 @@ type SessionUser = {
   role: 'user' | 'admin';
   name: string;
 };
+
+type HomePageCategory = {
+  id: string;
+  name: string;
+  displayLabel: string;
+  homeOrder: number;
+  isVisible: boolean;
+};
+
+const DEFAULT_HOME_PAGE_CATEGORIES: HomePageCategory[] = HOME_PAGE_CATEGORY_CONFIG.map((category) => ({
+  id: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+  name: category.name,
+  displayLabel: category.displayLabel,
+  homeOrder: category.homeOrder,
+  isVisible: true,
+}));
 
 const DESKTOP_CATEGORY_PILLS = [
   {
@@ -54,8 +70,15 @@ const DESKTOP_CATEGORY_PILLS = [
   },
 ] as const;
 
+function getMovieVjLabel(movie: Movie) {
+  return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
+}
+
 export default function Home() {
   const [movies, setMovies] = useState<Movie[]>([]);
+  const [homePageCategories, setHomePageCategories] = useState<HomePageCategory[]>(
+    DEFAULT_HOME_PAGE_CATEGORIES
+  );
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
@@ -84,6 +107,39 @@ export default function Home() {
       }
     };
     fetchMovies();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadHomePageCategories = async () => {
+      try {
+        const response = await fetch('/api/categories/home', {
+          cache: 'no-store',
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          categories?: HomePageCategory[];
+        };
+
+        if (!mounted || !response.ok || !Array.isArray(payload.categories)) {
+          return;
+        }
+
+        setHomePageCategories(
+          payload.categories.length ? payload.categories : DEFAULT_HOME_PAGE_CATEGORIES
+        );
+      } catch {
+        if (mounted) {
+          setHomePageCategories(DEFAULT_HOME_PAGE_CATEGORIES);
+        }
+      }
+    };
+
+    void loadHomePageCategories();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -170,36 +226,68 @@ export default function Home() {
     );
   }
 
-  const rowsByTitle: Record<(typeof HOME_ROW_ORDER)[number], Movie[]> = {
-    'LATEST MOVIES ON UGMOVIES24_7': filteredMovies.filter((movie) => hasCategory(movie, 'Latest movies on Ugmovies24_7')),
-    'Ongoing Series': filteredMovies.filter((movie) => hasCategory(movie, 'Ongoing Series')),
-    'RECENTLY ADDED MOVIES': filteredMovies.filter((movie) => hasCategory(movie, 'Recently added')),
-    'LATEST SERIES': filteredMovies.filter((movie) => hasCategory(movie, 'Latest series')),
-    'TRENDING ON TIKTOK': filteredMovies.filter((movie) => movie.is_trending_tiktok || hasCategory(movie, 'Trending on tiktok')),
-    'VJ JUNIOR': filteredMovies.filter((movie) => hasVj(movie, 'junior')),
-    'VJ EMMY': filteredMovies.filter((movie) => hasVj(movie, 'emmy')),
-    'VJ ULIO': filteredMovies.filter((movie) => hasVj(movie, 'ulio')),
-    'VJ SOUL': filteredMovies.filter((movie) => hasVj(movie, 'soul')),
-    'VJ JINGO': filteredMovies.filter((movie) => hasVj(movie, 'jingo')),
-    'OMUTAKA ICE P': filteredMovies.filter((movie) => hasVj(movie, 'ice p', 'omutaka ice p')),
-    'ANIMATIONS': filteredMovies.filter((movie) => movie.genres?.includes('Animation')),
-    'VJ JUNIOR SERIES': filteredMovies.filter((movie) => hasCategory(movie, 'VJ JUNIOR SERIES')),
-    'ACTION & THRILLER': filteredMovies.filter((movie) => movie.genres?.some((genre) => ['Action', 'Thriller', 'Crime', 'Detective', 'Mystery'].includes(genre))),
-    'ROMANCE': filteredMovies.filter((movie) => movie.genres?.includes('Romance')),
-    'COMEDY': filteredMovies.filter((movie) => movie.genres?.includes('Comedy')),
-    'ASIAN SERIES': filteredMovies.filter((movie) => hasCategory(movie, 'Asian series')),
-    'HORROR': filteredMovies.filter((movie) => movie.genres?.includes('Horror')),
-    "OTHER VJ's": filteredMovies.filter((movie) => hasCategory(movie, 'Other vjs')),
-    'ADVENTURE': filteredMovies.filter((movie) => movie.genres?.includes('Adventure')),
-    'WESTERN SERIES': filteredMovies.filter((movie) => hasCategory(movie, 'Western series')),
-    'INDIAN MOVIES': filteredMovies.filter((movie) => movie.country === 'India' || movie.genres?.includes('Indian')),
-  };
+  const manualHomeRows = homePageCategories
+    .filter((category) => category.isVisible !== false)
+    .map((category) => ({
+      title: category.displayLabel,
+      categoryKey: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      usesSeriesBackdropCards: ['ongoing series', 'latest series', 'asian series', 'western series'].includes(
+        category.name.toLowerCase()
+      ),
+      sortOrder: category.homeOrder,
+      movies:
+        category.name.toLowerCase() === 'trending on tiktok'
+          ? filteredMovies.filter(
+              (movie) => movie.is_trending_tiktok || hasCategory(movie, category.name)
+            )
+          : filteredMovies.filter((movie) => hasCategory(movie, category.name)),
+    }));
 
-  const configuredRowMovieIds = new Set(
-    Object.values(rowsByTitle)
-      .flat()
-      .map((movie) => movie.id)
+  const autoRows = AUTO_HOME_ROW_CONFIG.map((row) => ({
+    title: row.title,
+    categoryKey: row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    usesSeriesBackdropCards: false,
+    sortOrder: row.order,
+    movies:
+      row.title === 'VJ JUNIOR'
+        ? filteredMovies.filter((movie) => hasVj(movie, 'junior'))
+        : row.title === 'VJ EMMY'
+          ? filteredMovies.filter((movie) => hasVj(movie, 'emmy'))
+          : row.title === 'VJ ULIO'
+            ? filteredMovies.filter((movie) => hasVj(movie, 'ulio'))
+            : row.title === 'VJ SOUL'
+              ? filteredMovies.filter((movie) => hasVj(movie, 'soul'))
+              : row.title === 'VJ JINGO'
+                ? filteredMovies.filter((movie) => hasVj(movie, 'jingo'))
+                : row.title === 'OMUTAKA ICE P'
+                  ? filteredMovies.filter((movie) => hasVj(movie, 'ice p', 'omutaka ice p'))
+                  : row.title === 'ANIMATIONS'
+                    ? filteredMovies.filter((movie) => movie.genres?.includes('Animation'))
+                    : row.title === 'ACTION & THRILLER'
+                      ? filteredMovies.filter((movie) =>
+                          movie.genres?.some((genre) =>
+                            ['Action', 'Thriller', 'Crime', 'Detective', 'Mystery'].includes(genre)
+                          )
+                        )
+                      : row.title === 'ROMANCE'
+                        ? filteredMovies.filter((movie) => movie.genres?.includes('Romance'))
+                        : row.title === 'COMEDY'
+                          ? filteredMovies.filter((movie) => movie.genres?.includes('Comedy'))
+                          : row.title === 'HORROR'
+                            ? filteredMovies.filter((movie) => movie.genres?.includes('Horror'))
+                            : row.title === 'ADVENTURE'
+                              ? filteredMovies.filter((movie) => movie.genres?.includes('Adventure'))
+                              : filteredMovies.filter(
+                                  (movie) =>
+                                    movie.country === 'India' || movie.genres?.includes('Indian')
+                                ),
+  }));
+
+  const homeRows = [...manualHomeRows, ...autoRows].sort(
+    (left, right) => left.sortOrder - right.sortOrder
   );
+
+  const configuredRowMovieIds = new Set(homeRows.flatMap((row) => row.movies).map((movie) => movie.id));
   const unmatchedMovies = filteredMovies.filter((movie) => !configuredRowMovieIds.has(movie.id));
 
   // Hero Movie
@@ -631,22 +719,23 @@ export default function Home() {
           </section>
         )}
         
-        {HOME_ROW_ORDER.map((rowTitle) => {
-          const categoryKey = rowTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-          const rowMovies = rowsByTitle[rowTitle] || [];
-
-          return (
-            <MovieRow
-              key={rowTitle}
-              title={rowTitle}
-              movies={rowMovies}
-              hasViewAll={rowMovies.length > 0}
-              categoryKey={categoryKey}
-              expanded={!!expandedSections[categoryKey]}
-              onToggle={() => setExpandedSections((prev) => ({ ...prev, [categoryKey]: !prev[categoryKey] }))}
-            />
-          );
-        })}
+        {homeRows.map((row) => (
+          <MovieRow
+            key={row.categoryKey}
+            title={row.title}
+            movies={row.movies}
+            hasViewAll={row.movies.length > 0}
+            categoryKey={row.categoryKey}
+            usesSeriesBackdropCards={row.usesSeriesBackdropCards}
+            expanded={!!expandedSections[row.categoryKey]}
+            onToggle={() =>
+              setExpandedSections((prev) => ({
+                ...prev,
+                [row.categoryKey]: !prev[row.categoryKey],
+              }))
+            }
+          />
+        ))}
 
         {unmatchedMovies.length > 0 && (
           <MovieRow
@@ -678,6 +767,7 @@ function MovieRow({
   movies,
   hasViewAll = false,
   categoryKey,
+  usesSeriesBackdropCards = false,
   expanded = false,
   onToggle
 }: {
@@ -685,6 +775,7 @@ function MovieRow({
   movies: Movie[],
   hasViewAll?: boolean,
   categoryKey?: string,
+  usesSeriesBackdropCards?: boolean,
   expanded?: boolean,
   onToggle?: () => void
 }) {
@@ -698,14 +789,17 @@ function MovieRow({
       return;
     }
 
-    const amount = Math.max(320, Math.floor(container.clientWidth * 0.72));
+    const amount = Math.max(
+      usesSeriesBackdropCards ? 420 : 320,
+      Math.floor(container.clientWidth * (usesSeriesBackdropCards ? 0.82 : 0.72))
+    );
     container.scrollBy({
       left: direction === 'left' ? -amount : amount,
       behavior: 'smooth',
     });
   };
 
-  const renderCard = (m: Movie) => (
+  const renderPosterCard = (m: Movie) => (
     <Link href={`/movie/${m.id}`} key={m.id} className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]">
       <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
         <img
@@ -728,13 +822,13 @@ function MovieRow({
         )}
 
         <div className="absolute top-0 left-0 bg-[#D90429] text-white text-[7px] md:text-[9px] font-bold px-1.5 py-0.5 rounded-br-lg z-10 shadow-[2px_2px_10px_rgba(0,0,0,0.5)]">
-          {m.vj && m.vj !== 'Unknown' ? `VJ ${m.vj}` : 'VJ HD'}
+          {getMovieVjLabel(m)}
         </div>
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none"></div>
 
         <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 transition-opacity duration-300 pointer-events-none group-hover/card:opacity-100">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 pl-1 backdrop-blur-md shadow-[0_16px_30px_rgba(0,0,0,0.35)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-red-300/25 bg-[#D90429]/90 pl-1 backdrop-blur-md shadow-[0_0_22px_rgba(217,4,41,0.72)] md:h-14 md:w-14 md:shadow-[0_0_28px_rgba(217,4,41,0.85)]">
             <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
               <path d="M4 4l12 6-12 6z"/>
             </svg>
@@ -742,10 +836,46 @@ function MovieRow({
         </div>
       </div>
       <p className="mt-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-white line-clamp-2 md:mt-3 md:min-h-[3rem] md:text-[14px] md:leading-6 md:text-white/90">
-        {`${m.title || m.name} - ${m.vj && m.vj !== 'Unknown' ? `VJ ${m.vj}` : 'VJ HD'}`}
+        {`${m.title || m.name} - ${getMovieVjLabel(m)}`}
       </p>
     </Link>
   );
+
+  const renderSeriesBackdropCard = (m: Movie) => (
+    <Link
+      href={`/movie/${m.id}`}
+      key={m.id}
+      className="group/card w-[62vw] min-w-[244px] max-w-[320px] cursor-pointer snap-start shrink-0 sm:w-[48vw] sm:min-w-[270px] md:w-[430px] md:max-w-none lg:w-[480px] xl:w-[520px]"
+    >
+      <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">
+        <img
+          src={m.poster || 'https://via.placeholder.com/1280x720/1F2833/888888?text=NO+ART'}
+          alt={m.title}
+          className="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
+          loading="lazy"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#06070B] via-[#06070B]/40 to-[#06070B]/10" />
+        <div className="absolute inset-0 bg-black/10 transition-colors duration-300 md:group-hover/card:bg-black/0" />
+        <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 transition-opacity duration-300 pointer-events-none group-hover/card:opacity-100">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-red-300/25 bg-[#D90429]/90 pl-1 backdrop-blur-md shadow-[0_0_22px_rgba(217,4,41,0.72)] md:h-14 md:w-14 md:shadow-[0_0_28px_rgba(217,4,41,0.85)]">
+            <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M4 4l12 6-12 6z" />
+            </svg>
+          </div>
+        </div>
+        <div className="absolute inset-x-0 bottom-0 p-4 md:p-5">
+          <div className="flex items-end justify-between gap-3">
+            <p className="max-w-[90%] text-[13px] font-black leading-5 text-white drop-shadow-[0_10px_18px_rgba(0,0,0,0.55)] line-clamp-2 md:text-[18px] md:leading-6">
+              {`${m.title || m.name} - ${getMovieVjLabel(m)}`}
+            </p>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+
+  const renderCard = (movie: Movie) =>
+    usesSeriesBackdropCards ? renderSeriesBackdropCard(movie) : renderPosterCard(movie);
 
   return (
     <section className="relative mx-auto w-full max-w-[1440px] px-4 md:px-8 lg:px-10">
@@ -794,7 +924,9 @@ function MovieRow({
           <>
             <div
               ref={railRef}
-              className="flex gap-3 overflow-x-auto pb-4 snap-x style-hide-scrollbar md:gap-5"
+              className={`flex overflow-x-auto pb-4 snap-x style-hide-scrollbar ${
+                usesSeriesBackdropCards ? 'gap-4 md:gap-6' : 'gap-3 md:gap-5'
+              }`}
             >
               {rowMovies.map((m) => renderCard(m))}
             </div>
@@ -807,7 +939,13 @@ function MovieRow({
       </div>
 
       {expanded && rowMovies.length > 0 && (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4 mt-4">
+        <div
+          className={`mt-4 grid gap-3 md:gap-4 ${
+            usesSeriesBackdropCards
+              ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
+              : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'
+          }`}
+        >
           {rowMovies.map((m) => renderCard(m))}
         </div>
       )}

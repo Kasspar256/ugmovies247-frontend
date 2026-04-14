@@ -58,7 +58,46 @@ export function AdminRevenueTab({ revenue }: { revenue: AdminRevenueSummary }) {
           title="Recent Payments"
           description="Latest completed, pending, or failed payments from the real payments collection."
         >
-          <div className="overflow-x-auto">
+          <div className="space-y-3 md:hidden">
+            {revenue.recentPayments.map((payment) => (
+              <div
+                key={payment.id}
+                className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-white">{payment.planName}</div>
+                    <div className="mt-1 text-xs text-white/50">
+                      {payment.phoneNumber || '-'}
+                    </div>
+                  </div>
+                  <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/72">
+                    {payment.status}
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-[#0C1017] px-4 py-3">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
+                      Amount
+                    </div>
+                    <div className="mt-1 text-sm font-bold text-white">
+                      {payment.currency} {Number(payment.amount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
+                      Created
+                    </div>
+                    <div className="mt-1 text-xs leading-6 text-white/65">
+                      {formatDate(payment.createdAt)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full text-left text-sm">
               <thead className="text-[11px] uppercase tracking-[0.2em] text-white/45">
                 <tr>

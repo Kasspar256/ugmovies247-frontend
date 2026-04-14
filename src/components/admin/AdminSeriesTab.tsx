@@ -271,35 +271,25 @@ export function AdminSeriesTab({
                   onChange={(event) => onChangeDraft({ ...draft, cast: event.target.value })}
                 />
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <FieldLabel>Access Tier</FieldLabel>
-                  <SelectInput
-                    value={draft.accessTier}
+                  <div>
+                    <FieldLabel>Access Tier</FieldLabel>
+                    <SelectInput
+                      value={draft.accessTier}
                     onChange={(event) =>
                       onChangeDraft({
                         ...draft,
                         accessTier: event.target.value === 'free' ? 'free' : 'premium',
                       })
                     }
-                  >
-                    <option value="premium">Premium</option>
-                    <option value="free">Free</option>
-                  </SelectInput>
+                    >
+                      <option value="premium">Premium</option>
+                      <option value="free">Free</option>
+                    </SelectInput>
+                  </div>
                 </div>
-                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0C1017] px-4 py-3 text-sm text-white">
-                  <input
-                    type="checkbox"
-                    checked={draft.isTrendingTikTok}
-                    onChange={(event) =>
-                      onChangeDraft({ ...draft, isTrendingTikTok: event.target.checked })
-                    }
-                  />
-                  Trending on TikTok
-                </label>
               </div>
             </div>
-          </div>
 
           <div>
             <FieldLabel>Categories</FieldLabel>

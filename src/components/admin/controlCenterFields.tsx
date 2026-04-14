@@ -38,21 +38,43 @@ export function Card({
   description,
   children,
   action,
+  className,
+  headerClassName,
+  titleClassName,
+  descriptionClassName,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  className?: string;
+  headerClassName?: string;
+  titleClassName?: string;
+  descriptionClassName?: string;
 }) {
   return (
-    <section className="rounded-3xl border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)] md:p-6">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <section
+      className={`rounded-3xl border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)] md:p-6 ${
+        className || ''
+      }`}
+    >
+      <div className={`mb-5 flex flex-wrap items-start justify-between gap-4 ${headerClassName || ''}`}>
         <div>
-          <h2 className="text-base font-black uppercase tracking-[0.22em] text-white md:text-lg">
+          <h2
+            className={`text-base font-black uppercase tracking-[0.22em] text-white md:text-lg ${
+              titleClassName || ''
+            }`}
+          >
             {title}
           </h2>
           {description && (
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/60">{description}</p>
+            <p
+              className={`mt-2 max-w-3xl text-sm leading-6 text-white/60 ${
+                descriptionClassName || ''
+              }`}
+            >
+              {description}
+            </p>
           )}
         </div>
         {action}

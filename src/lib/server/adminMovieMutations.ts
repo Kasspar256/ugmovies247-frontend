@@ -48,6 +48,7 @@ function normalizeEpisodeInput(input: Record<string, unknown>, episodeIndex: num
         : episodeIndex + 1,
     title: String(input.title || `Episode ${episodeIndex + 1}`),
     description: String(input.description || ''),
+    overview: String(input.overview || input.description || ''),
     video_url: videoUrl,
     poster: String(input.poster || ''),
     thumbnail: String(input.thumbnail || ''),
@@ -103,6 +104,10 @@ function normalizeSeasonInput(input: Record<string, unknown>, seasonIndex: numbe
         ? input.seasonNumber
         : seasonIndex + 1,
     title: String(input.title || `Season ${seasonIndex + 1}`),
+    overview: String(input.overview || ''),
+    poster: String(input.poster || ''),
+    tmdb_id:
+      typeof input.tmdb_id === 'number' && Number.isFinite(input.tmdb_id) ? input.tmdb_id : null,
     episodes,
   };
 }
@@ -192,6 +197,10 @@ export function buildEditableMovieDocument(
     '';
   const sourceType = normalizeSourceType(input.sourceType ?? existingMovie?.sourceType);
   const sourcePipeline = normalizeSourcePipeline(input.sourcePipeline, sourceType);
+  const normalizedCategories = normalizeEditableStringList(input.category ?? existingMovie?.category);
+  const isTrendingTikTok =
+    Boolean(input.is_trending_tiktok ?? existingMovie?.is_trending_tiktok) ||
+    normalizedCategories.some((entry) => entry.toLowerCase() === 'trending on tiktok');
 
   return {
     movieId: String(existingMovie?.movieId || ''),
@@ -249,7 +258,7 @@ export function buildEditableMovieDocument(
     cast: normalizeEditableStringList(input.cast ?? existingMovie?.cast),
     poster: String(input.poster || existingMovie?.poster || ''),
     genres: normalizeEditableStringList(input.genres ?? existingMovie?.genres),
-    category: normalizeEditableStringList(input.category ?? existingMovie?.category),
+    category: normalizedCategories,
     vj: String(input.vj || existingMovie?.vj || 'Unknown'),
     video_url: contentType === 'movie' ? primaryVideoUrl : '',
     release_date: releaseDate,
@@ -263,7 +272,7 @@ export function buildEditableMovieDocument(
           : null,
     file_name: String(input.file_name || existingMovie?.file_name || ''),
     status: String(input.status || existingMovie?.status || 'published'),
-    is_trending_tiktok: Boolean(input.is_trending_tiktok ?? existingMovie?.is_trending_tiktok),
+    is_trending_tiktok: isTrendingTikTok,
     parts,
     seasons,
   };

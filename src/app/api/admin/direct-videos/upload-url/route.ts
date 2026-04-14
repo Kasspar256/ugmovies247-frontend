@@ -6,6 +6,9 @@ import {
   abortMultipartR2Upload,
   completeMultipartR2Upload,
   createMultipartR2Upload,
+  getMultipartR2UploadPartUrls,
+  getR2PublicUrl,
+  listMultipartR2UploadParts,
   R2_MULTIPART_PART_SIZE_BYTES,
 } from '@/lib/server/r2';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
@@ -52,6 +55,8 @@ export async function POST(request: Request) {
     const safeFileName = sanitizeFileName(String(body.fileName || 'source.mp4'));
     const contentType = String(body.contentType || 'application/octet-stream');
     const fileSize = Number(body.fileSize || 0);
+    const existingKey = String(body.key || '').trim();
+    const existingUploadId = String(body.uploadId || '').trim();
     const stage =
       body.stage === 'staging'
         ? 'staging'
@@ -64,13 +69,54 @@ export async function POST(request: Request) {
         : stage === 'library'
           ? 'library-assets'
           : 'direct-uploads';
-    const key = `${keyPrefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeFileName}`;
     const partSize = Number(body.partSize || 0);
-    const resolvedPartSize = Number.isFinite(partSize) && partSize > 0 ? partSize : R2_MULTIPART_PART_SIZE_BYTES;
+    const resolvedPartSize =
+      Number.isFinite(partSize) && partSize > 0 ? partSize : R2_MULTIPART_PART_SIZE_BYTES;
 
     if (!Number.isFinite(fileSize) || fileSize <= 0) {
       return NextResponse.json({ error: 'Missing or invalid file size.' }, { status: 400 });
     }
+
+    if (existingKey && existingUploadId) {
+      const partCount = Number(body.partCount || 0);
+      const partNumbers = Array.isArray(body.partNumbers)
+        ? body.partNumbers
+            .map((value) => Number(value))
+            .filter((value) => Number.isInteger(value) && value > 0)
+        : [];
+      const resolvedPartNumbers =
+        partNumbers.length > 0
+          ? partNumbers
+          : Array.from(
+              { length: Math.max(1, Math.ceil(fileSize / resolvedPartSize), partCount) },
+              (_, index) => index + 1
+            );
+
+      const [parts, uploadedParts] = await Promise.all([
+        getMultipartR2UploadPartUrls({
+          key: existingKey,
+          uploadId: existingUploadId,
+          partNumbers: resolvedPartNumbers,
+        }),
+        listMultipartR2UploadParts({
+          key: existingKey,
+          uploadId: existingUploadId,
+        }),
+      ]);
+
+      return NextResponse.json({
+        mode: 'multipart-resume',
+        key: existingKey,
+        uploadId: existingUploadId,
+        publicUrl: getR2PublicUrl(existingKey),
+        partSize: resolvedPartSize,
+        parts,
+        uploadedParts,
+        requiredResponseHeaders: ['ETag'],
+      });
+    }
+
+    const key = `${keyPrefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeFileName}`;
 
     const upload = await createMultipartR2Upload({
       key,

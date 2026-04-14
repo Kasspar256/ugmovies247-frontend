@@ -4,6 +4,8 @@ import {
   deleteCategoryForAdmin,
   listAllMoviesForAdmin,
   listCategoriesForAdmin,
+  removeMovieFromCategoryForAdmin,
+  reorderHomeCategoriesForAdmin,
   upsertCategoryForAdmin,
 } from '@/lib/server/adminControlCenter';
 
@@ -52,14 +54,20 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;
+      displayLabel?: string;
       description?: string;
       type?: 'home_row' | 'genre' | 'custom';
+      homeOrder?: number | null;
+      isVisible?: boolean;
     };
 
     const category = await upsertCategoryForAdmin({
       name: String(body.name || ''),
+      displayLabel: String(body.displayLabel || ''),
       description: String(body.description || ''),
       type: body.type,
+      homeOrder: typeof body.homeOrder === 'number' ? body.homeOrder : null,
+      isVisible: body.isVisible,
     });
 
     return NextResponse.json({ success: true, category });
@@ -83,17 +91,44 @@ export async function PATCH(request: Request) {
     }
 
     const body = (await request.json().catch(() => ({}))) as {
+      action?: 'reorderHomeRows' | 'removeAssignment';
       id?: string;
       name?: string;
+      displayLabel?: string;
       description?: string;
       type?: 'home_row' | 'genre' | 'custom';
+      homeOrder?: number | null;
+      isVisible?: boolean;
+      categoryIds?: string[];
+      categoryId?: string;
+      movieId?: string;
     };
+
+    if (body.action === 'reorderHomeRows') {
+      await reorderHomeCategoriesForAdmin(
+        Array.isArray(body.categoryIds)
+          ? body.categoryIds.filter((entry): entry is string => typeof entry === 'string')
+          : []
+      );
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.action === 'removeAssignment') {
+      await removeMovieFromCategoryForAdmin(
+        String(body.categoryId || ''),
+        String(body.movieId || '')
+      );
+      return NextResponse.json({ success: true });
+    }
 
     const category = await upsertCategoryForAdmin({
       id: String(body.id || ''),
       name: String(body.name || ''),
+      displayLabel: String(body.displayLabel || ''),
       description: String(body.description || ''),
       type: body.type,
+      homeOrder: typeof body.homeOrder === 'number' ? body.homeOrder : null,
+      isVisible: body.isVisible,
     });
 
     return NextResponse.json({ success: true, category });

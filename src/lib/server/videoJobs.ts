@@ -20,10 +20,10 @@ import { getFreeDiskSpace } from './system';
 import { prepareDirectMp4Source, uploadDirectMp4Asset } from './directVideoProcessor';
 import { upsertMovieInCatalogCache } from './movieCatalogCache';
 import {
+  MOVIES_COLLECTION,
   VIDEO_JOBS_COLLECTION,
   VIDEO_JOB_RUNTIME_COLLECTION,
 } from './firestoreNamespaces';
-import { getMovieDocumentRef } from './movieCollection';
 
 const CLAIMING_STALE_MS = 30 * 1000;
 const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
@@ -326,7 +326,7 @@ function buildR2Prefix(job: VideoJobDocument) {
 }
 
 async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoAssetMetadata) {
-  const movieRef = await getMovieDocumentRef(target.movieId);
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(target.movieId);
   const movieSnapshot = await movieRef.get();
   const shouldRefreshCatalogCache =
     asset.jobStatus === 'ready' || Boolean(asset.video_url || asset.masterPlaylistUrl);

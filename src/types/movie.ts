@@ -2,6 +2,7 @@ export type Episode = {
   episodeNumber: number;
   title: string;
   description?: string;
+  overview?: string;
   video_url: string;
   poster?: string;
   thumbnail?: string;
@@ -77,6 +78,9 @@ export type MoviePart = {
 export type Season = {
   seasonNumber: number;
   title?: string;
+  overview?: string;
+  poster?: string;
+  tmdb_id?: number | null;
   episodes: Episode[];
 };
 
@@ -262,6 +266,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                     : episodeIndex + 1,
                 title: String(rawEpisode.title || `Episode ${episodeIndex + 1}`),
                 description: typeof rawEpisode.description === 'string' ? rawEpisode.description : '',
+                overview: typeof rawEpisode.overview === 'string' ? rawEpisode.overview : '',
                 video_url: typeof rawEpisode.video_url === 'string' ? rawEpisode.video_url : '',
                 poster: typeof rawEpisode.poster === 'string' ? rawEpisode.poster : '',
                 thumbnail: typeof rawEpisode.thumbnail === 'string' ? rawEpisode.thumbnail : '',
@@ -310,6 +315,9 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
           seasonNumber:
             typeof rawSeason.seasonNumber === 'number' ? rawSeason.seasonNumber : seasonIndex + 1,
           title: typeof rawSeason.title === 'string' ? rawSeason.title : '',
+          overview: typeof rawSeason.overview === 'string' ? rawSeason.overview : '',
+          poster: typeof rawSeason.poster === 'string' ? rawSeason.poster : '',
+          tmdb_id: typeof rawSeason.tmdb_id === 'number' ? rawSeason.tmdb_id : null,
           episodes,
         };
       })

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
+import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import {
   type CachedMovieCatalog,
@@ -11,7 +11,7 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
-import { createMovieDocumentRef, getMoviesCollectionRef } from '@/lib/server/movieCollection';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,13 +36,13 @@ export async function GET() {
       );
     }
 
-    if (isFreshMovieCache(inMemoryMovieCache) && (inMemoryMovieCache?.movies?.length || 0) > 0) {
+    if (isFreshMovieCache(inMemoryMovieCache)) {
       return NextResponse.json({ movies: inMemoryMovieCache.movies, source: 'memory-cache' });
     }
 
     const diskCache = await readMovieCatalogFromDisk();
 
-    if (isFreshMovieCache(diskCache) && (diskCache?.movies?.length || 0) > 0) {
+    if (isFreshMovieCache(diskCache)) {
       setInMemoryMovieCache(diskCache);
       return NextResponse.json({ movies: diskCache.movies, source: 'disk-cache' });
     }
@@ -50,8 +50,7 @@ export async function GET() {
     let movies: Array<Record<string, unknown>>;
 
     try {
-      const moviesCollection = await getMoviesCollectionRef();
-      const snapshot = await moviesCollection.orderBy('date_added', 'desc').get();
+      const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
       movies = snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,
         ...movieDoc.data(),
@@ -111,7 +110,7 @@ export async function POST(request: Request) {
       movie?: Record<string, unknown>;
     };
     const incomingMovie = body.movie || {};
-    const movieRef = await createMovieDocumentRef();
+    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
     const moviePayload = buildEditableMovieDocument(incomingMovie);
     const createdMovie = {
       ...moviePayload,

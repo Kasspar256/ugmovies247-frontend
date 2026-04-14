@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
+import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession } from '@/lib/auth/server';
 import {
   getViewerEntitlement,
   getSubscriptionSnapshotFromData,
 } from '@/lib/server/subscriptions';
-import { sanitizeMovieForViewer } from '@/lib/server/contentAccess';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
 import {
   type CachedMovieCatalog,
@@ -15,7 +14,7 @@ import {
   readMovieCatalogFromDisk,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
-import { getMoviesCollectionRef } from '@/lib/server/movieCollection';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,26 +25,88 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   subscription: getSubscriptionSnapshotFromData(null),
 };
 
+function isPremiumAccessTier(accessTier: unknown) {
+  return accessTier !== 'free';
+}
+
+function sanitizeEpisodeForViewer(
+  episode: Record<string, unknown>,
+  entitlement: SubscriptionEntitlement
+) {
+  const subscriptionRequired = isPremiumAccessTier(episode.accessTier);
+  const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
+
+  if (!isLocked) {
+    return {
+      ...episode,
+      subscriptionRequired,
+      isLocked: false,
+    };
+  }
+
+  return {
+    ...episode,
+    video_url: '',
+    sourceUrl: '',
+    sourceFileName: '',
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    subscriptionRequired,
+    isLocked: true,
+  };
+}
+
+function sanitizeMovieForViewerLocally(
+  movie: Record<string, unknown>,
+  entitlement: SubscriptionEntitlement
+) {
+  const subscriptionRequired = isPremiumAccessTier(movie.accessTier);
+  const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
+  const seasons = Array.isArray(movie.seasons)
+    ? movie.seasons.map((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        const episodes = Array.isArray(rawSeason.episodes)
+          ? rawSeason.episodes.map((episode) =>
+              sanitizeEpisodeForViewer(episode as Record<string, unknown>, entitlement)
+            )
+          : [];
+
+        return {
+          ...rawSeason,
+          episodes,
+        };
+      })
+    : [];
+
+  if (!isLocked) {
+    return {
+      ...movie,
+      seasons,
+      accessTier: subscriptionRequired ? 'premium' : 'free',
+      subscriptionRequired,
+      isLocked: false,
+    };
+  }
+
+  return {
+    ...movie,
+    video_url: '',
+    sourceUrl: '',
+    sourceFileName: '',
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    seasons,
+    accessTier: 'premium',
+    subscriptionRequired: true,
+    isLocked: true,
+  };
+}
+
 function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   const movieJobStatus = typeof movieDoc.jobStatus === 'string' ? movieDoc.jobStatus : '';
   const hasPrimaryPlaybackAsset = Boolean(movieDoc.masterPlaylistUrl || movieDoc.video_url);
-  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
 
   if ((!movieJobStatus || movieJobStatus === 'ready') && hasPrimaryPlaybackAsset) {
-    return true;
-  }
-
-  if (
-    parts.some((part) => {
-      const rawPart = part as Record<string, unknown>;
-      const partJobStatus = typeof rawPart.jobStatus === 'string' ? rawPart.jobStatus : '';
-
-      return (
-        (!partJobStatus || partJobStatus === 'ready') &&
-        Boolean(rawPart.masterPlaylistUrl || rawPart.video_url)
-      );
-    })
-  ) {
     return true;
   }
 
@@ -69,20 +130,19 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
 }
 
 async function fetchMovieCatalog() {
-  if (isFreshMovieCache(inMemoryMovieCache) && (inMemoryMovieCache?.movies?.length || 0) > 0) {
+  if (isFreshMovieCache(inMemoryMovieCache)) {
     return inMemoryMovieCache;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
 
-  if (isFreshMovieCache(diskCache) && (diskCache?.movies?.length || 0) > 0) {
+  if (isFreshMovieCache(diskCache)) {
     setInMemoryMovieCache(diskCache);
     return diskCache;
   }
 
   try {
-    const moviesCollection = await getMoviesCollectionRef();
-    const snapshot = await moviesCollection.orderBy('date_added', 'desc').get();
+    const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
     const cache: CachedMovieCatalog = {
       movies: snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,
@@ -129,7 +189,7 @@ export async function GET(request: Request) {
     const movies = catalog.movies
       .filter((movieDoc) => hasPublicPlaybackAsset(movieDoc))
       .map((movieDoc) =>
-        sanitizeMovieForViewer(
+        sanitizeMovieForViewerLocally(
           movieDoc,
           entitlement
         )
@@ -147,3 +207,4 @@ export async function GET(request: Request) {
     );
   }
 }
+

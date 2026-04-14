@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
 import type { FirebaseError } from 'firebase/app';
-import { normalizeMovie, type Movie } from '@/types/movie';
+import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
 import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
@@ -12,6 +13,56 @@ import { Bookmark, Cast, Heart, Share2 } from 'lucide-react';
 import { fetchPublicMovies } from '@/lib/publicMovies';
 import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
+
+function inferSeasonEpisodeFromSeriesEntry(
+  entry: Movie,
+  fallbackSeasonNumber: number | null = null
+) {
+  if (entry.seasons?.length === 1 && entry.seasons[0].episodes?.length === 1) {
+    return {
+      seasonNumber: entry.seasons[0].seasonNumber,
+      episodeNumber: entry.seasons[0].episodes[0].episodeNumber,
+    };
+  }
+
+  const sourceText = `${entry.title || ''} ${entry.original_title || ''} ${entry.name || ''}`;
+  const compactMatch = sourceText.match(/\bs\s*(\d{1,2})\s*e\s*(\d{1,3})\b/i);
+
+  if (compactMatch) {
+    return {
+      seasonNumber: Number(compactMatch[1]) || null,
+      episodeNumber: Number(compactMatch[2]) || null,
+    };
+  }
+
+  const seasonMatch = sourceText.match(/\bseason\s*(\d{1,2})\b/i) || sourceText.match(/\bs\s*(\d{1,2})\b/i);
+  const episodeMatch = sourceText.match(/\bepisode\s*(\d{1,3})\b/i) || sourceText.match(/\bep\s*(\d{1,3})\b/i) || sourceText.match(/\be\s*(\d{1,3})\b/i);
+  const inferredFallbackSeasonNumber =
+    entry.seasons?.length === 1 ? entry.seasons[0].seasonNumber : fallbackSeasonNumber;
+
+  return {
+    seasonNumber: seasonMatch ? Number(seasonMatch[1]) || inferredFallbackSeasonNumber : inferredFallbackSeasonNumber,
+    episodeNumber: episodeMatch ? Number(episodeMatch[1]) || null : null,
+  };
+}
+
+function mergeEpisodePlaybackCandidate(
+  existing: Partial<Episode> | undefined,
+  incoming: Partial<Episode>
+): Partial<Episode> {
+  return {
+    title: incoming.title || existing?.title || '',
+    description: incoming.description || existing?.description || '',
+    overview: incoming.overview || existing?.overview || '',
+    video_url: incoming.video_url || existing?.video_url || '',
+    sourceUrl: incoming.sourceUrl || existing?.sourceUrl || '',
+    masterPlaylistUrl: incoming.masterPlaylistUrl || existing?.masterPlaylistUrl || '',
+    poster: incoming.poster || existing?.poster || '',
+    thumbnail: incoming.thumbnail || existing?.thumbnail || '',
+    playbackType: incoming.playbackType || existing?.playbackType,
+    isLocked: incoming.isLocked ?? existing?.isLocked,
+  };
+}
 
 export default function MoviePlayerPage({ params }: { params: { id: string } }) {
 const [movie, setMovie] = useState<Movie | null>(null);
@@ -26,19 +77,27 @@ const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
 const [movieSource, setMovieSource] = useState<'movies' | 'downloads'>('movies');
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
-const [selectedSeasonIndex, setSelectedSeasonIndex] = useState(0);
-const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>([]);
+const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number | null>(null);
+const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
 const [selectedPartIndex, setSelectedPartIndex] = useState(0);
 const videoRef = useRef<HTMLVideoElement | null>(null);
+const router = useRouter();
+const pathname = usePathname();
+const searchParams = useSearchParams();
+const searchQueryString = searchParams.toString();
 
 useEffect(() => {
 const fetchMovie = async () => {
 try {
-const allMovies = await fetchPublicMovies();
+const allMovies = await fetchPublicMovies({ force: true });
 
 const loadMergedSeriesMovie = async (initialMovie: Movie) => {
   if (!isSeriesMovie(initialMovie)) {
-    return initialMovie;
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: [] as Movie[],
+    };
   }
 
   const relatedSeriesEntries = allMovies
@@ -47,20 +106,28 @@ const loadMergedSeriesMovie = async (initialMovie: Movie) => {
   const mergedSeriesMovie = mergeSeriesMovies(relatedSeriesEntries);
 
   if (!mergedSeriesMovie) {
-    return initialMovie;
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: relatedSeriesEntries,
+    };
   }
 
   return {
-    ...mergedSeriesMovie,
-    id: initialMovie.id,
-    movieId: initialMovie.movieId || initialMovie.id,
+    resolvedMovie: {
+      ...mergedSeriesMovie,
+      id: initialMovie.id,
+      movieId: initialMovie.movieId || initialMovie.id,
+    },
+    sourceEntries: relatedSeriesEntries,
   };
 };
 
 const matchedMovie = allMovies.find((candidate) => candidate.id === params.id);
 
 if (matchedMovie) {
-setMovie(await loadMergedSeriesMovie(matchedMovie));
+const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(matchedMovie);
+setMovie(resolvedMovie);
+setSeriesSourceEntries(sourceEntries);
 setMovieSource('movies');
 return;
 }
@@ -69,10 +136,15 @@ const downloadRecord = await getUserDownloadByMovieId(params.id);
 
 if (downloadRecord) {
 const normalizedDownloadMovie = normalizeMovie(downloadRecord.movieId, downloadRecord);
-setMovie(await loadMergedSeriesMovie(normalizedDownloadMovie));
+const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(normalizedDownloadMovie);
+setMovie(resolvedMovie);
+setSeriesSourceEntries(sourceEntries);
 setMovieSource('downloads');
 setIsSavedToDownloads(true);
+return;
 }
+
+setSeriesSourceEntries([]);
 } catch (err) {
 console.error(err);
 } finally {
@@ -199,39 +271,159 @@ useEffect(() => {
 
 useEffect(() => {
   if (movie?.contentType === 'series' && movie.seasons?.length) {
-    setSelectedSeasonIndex(0);
-    setSelectedEpisodeIndex(0);
+    const episodeSearchParams = new URLSearchParams(searchQueryString);
+    const requestedSeasonNumber = Number(episodeSearchParams.get('season'));
+    const requestedEpisodeNumber = Number(episodeSearchParams.get('episode'));
+    const orderedSeasons = movie.seasons
+      .map((season) => ({
+        ...season,
+        episodes: [...(season.episodes || [])].sort((left, right) => left.episodeNumber - right.episodeNumber),
+      }))
+      .sort((left, right) => left.seasonNumber - right.seasonNumber);
+    const nextSeason =
+      orderedSeasons.find((season) => season.seasonNumber === requestedSeasonNumber) ||
+      orderedSeasons[0];
+    const nextEpisode =
+      nextSeason?.episodes.find((episode) => episode.episodeNumber === requestedEpisodeNumber) ||
+      nextSeason?.episodes[0];
+
+    setSelectedSeasonNumber(nextSeason?.seasonNumber ?? null);
+    setSelectedEpisodeNumber(nextEpisode?.episodeNumber ?? null);
     return;
   }
 
-  setSelectedSeasonIndex(0);
-  setSelectedEpisodeIndex(0);
-}, [movie]);
+  setSelectedSeasonNumber(null);
+  setSelectedEpisodeNumber(null);
+}, [movie, searchQueryString]);
 
-const selectedSeason = movie?.contentType === 'series' ? movie.seasons?.[selectedSeasonIndex] : undefined;
-const selectedEpisode = selectedSeason?.episodes?.[selectedEpisodeIndex];
+const seriesSeasons =
+  movie?.contentType === 'series'
+    ? (movie.seasons || [])
+        .map((season) => ({
+          ...season,
+          episodes: [...(season.episodes || [])].sort((left, right) => left.episodeNumber - right.episodeNumber),
+        }))
+        .sort((left, right) => left.seasonNumber - right.seasonNumber)
+    : [];
+const selectedSeason =
+  seriesSeasons.find((season) => season.seasonNumber === selectedSeasonNumber) ||
+  seriesSeasons[0];
+const selectedSeasonEpisodes = selectedSeason?.episodes || [];
+const selectedEpisode =
+  selectedSeasonEpisodes.find((episode) => episode.episodeNumber === selectedEpisodeNumber) ||
+  selectedSeasonEpisodes[0];
+const defaultSeriesSeasonNumber = seriesSeasons.length === 1 ? seriesSeasons[0].seasonNumber : null;
+const episodePlaybackCandidates = new Map<string, Partial<Episode>>();
+
+seriesSourceEntries.forEach((entry) => {
+  (entry.seasons || []).forEach((season) => {
+    (season.episodes || []).forEach((episode) => {
+      const episodeKey = `${season.seasonNumber}-${episode.episodeNumber}`;
+      const nextCandidate = mergeEpisodePlaybackCandidate(
+        episodePlaybackCandidates.get(episodeKey),
+        {
+          title: episode.title,
+          description: episode.description,
+          overview: episode.overview,
+          video_url: episode.video_url,
+          sourceUrl: episode.sourceUrl,
+          masterPlaylistUrl: episode.masterPlaylistUrl,
+          poster: episode.poster || season.poster || entry.poster,
+          thumbnail: episode.thumbnail || episode.poster || season.poster || entry.poster,
+          playbackType: episode.playbackType,
+          isLocked: episode.isLocked,
+        }
+      );
+
+      episodePlaybackCandidates.set(episodeKey, nextCandidate);
+    });
+  });
+
+  const inferredEpisode = inferSeasonEpisodeFromSeriesEntry(entry, defaultSeriesSeasonNumber);
+
+  if (!inferredEpisode.seasonNumber || !inferredEpisode.episodeNumber) {
+    return;
+  }
+
+  const inferredEpisodeKey = `${inferredEpisode.seasonNumber}-${inferredEpisode.episodeNumber}`;
+  const nextCandidate = mergeEpisodePlaybackCandidate(
+    episodePlaybackCandidates.get(inferredEpisodeKey),
+    {
+      title: entry.title || entry.name || '',
+      description: entry.description || '',
+      overview: entry.overview || '',
+      video_url: entry.video_url || '',
+      sourceUrl: entry.sourceUrl || '',
+      masterPlaylistUrl: entry.masterPlaylistUrl || '',
+      poster: entry.poster || '',
+      thumbnail: entry.poster || '',
+      playbackType: entry.playbackType,
+      isLocked: entry.isLocked,
+    }
+  );
+
+  episodePlaybackCandidates.set(inferredEpisodeKey, nextCandidate);
+});
+
+const selectedEpisodePlaybackCandidate =
+  selectedSeason && selectedEpisode
+    ? episodePlaybackCandidates.get(`${selectedSeason.seasonNumber}-${selectedEpisode.episodeNumber}`)
+    : undefined;
+const activeEpisode = selectedEpisode
+  ? {
+      ...selectedEpisode,
+      title: selectedEpisode.title || selectedEpisodePlaybackCandidate?.title || '',
+      description: selectedEpisode.description?.trim() || selectedEpisodePlaybackCandidate?.description || '',
+      overview: selectedEpisode.overview?.trim() || selectedEpisodePlaybackCandidate?.overview || '',
+      video_url: selectedEpisodePlaybackCandidate?.video_url || selectedEpisode.video_url || '',
+      sourceUrl: selectedEpisodePlaybackCandidate?.sourceUrl || selectedEpisode.sourceUrl || '',
+      masterPlaylistUrl:
+        selectedEpisodePlaybackCandidate?.masterPlaylistUrl || selectedEpisode.masterPlaylistUrl || '',
+      poster: selectedEpisodePlaybackCandidate?.poster || selectedEpisode.poster || '',
+      thumbnail: selectedEpisodePlaybackCandidate?.thumbnail || selectedEpisode.thumbnail || '',
+      playbackType: selectedEpisodePlaybackCandidate?.playbackType || selectedEpisode.playbackType,
+      isLocked: selectedEpisode.isLocked ?? selectedEpisodePlaybackCandidate?.isLocked ?? false,
+    }
+  : undefined;
 const selectedPart =
   movie?.contentType !== 'series' && movie?.parts?.length
     ? movie.parts[selectedPartIndex]
     : undefined;
-const playbackType =
+const seriesPlaybackType =
+  activeEpisode?.playbackType ||
+  (activeEpisode?.masterPlaylistUrl ? 'hls' : undefined) ||
+  (activeEpisode?.video_url || activeEpisode?.sourceUrl ? 'mp4' : undefined);
+const moviePlaybackType =
   selectedPart?.playbackType ||
-  selectedEpisode?.playbackType ||
   movie?.playbackType ||
-  (selectedEpisode?.masterPlaylistUrl ? 'hls' : undefined) ||
+  (selectedPart?.masterPlaylistUrl ? 'hls' : undefined) ||
   (movie?.masterPlaylistUrl ? 'hls' : undefined) ||
-  (selectedEpisode?.video_url || selectedEpisode?.sourceUrl || movie?.video_url || movie?.sourceUrl ? 'mp4' : undefined) ||
-  'mp4';
-const playbackVideoUrl =
+  (selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl ? 'mp4' : undefined);
+const playbackType =
+  movie?.contentType === 'series'
+    ? seriesPlaybackType || 'mp4'
+    : moviePlaybackType || 'mp4';
+const seriesPlaybackVideoUrl =
+  playbackType === 'hls'
+    ? (
+        activeEpisode?.masterPlaylistUrl ||
+        activeEpisode?.video_url ||
+        activeEpisode?.sourceUrl ||
+        ''
+      )
+    : (
+        activeEpisode?.video_url ||
+        activeEpisode?.sourceUrl ||
+        activeEpisode?.masterPlaylistUrl ||
+        ''
+      );
+const moviePlaybackVideoUrl =
   playbackType === 'hls'
     ? (
         selectedPart?.masterPlaylistUrl ||
         selectedPart?.video_url ||
         selectedPart?.sourceUrl ||
-        selectedEpisode?.masterPlaylistUrl ||
         movie?.masterPlaylistUrl ||
-        selectedEpisode?.video_url ||
-        selectedEpisode?.sourceUrl ||
         movie?.video_url ||
         movie?.sourceUrl ||
         ''
@@ -239,31 +431,54 @@ const playbackVideoUrl =
     : (
         selectedPart?.video_url ||
         selectedPart?.sourceUrl ||
-        selectedEpisode?.video_url ||
-        selectedEpisode?.sourceUrl ||
         movie?.video_url ||
         movie?.sourceUrl ||
-        selectedEpisode?.masterPlaylistUrl ||
+        selectedPart?.masterPlaylistUrl ||
         movie?.masterPlaylistUrl ||
         ''
       );
+const playbackVideoUrl =
+  movie?.contentType === 'series'
+    ? seriesPlaybackVideoUrl
+    : moviePlaybackVideoUrl;
 const playbackFallbackUrl =
-  selectedPart?.video_url ||
-  selectedPart?.sourceUrl ||
-  selectedEpisode?.video_url ||
-  selectedEpisode?.sourceUrl ||
-  movie?.video_url ||
-  movie?.sourceUrl ||
-  '';
+  movie?.contentType === 'series'
+    ? (
+        activeEpisode?.video_url ||
+        activeEpisode?.sourceUrl ||
+        ''
+      )
+    : (
+        selectedPart?.video_url ||
+        selectedPart?.sourceUrl ||
+        movie?.video_url ||
+        movie?.sourceUrl ||
+        ''
+      );
 const playbackPoster =
   selectedPart?.poster ||
   selectedPart?.thumbnail ||
-  selectedEpisode?.poster ||
-  selectedEpisode?.thumbnail ||
+  activeEpisode?.poster ||
+  activeEpisode?.thumbnail ||
+  selectedSeason?.poster ||
   movie?.poster ||
   '';
-const playbackDescription = selectedPart?.description || selectedEpisode?.description || movie?.description || '';
-const isPlaybackLocked = Boolean(selectedPart?.isLocked || selectedEpisode?.isLocked || movie?.isLocked);
+const playbackDescription =
+  movie?.contentType === 'series'
+    ? (
+        activeEpisode?.description ||
+        activeEpisode?.overview ||
+        selectedSeason?.overview ||
+        movie?.overview ||
+        movie?.description ||
+        ''
+      )
+    : (
+        selectedPart?.description ||
+        movie?.description ||
+        ''
+      );
+const isPlaybackLocked = Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
 const getEpisodeLabel = (episodeNumber: number) => `EP ${episodeNumber}`;
 const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => {
   const normalizedTitle = episodeTitle.trim();
@@ -274,26 +489,48 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 
   return normalizedTitle;
 };
-const playbackTitle = selectedEpisode
-  ? `${movie?.title || movie?.name} - ${selectedEpisode.title}`
+const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
+  setSelectedSeasonNumber(seasonNumber);
+  setSelectedEpisodeNumber(episodeNumber);
+
+  const nextParams = new URLSearchParams(searchQueryString);
+  nextParams.set('season', String(seasonNumber));
+  nextParams.set('episode', String(episodeNumber));
+
+  if (nextParams.toString() !== searchQueryString) {
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  }
+};
+const playbackTitle = activeEpisode
+  ? `${movie?.title || movie?.name} - S${selectedSeason?.seasonNumber || 1} EP ${activeEpisode.episodeNumber}`
   : selectedPart
     ? `${movie?.title || movie?.name} - ${selectedPart.title || selectedPart.label}`
   : (movie?.title || movie?.name || '');
+const playbackSessionKey = activeEpisode
+  ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}`
+  : selectedPart
+    ? `part-${selectedPartIndex}-${playbackVideoUrl || 'no-source'}`
+    : `${movie?.id || 'movie'}-${playbackVideoUrl || 'no-source'}`;
 
 useEffect(() => {
+  setIsVideoError(false);
+
   const videoElement = videoRef.current;
 
   if (!videoElement) {
     return;
   }
 
-  setIsVideoError(false);
-
   if (!playbackVideoUrl) {
+    videoElement.pause();
     videoElement.removeAttribute('src');
     videoElement.load();
     return;
   }
+
+  videoElement.pause();
+  videoElement.removeAttribute('src');
+  videoElement.load();
 
   if (playbackType === 'hls' && playbackVideoUrl.endsWith('.m3u8')) {
     if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
@@ -347,7 +584,13 @@ useEffect(() => {
 
   videoElement.src = playbackVideoUrl;
   videoElement.load();
-}, [playbackType, playbackVideoUrl, playbackFallbackUrl]);
+
+  return () => {
+    videoElement.pause();
+    videoElement.removeAttribute('src');
+    videoElement.load();
+  };
+}, [playbackSessionKey, playbackType, playbackVideoUrl, playbackFallbackUrl]);
 
 useEffect(() => {
   if (!playbackVideoUrl) {
@@ -358,9 +601,9 @@ useEffect(() => {
       movieSourceUrl: movie?.sourceUrl,
       partVideoUrl: selectedPart?.video_url,
       partSourceUrl: selectedPart?.sourceUrl,
-      episodeMasterPlaylistUrl: selectedEpisode?.masterPlaylistUrl,
-      episodeVideoUrl: selectedEpisode?.video_url,
-      episodeSourceUrl: selectedEpisode?.sourceUrl,
+      episodeMasterPlaylistUrl: activeEpisode?.masterPlaylistUrl,
+      episodeVideoUrl: activeEpisode?.video_url,
+      episodeSourceUrl: activeEpisode?.sourceUrl,
     });
     return;
   }
@@ -377,10 +620,35 @@ useEffect(() => {
   movie?.sourceUrl,
   selectedPart?.video_url,
   selectedPart?.sourceUrl,
-  selectedEpisode?.masterPlaylistUrl,
-  selectedEpisode?.video_url,
-  selectedEpisode?.sourceUrl,
+  activeEpisode?.masterPlaylistUrl,
+  activeEpisode?.video_url,
+  activeEpisode?.sourceUrl,
   playbackType,
+  playbackVideoUrl,
+]);
+
+useEffect(() => {
+  if (movie?.contentType !== 'series' || !selectedSeason || !activeEpisode) {
+    return;
+  }
+
+  console.log('[movie-page] active series episode', {
+    movieId: movie.id,
+    seasonNumber: selectedSeason.seasonNumber,
+    episodeNumber: activeEpisode.episodeNumber,
+    title: activeEpisode.title,
+    description: activeEpisode.description,
+    overview: activeEpisode.overview,
+    playbackVideoUrl,
+  });
+}, [
+  movie?.contentType,
+  movie?.id,
+  selectedSeason?.seasonNumber,
+  activeEpisode?.episodeNumber,
+  activeEpisode?.title,
+  activeEpisode?.description,
+  activeEpisode?.overview,
   playbackVideoUrl,
 ]);
 
@@ -429,8 +697,8 @@ const handleDownload = async () => {
     const result = await saveMovieDownload({
       movieId: movie.movieId || movie.id,
       title:
-        selectedEpisode
-          ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedEpisode.title}`
+        activeEpisode
+          ? `${movie.title || movie.name || 'Untitled movie'} - ${activeEpisode.title}`
           : selectedPart
             ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedPart.title || selectedPart.label}`
             : (movie.title || movie.name || 'Untitled movie'),
@@ -543,7 +811,11 @@ const handleShare = async () => {
     return;
   }
 
-  const shareUrl = `${window.location.origin}/movie/${movie.movieId || movie.id}`;
+  const shareTarget =
+    movie.contentType === 'series' && selectedSeason && selectedEpisode
+      ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
+      : `/movie/${movie.movieId || movie.id}`;
+  const shareUrl = `${window.location.origin}${shareTarget}`;
   const shareData = {
     title: movie.title || movie.name || 'UGMovies247',
     text: `Watch ${movie.title || movie.name || 'this movie'} on UGMovies247`,
@@ -600,9 +872,14 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 404 PAYLOAD NOT FOUND </main>
 );
 
-const currentMovieHref = `/movie/${movie.id}`;
+const currentMovieHref =
+  movie.contentType === 'series' && selectedSeason && selectedEpisode
+    ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
+    : `/movie/${movie.id}`;
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const billingHref = `/profile/billing?returnTo=${encodeURIComponent(currentMovieHref)}`;
+const hasPlaybackSource = Boolean(playbackVideoUrl);
+const shouldShowPlaybackError = !isPlaybackLocked && (!hasPlaybackSource || isVideoError);
 
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 md:px-8 md:pb-10 lg:px-10">
 
@@ -667,28 +944,34 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
           </Link>
         </div>
       </div>
-    ) : isVideoError ? (
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-red-500 font-bold">VIDEO FAILED TO LOAD</p>
-      </div>
     ) : (
-      <video
-        ref={videoRef}
-        key={
-          selectedEpisode
-            ? `${selectedSeasonIndex}-${selectedEpisodeIndex}`
-            : selectedPart
-              ? `part-${selectedPartIndex}`
-              : movie.id
-        }
-        poster={playbackPoster}
-        controls
-        preload="metadata"
-        playsInline
-        crossOrigin="anonymous"
-        className="w-full h-full object-contain"
-        onError={handleVideoError}
-      />
+      <>
+        <video
+          ref={videoRef}
+          key={playbackSessionKey}
+          poster={playbackPoster}
+          controls
+          preload="metadata"
+          playsInline
+          crossOrigin="anonymous"
+          className={`w-full h-full object-contain ${shouldShowPlaybackError ? 'opacity-20' : ''}`}
+          onLoadedData={() => setIsVideoError(false)}
+          onError={handleVideoError}
+        />
+        {shouldShowPlaybackError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/58 px-6 text-center">
+            <div className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-[#FFB3C1]">
+              Playback Error
+            </div>
+            <p className="mt-4 text-sm font-bold uppercase tracking-[0.18em] text-white md:text-base">
+              {hasPlaybackSource ? 'Video failed to load' : 'This episode has no playable source yet'}
+            </p>
+            <p className="mt-3 max-w-lg text-xs leading-6 text-white/70 md:text-sm">
+              Pick another episode or try this one again. Switching to a working episode will reset the player cleanly.
+            </p>
+          </div>
+        )}
+      </>
     )}
   </div>
 
@@ -807,7 +1090,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
       </section>
     )}
 
-    {movie.contentType === 'series' && movie.seasons && movie.seasons.length > 0 && (
+    {movie.contentType === 'series' && seriesSeasons.length > 0 && (
       <section className="mb-6 rounded-2xl border border-white/10 bg-[#11141C]/80 p-4 md:p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div className="mb-3">
           <h2 className="text-sm md:text-base font-black uppercase tracking-[0.24em] text-white">
@@ -816,15 +1099,15 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
         </div>
 
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-3 [scrollbar-color:#D90429_#1F2833]">
-          {movie.seasons.map((season, seasonIndex) => (
+          {seriesSeasons.map((season) => (
             <button
               key={`${movie.id}-season-${season.seasonNumber}`}
               onClick={() => {
-                setSelectedSeasonIndex(seasonIndex);
-                setSelectedEpisodeIndex(0);
+                const nextEpisodeNumber = season.episodes[0]?.episodeNumber ?? 1;
+                syncSeriesSelection(season.seasonNumber, nextEpisodeNumber);
               }}
               className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap border transition-colors ${
-                selectedSeasonIndex === seasonIndex
+                selectedSeason?.seasonNumber === season.seasonNumber
                   ? 'bg-[#D90429] border-[#D90429] text-white'
                   : 'bg-[#1F2833]/40 border-white/10 text-gray-300 hover:border-white'
               }`}
@@ -841,12 +1124,18 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
         </div>
 
         <div className="flex gap-2.5 overflow-x-auto pb-2 md:grid md:grid-cols-3 xl:grid-cols-4 md:overflow-visible [scrollbar-color:#D90429_#1F2833]">
-          {(selectedSeason?.episodes || []).map((episode, episodeIndex) => (
+          {selectedSeasonEpisodes.map((episode) => (
             <button
               key={`${movie.id}-season-${selectedSeason?.seasonNumber}-episode-${episode.episodeNumber}`}
-              onClick={() => setSelectedEpisodeIndex(episodeIndex)}
+              onClick={() => {
+                if (!selectedSeason) {
+                  return;
+                }
+
+                syncSeriesSelection(selectedSeason.seasonNumber, episode.episodeNumber);
+              }}
               className={`min-w-[118px] md:min-w-0 text-left flex items-start gap-2 rounded-xl border p-2.5 transition-colors ${
-                selectedEpisodeIndex === episodeIndex
+                selectedEpisode?.episodeNumber === episode.episodeNumber
                   ? 'border-[#D90429] bg-[#D90429]/12 shadow-[0_0_0_1px_rgba(217,4,41,0.3)]'
                   : 'border-white/10 bg-[#1F2833]/20 hover:border-white/30'
               }`}

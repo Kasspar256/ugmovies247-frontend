@@ -7,8 +7,11 @@ export type AdminCategory = {
   id: string;
   name: string;
   slug: string;
+  displayLabel: string;
   description: string;
   type: AdminCategoryType;
+  homeOrder: number | null;
+  isVisible: boolean;
   createdAt: string;
   updatedAt: string;
   isSystem: boolean;

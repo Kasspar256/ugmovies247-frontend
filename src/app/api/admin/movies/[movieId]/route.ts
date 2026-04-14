@@ -8,7 +8,7 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
-import { getMovieDocumentRef } from '@/lib/server/movieCollection';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { Episode, Movie, MoviePart } from '@/types/movie';
 
 export const runtime = 'nodejs';
@@ -155,7 +155,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
     }
 
-    const movieRef = await getMovieDocumentRef(movieId);
+    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
     const snapshot = await movieRef.get();
 
     if (!snapshot.exists) {
@@ -376,7 +376,7 @@ export async function PATCH(
       movie?: Record<string, unknown>;
     };
 
-    const movieRef = await getMovieDocumentRef(movieId);
+    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
     const snapshot = await movieRef.get();
 
     if (!snapshot.exists) {

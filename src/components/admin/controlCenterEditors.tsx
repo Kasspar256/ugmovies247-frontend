@@ -8,29 +8,63 @@ export function CategoryChecklist({
   categories,
   selected,
   onToggle,
+  className,
+  getLabel,
 }: {
   categories: AdminCategory[];
   selected: string[];
   onToggle: (name: string) => void;
+  className?: string;
+  getLabel?: (category: AdminCategory) => string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-[#0C1017] p-3">
+    <div
+      className={`grid gap-2.5 rounded-2xl border border-white/10 bg-[#0C1017] p-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 ${
+        className || ''
+      }`}
+    >
       {categories.map((category) => {
         const active = selected.includes(category.name);
 
         return (
-          <button
+          <label
             key={category.id}
-            type="button"
-            onClick={() => onToggle(category.name)}
-            className={`rounded-full px-3 py-2 text-xs font-black uppercase tracking-[0.18em] ${
+            className={`group flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all duration-200 ${
               active
-                ? 'bg-[#D90429] text-white'
-                : 'border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                ? 'border-[#D90429]/45 bg-[#17070B] text-white shadow-[0_0_0_1px_rgba(217,4,41,0.16),0_8px_20px_rgba(217,4,41,0.08)]'
+                : 'border-white/10 bg-[#11141C] text-white/72 hover:border-[#D90429]/30 hover:bg-[#141922] hover:shadow-[0_8px_20px_rgba(217,4,41,0.07)]'
             }`}
           >
-            {category.name}
-          </button>
+            <input
+              type="checkbox"
+              checked={active}
+              onChange={() => onToggle(category.name)}
+              className="peer sr-only"
+            />
+            <span
+              className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-all duration-200 ${
+                active
+                  ? 'border-[#D90429] bg-[#D90429] text-white shadow-[0_0_12px_rgba(217,4,41,0.28)]'
+                  : 'border-white/20 bg-[#080B11] text-transparent group-hover:border-[#D90429]/45'
+              }`}
+            >
+              <svg
+                viewBox="0 0 16 16"
+                className="h-2.5 w-2.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3.5 8.5 6.5 11.5 12.5 5.5" />
+              </svg>
+            </span>
+            <span className="min-w-0 text-[13px] font-semibold leading-5 text-inherit">
+              {getLabel ? getLabel(category) : category.name}
+            </span>
+          </label>
         );
       })}
     </div>

@@ -113,6 +113,38 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
   })[0];
 
   const seasonsByNumber = new Map<number, NonNullable<Movie['seasons']>[number]>();
+  const mergeEpisodeDetails = (
+    existingEpisode: NonNullable<Movie['seasons']>[number]['episodes'][number] | undefined,
+    nextEpisode: NonNullable<Movie['seasons']>[number]['episodes'][number]
+  ) => {
+    if (!existingEpisode) {
+      return nextEpisode;
+    }
+
+    const existingDescription = existingEpisode.description?.trim() || '';
+    const nextDescription = nextEpisode.description?.trim() || '';
+    const existingOverview = existingEpisode.overview?.trim() || '';
+    const nextOverview = nextEpisode.overview?.trim() || '';
+    const existingTitle = existingEpisode.title?.trim() || '';
+    const nextTitle = nextEpisode.title?.trim() || '';
+
+    return {
+      ...existingEpisode,
+      ...nextEpisode,
+      title: nextTitle || existingTitle,
+      description:
+        nextDescription.length >= existingDescription.length ? nextDescription : existingDescription,
+      overview:
+        nextOverview.length >= existingOverview.length ? nextOverview : existingOverview,
+      video_url: nextEpisode.video_url || existingEpisode.video_url || '',
+      sourceUrl: nextEpisode.sourceUrl || existingEpisode.sourceUrl || '',
+      masterPlaylistUrl: nextEpisode.masterPlaylistUrl || existingEpisode.masterPlaylistUrl || '',
+      poster: nextEpisode.poster || existingEpisode.poster || '',
+      thumbnail: nextEpisode.thumbnail || existingEpisode.thumbnail || '',
+      playbackType: nextEpisode.playbackType || existingEpisode.playbackType,
+      isLocked: nextEpisode.isLocked ?? existingEpisode.isLocked ?? false,
+    };
+  };
 
   movies.forEach((movie) => {
     (movie.seasons || []).forEach((season) => {
@@ -122,6 +154,9 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
         seasonsByNumber.set(season.seasonNumber, {
           seasonNumber: season.seasonNumber,
           title: season.title,
+          overview: season.overview,
+          poster: season.poster,
+          tmdb_id: season.tmdb_id ?? null,
           episodes: [...season.episodes].sort((first, second) => first.episodeNumber - second.episodeNumber),
         });
         return;
@@ -130,14 +165,19 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
       const episodesByNumber = new Map<number, typeof existingSeason.episodes[number]>();
 
       [...existingSeason.episodes, ...season.episodes].forEach((episode) => {
-        if (!episodesByNumber.has(episode.episodeNumber)) {
-          episodesByNumber.set(episode.episodeNumber, episode);
-        }
+        const currentEpisode = episodesByNumber.get(episode.episodeNumber);
+        episodesByNumber.set(
+          episode.episodeNumber,
+          mergeEpisodeDetails(currentEpisode, episode)
+        );
       });
 
       seasonsByNumber.set(season.seasonNumber, {
         seasonNumber: season.seasonNumber,
         title: existingSeason.title || season.title,
+        overview: existingSeason.overview || season.overview,
+        poster: existingSeason.poster || season.poster,
+        tmdb_id: existingSeason.tmdb_id ?? season.tmdb_id ?? null,
         episodes: Array.from(episodesByNumber.values()).sort(
           (first, second) => first.episodeNumber - second.episodeNumber
         ),

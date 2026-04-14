@@ -44,6 +44,10 @@ export type DraftSeason = {
   id: string;
   seasonNumber: number;
   title: string;
+  overview: string;
+  poster: string;
+  posterFile: File | null;
+  tmdbId?: number | null;
   episodes: DraftEpisode[];
 };
 
@@ -85,8 +89,11 @@ export type SeriesDraft = {
 export type CategoryDraft = {
   id: string;
   name: string;
+  displayLabel: string;
   description: string;
   type: AdminCategory['type'];
+  homeOrder: number | null;
+  isVisible: boolean;
 };
 
 export const REQUEST_STATUS_OPTIONS: AdminRequestStatus[] = [
@@ -174,6 +181,10 @@ export function createEmptySeason(index = 0): DraftSeason {
     id: createClientId('season'),
     seasonNumber: index + 1,
     title: `Season ${index + 1}`,
+    overview: '',
+    poster: '',
+    posterFile: null,
+    tmdbId: null,
     episodes: [createEmptyEpisode(0)],
   };
 }
@@ -264,13 +275,17 @@ export function seriesToDraft(movie: Movie): SeriesDraft {
         id: createClientId(`season-${season.seasonNumber || seasonIndex + 1}`),
         seasonNumber: season.seasonNumber || seasonIndex + 1,
         title: season.title || `Season ${seasonIndex + 1}`,
+        overview: season.overview || '',
+        poster: season.poster || '',
+        posterFile: null,
+        tmdbId: season.tmdb_id ?? null,
         episodes: (season.episodes || []).map((episode, episodeIndex) => ({
           id: createClientId(`episode-${season.seasonNumber}-${episode.episodeNumber}`),
           persistedSeasonNumber: season.seasonNumber || seasonIndex + 1,
           persistedEpisodeNumber: episode.episodeNumber || episodeIndex + 1,
           episodeNumber: episode.episodeNumber || episodeIndex + 1,
           title: episode.title || `Episode ${episodeIndex + 1}`,
-          description: episode.description || '',
+          description: episode.description || episode.overview || '',
           poster: episode.poster || '',
           posterFile: null,
           thumbnail: episode.thumbnail || '',
