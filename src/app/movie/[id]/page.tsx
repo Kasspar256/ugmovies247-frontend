@@ -28,6 +28,7 @@ const [movieSource, setMovieSource] = useState<'movies' | 'downloads'>('movies')
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [selectedSeasonIndex, setSelectedSeasonIndex] = useState(0);
 const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState(0);
+const [selectedPartIndex, setSelectedPartIndex] = useState(0);
 const videoRef = useRef<HTMLVideoElement | null>(null);
 
 useEffect(() => {
@@ -188,6 +189,15 @@ fetchRelatedMovies();
 }, [movie]);
 
 useEffect(() => {
+  if (movie?.parts?.length) {
+    setSelectedPartIndex(0);
+    return;
+  }
+
+  setSelectedPartIndex(0);
+}, [movie?.id, movie?.parts]);
+
+useEffect(() => {
   if (movie?.contentType === 'series' && movie.seasons?.length) {
     setSelectedSeasonIndex(0);
     setSelectedEpisodeIndex(0);
@@ -200,7 +210,12 @@ useEffect(() => {
 
 const selectedSeason = movie?.contentType === 'series' ? movie.seasons?.[selectedSeasonIndex] : undefined;
 const selectedEpisode = selectedSeason?.episodes?.[selectedEpisodeIndex];
+const selectedPart =
+  movie?.contentType !== 'series' && movie?.parts?.length
+    ? movie.parts[selectedPartIndex]
+    : undefined;
 const playbackType =
+  selectedPart?.playbackType ||
   selectedEpisode?.playbackType ||
   movie?.playbackType ||
   (selectedEpisode?.masterPlaylistUrl ? 'hls' : undefined) ||
@@ -210,6 +225,9 @@ const playbackType =
 const playbackVideoUrl =
   playbackType === 'hls'
     ? (
+        selectedPart?.masterPlaylistUrl ||
+        selectedPart?.video_url ||
+        selectedPart?.sourceUrl ||
         selectedEpisode?.masterPlaylistUrl ||
         movie?.masterPlaylistUrl ||
         selectedEpisode?.video_url ||
@@ -219,6 +237,8 @@ const playbackVideoUrl =
         ''
       )
     : (
+        selectedPart?.video_url ||
+        selectedPart?.sourceUrl ||
         selectedEpisode?.video_url ||
         selectedEpisode?.sourceUrl ||
         movie?.video_url ||
@@ -228,14 +248,22 @@ const playbackVideoUrl =
         ''
       );
 const playbackFallbackUrl =
+  selectedPart?.video_url ||
+  selectedPart?.sourceUrl ||
   selectedEpisode?.video_url ||
   selectedEpisode?.sourceUrl ||
   movie?.video_url ||
   movie?.sourceUrl ||
   '';
-const playbackPoster = selectedEpisode?.poster || selectedEpisode?.thumbnail || movie?.poster || '';
-const playbackDescription = selectedEpisode?.description || movie?.description || '';
-const isPlaybackLocked = Boolean(selectedEpisode?.isLocked || movie?.isLocked);
+const playbackPoster =
+  selectedPart?.poster ||
+  selectedPart?.thumbnail ||
+  selectedEpisode?.poster ||
+  selectedEpisode?.thumbnail ||
+  movie?.poster ||
+  '';
+const playbackDescription = selectedPart?.description || selectedEpisode?.description || movie?.description || '';
+const isPlaybackLocked = Boolean(selectedPart?.isLocked || selectedEpisode?.isLocked || movie?.isLocked);
 const getEpisodeLabel = (episodeNumber: number) => `EP ${episodeNumber}`;
 const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => {
   const normalizedTitle = episodeTitle.trim();
@@ -248,6 +276,8 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 };
 const playbackTitle = selectedEpisode
   ? `${movie?.title || movie?.name} - ${selectedEpisode.title}`
+  : selectedPart
+    ? `${movie?.title || movie?.name} - ${selectedPart.title || selectedPart.label}`
   : (movie?.title || movie?.name || '');
 
 useEffect(() => {
@@ -326,6 +356,8 @@ useEffect(() => {
       movieMasterPlaylistUrl: movie?.masterPlaylistUrl,
       movieVideoUrl: movie?.video_url,
       movieSourceUrl: movie?.sourceUrl,
+      partVideoUrl: selectedPart?.video_url,
+      partSourceUrl: selectedPart?.sourceUrl,
       episodeMasterPlaylistUrl: selectedEpisode?.masterPlaylistUrl,
       episodeVideoUrl: selectedEpisode?.video_url,
       episodeSourceUrl: selectedEpisode?.sourceUrl,
@@ -343,6 +375,8 @@ useEffect(() => {
   movie?.masterPlaylistUrl,
   movie?.video_url,
   movie?.sourceUrl,
+  selectedPart?.video_url,
+  selectedPart?.sourceUrl,
   selectedEpisode?.masterPlaylistUrl,
   selectedEpisode?.video_url,
   selectedEpisode?.sourceUrl,
@@ -394,7 +428,12 @@ const handleDownload = async () => {
   try {
     const result = await saveMovieDownload({
       movieId: movie.movieId || movie.id,
-      title: selectedEpisode ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedEpisode.title}` : (movie.title || movie.name || 'Untitled movie'),
+      title:
+        selectedEpisode
+          ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedEpisode.title}`
+          : selectedPart
+            ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedPart.title || selectedPart.label}`
+            : (movie.title || movie.name || 'Untitled movie'),
       video_url: playbackVideoUrl,
       poster: playbackPoster,
     });
@@ -565,7 +604,7 @@ const currentMovieHref = `/movie/${movie.id}`;
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const billingHref = `/profile/billing?returnTo=${encodeURIComponent(currentMovieHref)}`;
 
-return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 md:pb-8">
+return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 md:px-8 md:pb-10 lg:px-10">
 
   {/* Mobile Header */}
   <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -600,41 +639,8 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
     </div>
   </header>
 
-  {/* Desktop Header */}
-  <header className="fixed top-0 left-0 right-0 z-50 px-12 py-6 hidden md:flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-     <div className="w-48 h-14 flex items-center justify-start overflow-hidden rounded-full pointer-events-auto">
-      <img
-        src="/logow.png"
-        alt="UG Movies 247"
-        className="w-auto h-[110px] object-contain flex-shrink-0"
-      />
-    </div>
-    <div className="flex gap-8 text-[11px] font-semibold text-gray-300 pointer-events-auto">
-      <Link href="/" className="text-white">Home</Link>
-      <Link href="/vjs" className="hover:text-white transition-colors cursor-pointer">VJs</Link>
-      <Link href="/genres" className="hover:text-white transition-colors cursor-pointer">Genres</Link>
-      <Link href="/search" className="hover:text-white transition-colors cursor-pointer">Search</Link>
-      <Link href="/profile" className="hover:text-white transition-colors cursor-pointer">Profile</Link>
-    </div>
-    <div className="flex items-center gap-6 text-white pointer-events-auto">
-       <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-         <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"></path>
-         <line x1="2" y1="20" x2="2.01" y2="20"></line>
-       </svg>
-       <Link href="/watchlist" className="text-white hover:text-[#D90429] transition-colors" aria-label="My List">
-         <Bookmark size={20} />
-       </Link>
-       <div className="relative flex items-center">
-         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-         </svg>
-         <span className="absolute top-0 right-0 w-2 h-2 bg-[#D90429] rounded-full"></span>
-       </div>
-    </div>
-  </header>
-
   {/* Video Player */}
-  <div className="relative w-full h-[40vh] md:h-[70vh] bg-black mt-20 md:mt-0">
+  <div className="relative w-full h-[40vh] bg-black mt-20 md:mx-auto md:mt-[118px] md:h-[72vh] md:max-w-[1380px] md:overflow-hidden md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
     {isPlaybackLocked ? (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-black/70 to-black px-6 text-center">
         <div className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.26em] text-[#FFB3C1]">
@@ -668,7 +674,13 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
     ) : (
       <video
         ref={videoRef}
-        key={selectedEpisode ? `${selectedSeasonIndex}-${selectedEpisodeIndex}` : movie.id}
+        key={
+          selectedEpisode
+            ? `${selectedSeasonIndex}-${selectedEpisodeIndex}`
+            : selectedPart
+              ? `part-${selectedPartIndex}`
+              : movie.id
+        }
         poster={playbackPoster}
         controls
         preload="metadata"
@@ -680,7 +692,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
     )}
   </div>
 
-  <section className="px-4 md:px-8 max-w-4xl mx-auto mt-4 md:-mt-4">
+  <section className="px-4 md:px-0 max-w-4xl mx-auto mt-4 md:mt-8">
       <div className="flex flex-col items-center gap-3">
         <button
           onClick={handleDownload}
@@ -748,7 +760,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
   </section>
 
   {/* Info */}
-  <div className="p-4 md:p-8 max-w-4xl mx-auto">
+  <div className="p-4 md:px-0 md:py-8 max-w-4xl mx-auto">
     <h1 className="text-2xl md:text-4xl font-bold mb-4">
       {playbackTitle}
     </h1>
@@ -761,6 +773,38 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
       <div className="mb-6 rounded-2xl border border-[#D90429]/25 bg-[#D90429]/10 p-4 text-sm text-[#FFD7DF]">
         Premium access is required to play this movie or series. Your account can still browse the catalog, but playback unlocks only after a confirmed subscription payment.
       </div>
+    )}
+
+    {movie.contentType !== 'series' && movie.parts && movie.parts.length > 0 && (
+      <section className="mb-6 rounded-2xl border border-white/10 bg-[#11141C]/80 p-4 md:p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+        <div className="mb-3">
+          <h2 className="text-sm md:text-base font-black uppercase tracking-[0.24em] text-white">
+            Movie Parts
+          </h2>
+          <p className="mt-2 text-sm text-white/65">
+            Long movie split into multiple MP4 parts. Play them in order.
+          </p>
+        </div>
+
+        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-3 [scrollbar-color:#D90429_#1F2833]">
+          {movie.parts
+            .slice()
+            .sort((left, right) => left.order - right.order)
+            .map((part, partIndex) => (
+              <button
+                key={`${movie.id}-part-${part.id}`}
+                onClick={() => setSelectedPartIndex(partIndex)}
+                className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap border transition-colors ${
+                  selectedPartIndex === partIndex
+                    ? 'bg-[#D90429] border-[#D90429] text-white'
+                    : 'bg-[#1F2833]/40 border-white/10 text-gray-300 hover:border-white'
+                }`}
+              >
+                {part.label || `Part ${partIndex + 1}`}
+              </button>
+            ))}
+        </div>
+      </section>
     )}
 
     {movie.contentType === 'series' && movie.seasons && movie.seasons.length > 0 && (
@@ -837,7 +881,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 m
     )}
   </div>
 
-  <section className="px-4 md:px-8 max-w-6xl mx-auto mt-2">
+  <section className="px-4 md:px-0 max-w-6xl mx-auto mt-2">
     <div className="border-t border-white/10 pt-8">
       <h2 className="text-xl md:text-2xl font-bold mb-5">Related Movies</h2>
 

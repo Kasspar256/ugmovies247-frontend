@@ -52,11 +52,18 @@ export async function POST(request: Request) {
     const safeFileName = sanitizeFileName(String(body.fileName || 'source.mp4'));
     const contentType = String(body.contentType || 'application/octet-stream');
     const fileSize = Number(body.fileSize || 0);
-    const stage = body.stage === 'staging' ? 'staging' : 'final';
+    const stage =
+      body.stage === 'staging'
+        ? 'staging'
+        : body.stage === 'library'
+          ? 'library'
+          : 'final';
     const keyPrefix =
       stage === 'staging'
         ? 'direct-source-staging'
-        : 'direct-uploads';
+        : stage === 'library'
+          ? 'library-assets'
+          : 'direct-uploads';
     const key = `${keyPrefix}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${safeFileName}`;
     const partSize = Number(body.partSize || 0);
     const resolvedPartSize = Number.isFinite(partSize) && partSize > 0 ? partSize : R2_MULTIPART_PART_SIZE_BYTES;

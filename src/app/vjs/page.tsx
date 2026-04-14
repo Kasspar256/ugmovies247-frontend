@@ -6,25 +6,7 @@ import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function VJsDirectory() {
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:pb-12 pt-16 md:pt-24 px-4 md:px-12">
-      {/* Desktop Top Nav (Hidden on Mobile) */}
-      <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="text-[#D90429] font-black text-3xl tracking-tighter cursor-pointer">
-            UGMOVIES<span className="text-white tracking-widest">24_7</span>
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/" className="text-[#888888] hover:text-[#D90429] transition-colors">Home</Link>
-            <Link href="/vjs" className="text-white hover:text-[#D90429] transition-colors">VJ Directory</Link>
-            <Link href="/search" className="text-[#888888] hover:text-[#D90429] transition-colors">Search</Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/profile" className="w-10 h-10 rounded-md bg-[#1F2833] overflow-hidden border border-[#1F2833] hover:border-[#D90429] transition-colors cursor-pointer">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Admin&colors=D90429" alt="Profile" className="w-full h-full object-cover" />
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
 
       <MobilePageHeader
         title="VJ Directory"
@@ -35,7 +17,7 @@ export default function VJsDirectory() {
         actionAriaLabel="Search movies"
       />
 
-      <div className="mt-6 md:mt-10 max-w-7xl mx-auto">
+      <div className="mt-6 md:mt-2 max-w-[1380px] mx-auto">
         <p className="text-[#888888] text-sm md:text-lg mb-4 md:mb-8 max-w-2xl px-1">Select a translator to browse their entire fully-dubbed underground collection. High-octane action, strictly in Luganda.</p>
         
         {/* Simple inline search bar for the VJ Directory */}

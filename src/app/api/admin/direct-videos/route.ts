@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
+import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { extractMovieData } from '@/lib/movieUtils';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
-import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { createMovieDocumentRef } from '@/lib/server/movieCollection';
 import type { SourcePipeline } from '@/types/videoJobs';
 import type { Season } from '@/types/movie';
 
@@ -137,7 +137,7 @@ async function createDirectMovieDocument(options: {
   sourcePipeline: SourcePipeline;
   sourceUrl?: string;
 }) {
-  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
+  const movieRef = await createMovieDocumentRef();
   const timestamp = isoNow();
   const moviePayload = {
     movieId: movieRef.id,
@@ -161,7 +161,7 @@ async function createDirectSeriesDocument(options: {
   metadata: AdminMovieMetadata;
   seasons: SeriesSeasonInput[];
 }) {
-  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
+  const movieRef = await createMovieDocumentRef();
   const timestamp = isoNow();
   const normalizedSeasons: Season[] = options.seasons.map((season) => ({
     seasonNumber: season.seasonNumber,

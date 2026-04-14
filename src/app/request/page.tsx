@@ -2,51 +2,53 @@
 
 import Link from 'next/link';
 import { Send, Clapperboard, Mic2, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { VJ_DIRECTORY } from '@/config/constants';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function RequestPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [formData, setFormData] = useState({ title: '', vj: '', notes: '' });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.title) return;
     
     setIsSubmitting(true);
-    // Simulate API call to the Dark CDN backend
-    setTimeout(() => {
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: formData.title,
+          preferredVj: formData.vj,
+          notes: formData.notes,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to submit movie request.');
+      }
+
       setIsSubmitting(false);
       setShowToast(true);
       setFormData({ title: '', vj: '', notes: '' });
       setTimeout(() => setShowToast(false), 3000);
-    }, 1500);
+    } catch (error) {
+      setIsSubmitting(false);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit movie request.');
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 font-sans">
-      
-      {/* Desktop Header */}
-      <header className="hidden md:flex fixed top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="flex items-center justify-center p-1 w-64 hover:scale-105 transition-transform z-50">
-             <img src="/logo2_perfect.png" alt="UG Movies 247" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_2px_20px_rgba(217,4,41,0.9)]" />
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/" className="text-[#888888] hover:text-[#D90429] transition-colors">Home</Link>
-            <Link href="/vjs" className="text-[#888888] hover:text-[#D90429] transition-colors">VJ Directory</Link>
-            <Link href="/genres" className="text-[#888888] hover:text-[#D90429] transition-colors">Genres</Link>
-            <Link href="/search" className="text-[#888888] hover:text-[#D90429] transition-colors">Search</Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/profile" className="w-10 h-10 rounded-md bg-[#1F2833] overflow-hidden border border-[#D90429] hover:border-white transition-colors cursor-pointer shadow-[0_0_10px_rgba(217,4,41,0.5)]">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=AdminBossy&colors=D90429,0B0C10" alt="Profile" className="w-full h-full object-cover scale-110" />
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 lg:px-10 font-sans">
 
       {/* Floating Action Toast */}
       {showToast && (
@@ -58,7 +60,7 @@ export default function RequestPage() {
       <MobilePageHeader title="Request Movie" fallbackHref="/" />
 
       {/* Main Content */}
-      <div className="pt-24 md:pt-32 px-4 max-w-2xl mx-auto">
+      <div className="px-4 pt-24 md:mx-auto md:max-w-3xl md:px-0 md:pt-[138px]">
         
         <div className="text-center mb-8">
           <div className="w-16 h-16 md:w-20 md:h-20 bg-[#1F2833]/50 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#D90429]/30 shadow-[0_0_15px_rgba(217,4,41,0.2)]">
@@ -71,6 +73,11 @@ export default function RequestPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="bg-[#1F2833]/20 p-6 md:p-8 rounded-xl border border-white/5 shadow-xl space-y-5">
+          {errorMessage && (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {errorMessage}
+            </div>
+          )}
           
           {/* Movie Title */}
           <div>

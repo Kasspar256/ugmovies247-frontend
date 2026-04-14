@@ -1,0 +1,645 @@
+import { randomUUID } from 'crypto';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import { getSubscriptionSnapshotFromData, listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
+import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
+import {
+  CATEGORIES_COLLECTION,
+  MEDIA_LIBRARY_COLLECTION,
+  REQUESTS_COLLECTION,
+} from '@/lib/server/firestoreNamespaces';
+import { getMoviesCollectionRef } from '@/lib/server/movieCollection';
+import { normalizeMovie, type Movie } from '@/types/movie';
+import type {
+  AdminCategory,
+  AdminCategoryType,
+  AdminControlCenterPayload,
+  AdminLibraryAsset,
+  AdminLibraryAssignment,
+  AdminRequest,
+  AdminRequestStatus,
+  AdminRevenuePlanSummary,
+  AdminRevenueSummary,
+  AdminUserSummary,
+} from '@/types/admin';
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function parseStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function buildDefaultCategories(movies: Movie[]) {
+  const categories = new Map<string, AdminCategory>();
+  const timestamp = nowIso();
+
+  const addCategory = (name: string, type: AdminCategoryType, description: string, isSystem = true) => {
+    const normalizedName = name.trim();
+
+    if (!normalizedName) {
+      return;
+    }
+
+    const slug = slugify(normalizedName);
+
+    if (categories.has(slug)) {
+      return;
+    }
+
+    categories.set(slug, {
+      id: slug,
+      name: normalizedName,
+      slug,
+      description,
+      type,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      isSystem,
+    });
+  };
+
+  for (const category of MANUAL_HOME_CATEGORIES) {
+    addCategory(category, 'home_row', 'Homepage shelf category', true);
+  }
+
+  for (const movie of movies) {
+    for (const category of movie.category || []) {
+      addCategory(category, 'custom', 'Existing catalog category', false);
+    }
+
+    for (const genre of movie.genres || []) {
+      addCategory(genre, 'genre', 'Existing catalog genre', false);
+    }
+  }
+
+  return [...categories.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function listAllMoviesForAdmin() {
+  const moviesCollection = await getMoviesCollectionRef();
+  const snapshot = await moviesCollection.get();
+  const movies = snapshot.docs.map((doc) =>
+    normalizeMovie(doc.id, {
+      id: doc.id,
+      ...doc.data(),
+    })
+  );
+
+  return movies.sort((left, right) => (right.date_added || '').localeCompare(left.date_added || ''));
+}
+
+export async function listCategoriesForAdmin(movies?: Movie[]) {
+  const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
+
+  if (snapshot.empty) {
+    const defaults = buildDefaultCategories(movies || []);
+
+    if (defaults.length > 0) {
+      const batch = adminDb.batch();
+
+      for (const category of defaults) {
+        const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
+        batch.set(ref, category, { merge: true });
+      }
+
+      await batch.commit();
+    }
+
+    return defaults;
+  }
+
+  return snapshot.docs
+    .map((doc): AdminCategory => {
+      const data = doc.data() as Partial<AdminCategory>;
+
+      return {
+        id: doc.id,
+        name: data.name || doc.id,
+        slug: data.slug || slugify(data.name || doc.id),
+        description: data.description || '',
+        type:
+          data.type === 'home_row' || data.type === 'genre' || data.type === 'custom'
+            ? data.type
+            : 'custom',
+        createdAt: data.createdAt || '',
+        updatedAt: data.updatedAt || '',
+        isSystem: data.isSystem === true,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function upsertCategoryForAdmin(input: {
+  id?: string;
+  name: string;
+  description?: string;
+  type?: AdminCategoryType;
+}) {
+  const name = input.name.trim();
+
+  if (!name) {
+    throw new Error('Category name is required.');
+  }
+
+  const timestamp = nowIso();
+  const slug = slugify(name);
+  const categoryId = input.id?.trim() || slug;
+  const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(categoryId);
+  const existing = await ref.get();
+
+  const payload: AdminCategory = {
+    id: categoryId,
+    name,
+    slug,
+    description: input.description?.trim() || '',
+    type: input.type || 'custom',
+    createdAt: existing.exists ? ((existing.data() as Partial<AdminCategory>)?.createdAt || timestamp) : timestamp,
+    updatedAt: timestamp,
+    isSystem: false,
+  };
+
+  await ref.set(payload, { merge: true });
+  return payload;
+}
+
+export async function deleteCategoryForAdmin(categoryId: string) {
+  const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(categoryId);
+  const snapshot = await ref.get();
+
+  if (!snapshot.exists) {
+    throw new Error('Category not found.');
+  }
+
+  const data = snapshot.data() as Partial<AdminCategory>;
+  const categoryName = String(data.name || '').trim();
+
+    if (categoryName) {
+    const moviesCollection = await getMoviesCollectionRef();
+    const impactedMovies = await moviesCollection.where('category', 'array-contains', categoryName).get();
+
+    if (!impactedMovies.empty) {
+      const batch = adminDb.batch();
+
+      for (const movieDoc of impactedMovies.docs) {
+        const movieData = normalizeMovie(movieDoc.id, movieDoc.data());
+        const nextCategories = (movieData.category || []).filter((entry) => entry !== categoryName);
+
+        batch.set(
+          movieDoc.ref,
+          {
+            category: nextCategories,
+            updatedAt: nowIso(),
+          },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+    }
+  }
+
+  await ref.delete();
+}
+
+export async function listUsersForAdmin(limit = 200) {
+  const snapshot = await adminDb.collection('users').limit(limit).get();
+
+  return snapshot.docs
+    .map((doc): AdminUserSummary => {
+      const data = doc.data() as Record<string, unknown>;
+
+      return {
+        id: doc.id,
+        name: String(data.name || 'User'),
+        email: String(data.email || ''),
+        role: data.role === 'admin' ? 'admin' : 'user',
+        joinDate: String(data.createdAt || ''),
+        lastLoginAt: String(data.lastLoginAt || ''),
+        isActive: data.isActive !== false,
+        avatarUrl: String(data.avatarUrl || ''),
+        subscription: getSubscriptionSnapshotFromData(
+          data.subscription && typeof data.subscription === 'object'
+            ? (data.subscription as Record<string, unknown>)
+            : null
+        ),
+      };
+    })
+    .sort((left, right) => (right.lastLoginAt || right.joinDate || '').localeCompare(left.lastLoginAt || left.joinDate || ''));
+}
+
+export async function listRequestsForAdmin(limit = 200) {
+  const snapshot = await adminDb.collection(REQUESTS_COLLECTION).limit(limit).get();
+
+  return snapshot.docs
+    .map((doc): AdminRequest => {
+      const data = doc.data() as Partial<AdminRequest>;
+
+      return {
+        id: doc.id,
+        title: data.title || 'Untitled request',
+        preferredVj: data.preferredVj || '',
+        notes: data.notes || '',
+        status:
+          data.status === 'reviewing' ||
+          data.status === 'planned' ||
+          data.status === 'uploaded' ||
+          data.status === 'closed'
+            ? data.status
+            : 'new',
+        requesterId: data.requesterId || '',
+        requesterName: data.requesterName || '',
+        requesterEmail: data.requesterEmail || '',
+        adminNotes: data.adminNotes || '',
+        createdAt: data.createdAt || '',
+        updatedAt: data.updatedAt || '',
+      };
+    })
+    .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
+}
+
+export async function createRequestForAdmin(input: {
+  title: string;
+  preferredVj?: string;
+  notes?: string;
+  requesterId?: string;
+  requesterName?: string;
+  requesterEmail?: string;
+}) {
+  const title = input.title.trim();
+
+  if (!title) {
+    throw new Error('Request title is required.');
+  }
+
+  const timestamp = nowIso();
+  const ref = adminDb.collection(REQUESTS_COLLECTION).doc();
+  const payload: AdminRequest = {
+    id: ref.id,
+    title,
+    preferredVj: input.preferredVj?.trim() || '',
+    notes: input.notes?.trim() || '',
+    status: 'new',
+    requesterId: input.requesterId?.trim() || '',
+    requesterName: input.requesterName?.trim() || '',
+    requesterEmail: input.requesterEmail?.trim() || '',
+    adminNotes: '',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  await ref.set(payload);
+  return payload;
+}
+
+export async function updateRequestForAdmin(
+  requestId: string,
+  input: {
+    status?: AdminRequestStatus;
+    adminNotes?: string;
+  }
+) {
+  const ref = adminDb.collection(REQUESTS_COLLECTION).doc(requestId);
+  const snapshot = await ref.get();
+
+  if (!snapshot.exists) {
+    throw new Error('Request not found.');
+  }
+
+  const updates: Record<string, unknown> = {
+    updatedAt: nowIso(),
+  };
+
+  if (input.status) {
+    updates.status = input.status;
+  }
+
+  if (typeof input.adminNotes === 'string') {
+    updates.adminNotes = input.adminNotes.trim();
+  }
+
+  await ref.set(updates, { merge: true });
+}
+
+function collectMovieAssignments(movie: Movie) {
+  const assignments = new Map<string, AdminLibraryAssignment[]>();
+
+  const appendAssignment = (url: string | undefined, assignment: AdminLibraryAssignment) => {
+    const normalizedUrl = String(url || '').trim();
+
+    if (!normalizedUrl) {
+      return;
+    }
+
+    const current = assignments.get(normalizedUrl) || [];
+    current.push(assignment);
+    assignments.set(normalizedUrl, current);
+  };
+
+  appendAssignment(movie.video_url, {
+    type: 'movie',
+    movieId: movie.id,
+    movieTitle: movie.title,
+  });
+
+  for (const part of movie.parts || []) {
+    appendAssignment(part.video_url, {
+      type: 'movie_part',
+      movieId: movie.id,
+      movieTitle: movie.title,
+      partId: part.id,
+      partLabel: part.label,
+    });
+  }
+
+  for (const season of movie.seasons || []) {
+    for (const episode of season.episodes || []) {
+      appendAssignment(episode.video_url, {
+        type: 'episode',
+        movieId: movie.id,
+        movieTitle: movie.title,
+        seasonNumber: season.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+      });
+    }
+  }
+
+  return assignments;
+}
+
+type ManagedLibraryAssetDocument = {
+  id?: string;
+  label?: string;
+  fileName?: string;
+  url?: string;
+  key?: string;
+  contentType?: string;
+  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+  fileSizeBytes?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export async function listLibraryAssetsForAdmin(movies: Movie[]) {
+  const assignmentMap = new Map<string, AdminLibraryAssignment[]>();
+
+  for (const movie of movies) {
+    const movieAssignments = collectMovieAssignments(movie);
+
+    for (const [url, assignments] of movieAssignments.entries()) {
+      const current = assignmentMap.get(url) || [];
+      assignmentMap.set(url, [...current, ...assignments]);
+    }
+  }
+
+  const managedSnapshot = await adminDb.collection(MEDIA_LIBRARY_COLLECTION).limit(500).get();
+  const managedAssets = managedSnapshot.docs.map((doc) => {
+    const data = doc.data() as ManagedLibraryAssetDocument;
+    const url = String(data.url || '');
+    const assignments = assignmentMap.get(url) || [];
+
+    return {
+      id: doc.id,
+      label: data.label || data.fileName || 'Library asset',
+      fileName: data.fileName || '',
+      url,
+      contentType: data.contentType || 'video/mp4',
+      sourceType: data.sourceType || 'direct_upload',
+      fileSizeBytes: typeof data.fileSizeBytes === 'number' ? data.fileSizeBytes : 0,
+      createdAt: data.createdAt || '',
+      updatedAt: data.updatedAt || '',
+      isManaged: true,
+      canDelete: assignments.length === 0,
+      assignments,
+    } satisfies AdminLibraryAsset;
+  });
+
+  const managedUrlSet = new Set(managedAssets.map((asset) => asset.url).filter(Boolean));
+  const derivedAssets: AdminLibraryAsset[] = [];
+
+  for (const [url, assignments] of assignmentMap.entries()) {
+    if (managedUrlSet.has(url)) {
+      continue;
+    }
+
+    const fileName = url.split('/').pop() || '';
+    derivedAssets.push({
+      id: `derived:${slugify(url).slice(0, 60)}`,
+      label: assignments[0]?.partLabel || fileName || assignments[0]?.movieTitle || 'Linked asset',
+      fileName,
+      url,
+      contentType: 'video/mp4',
+      sourceType: 'direct_upload',
+      fileSizeBytes: 0,
+      createdAt: '',
+      updatedAt: '',
+      isManaged: false,
+      canDelete: false,
+      assignments,
+    });
+  }
+
+  return [...managedAssets, ...derivedAssets].sort((left, right) =>
+    (right.updatedAt || right.createdAt || '').localeCompare(left.updatedAt || left.createdAt || '')
+  );
+}
+
+export async function registerLibraryAssetForAdmin(input: {
+  label?: string;
+  fileName: string;
+  url: string;
+  key?: string;
+  fileSizeBytes?: number;
+  contentType?: string;
+  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+}) {
+  const url = input.url.trim();
+  const fileName = input.fileName.trim();
+
+  if (!url || !fileName) {
+    throw new Error('Library asset URL and file name are required.');
+  }
+
+  const timestamp = nowIso();
+  const existing = await adminDb
+    .collection(MEDIA_LIBRARY_COLLECTION)
+    .where('url', '==', url)
+    .limit(1)
+    .get();
+
+  const ref = existing.empty
+    ? adminDb.collection(MEDIA_LIBRARY_COLLECTION).doc()
+    : existing.docs[0].ref;
+
+  const payload: ManagedLibraryAssetDocument = {
+    label: input.label?.trim() || fileName,
+    fileName,
+    url,
+    key: input.key?.trim() || getR2ObjectKeyFromPublicUrl(url),
+    contentType: input.contentType || 'video/mp4',
+    sourceType: input.sourceType || 'direct_upload',
+    fileSizeBytes: typeof input.fileSizeBytes === 'number' ? input.fileSizeBytes : 0,
+    createdAt: existing.empty
+      ? timestamp
+      : ((existing.docs[0].data() as ManagedLibraryAssetDocument)?.createdAt || timestamp),
+    updatedAt: timestamp,
+  };
+
+  await ref.set(payload, { merge: true });
+
+  return {
+    id: ref.id,
+    ...payload,
+  };
+}
+
+export async function deleteLibraryAssetForAdmin(assetId: string, movies: Movie[]) {
+  const ref = adminDb.collection(MEDIA_LIBRARY_COLLECTION).doc(assetId);
+  const snapshot = await ref.get();
+
+  if (!snapshot.exists) {
+    throw new Error('Library asset not found.');
+  }
+
+  const data = snapshot.data() as ManagedLibraryAssetDocument;
+  const url = String(data.url || '');
+  const assignments = collectAssignmentsForUrl(url, movies);
+
+  if (assignments.length > 0) {
+    throw new Error('This asset is still attached to a movie, movie part, or episode.');
+  }
+
+  const objectKey = String(data.key || getR2ObjectKeyFromPublicUrl(url));
+
+  if (objectKey) {
+    await deleteR2Object(objectKey);
+  }
+
+  await ref.delete();
+}
+
+function collectAssignmentsForUrl(url: string, movies: Movie[]) {
+  const assignments: AdminLibraryAssignment[] = [];
+
+  for (const movie of movies) {
+    const map = collectMovieAssignments(movie);
+    assignments.push(...(map.get(url) || []));
+  }
+
+  return assignments;
+}
+
+export async function getRevenueSummaryForAdmin(): Promise<AdminRevenueSummary> {
+  const [payments, subscriptions] = await Promise.all([
+    listPaymentsForAdmin(500),
+    listSubscriptionsForAdmin(500),
+  ]);
+
+  const now = new Date();
+  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  const monthRevenue = payments
+    .filter((payment) => payment.status === 'completed')
+    .filter((payment) => String(payment.createdAt || '').startsWith(monthKey))
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+
+  const activeSubscriptions = subscriptions.filter((subscription) => {
+    if (!subscription.isActive || subscription.status !== 'active' || !subscription.expiresAt) {
+      return false;
+    }
+
+    return new Date(subscription.expiresAt).getTime() > Date.now();
+  });
+
+  const activePlanBreakdown = new Map<string, AdminRevenuePlanSummary>();
+
+  for (const subscription of activeSubscriptions) {
+    const key = subscription.planType || 'unknown';
+    const current = activePlanBreakdown.get(key) || {
+      planType: key,
+      planName: subscription.planName || 'Unknown plan',
+      activeCount: 0,
+      totalAmount: 0,
+    };
+
+    current.activeCount += 1;
+    current.totalAmount += Number(subscription.amount || 0);
+    activePlanBreakdown.set(key, current);
+  }
+
+  return {
+    monthLabel: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+    monthRevenue,
+    activeSubscriberCount: activeSubscriptions.length,
+    activeSubscriptionRevenue: activeSubscriptions.reduce(
+      (total, subscription) => total + Number(subscription.amount || 0),
+      0
+    ),
+    activePlanBreakdown: [...activePlanBreakdown.values()].sort(
+      (left, right) => right.totalAmount - left.totalAmount
+    ),
+    recentPayments: payments.slice(0, 20).map((payment) => ({
+      id: payment.id,
+      userId: payment.userId,
+      planType: payment.planType,
+      planName: payment.planName,
+      amount: payment.amount,
+      currency: payment.currency,
+      status: payment.status,
+      paymentProvider: payment.paymentProvider,
+      paymentMethodProvider: payment.paymentMethodProvider,
+      phoneNumber: payment.phoneNumber,
+      providerStatus: payment.providerStatus,
+      providerMessage: payment.providerMessage,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    })),
+  };
+}
+
+export async function getAdminControlCenterPayload(): Promise<AdminControlCenterPayload> {
+  const movies = await listAllMoviesForAdmin();
+  const [categories, users, requests, libraryAssets, revenue] = await Promise.all([
+    listCategoriesForAdmin(movies),
+    listUsersForAdmin(),
+    listRequestsForAdmin(),
+    listLibraryAssetsForAdmin(movies),
+    getRevenueSummaryForAdmin(),
+  ]);
+
+  return {
+    movies,
+    categories,
+    users,
+    requests,
+    libraryAssets,
+    revenue,
+  };
+}
+
+export function createPartId() {
+  return `part_${randomUUID()}`;
+}
+
+export function normalizeEditableStringList(value: unknown) {
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return parseStringList(value);
+}

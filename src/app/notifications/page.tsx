@@ -68,16 +68,10 @@ export default function NotificationsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 pt-24 px-4 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-24 pt-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
       <MobilePageHeader title="Notifications" fallbackHref="/profile" />
 
-      <header className="hidden fixed top-0 left-0 w-full z-40 justify-between items-center gap-4 border-b border-[#1F2833] bg-[#0B0C10]/95 p-4 shadow-xl backdrop-blur-md md:flex md:p-6 md:px-12">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg md:text-xl font-black text-white uppercase tracking-wider drop-shadow-md">Notifications</h1>
-        </div>
-      </header>
-
-      <div className="mt-2 max-w-lg mx-auto w-full">
+      <div className="mt-2 max-w-3xl mx-auto w-full">
         <div className="flex items-center justify-between bg-[#1F2833]/40 p-4 rounded-xl border border-white/5 mb-6 shadow-lg">
            <div>
              <span className="text-sm font-bold text-white tracking-widest uppercase">Latest Upload Alerts</span>

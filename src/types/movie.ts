@@ -35,6 +35,45 @@ export type Episode = {
   isLocked?: boolean;
 };
 
+export type MoviePart = {
+  id: string;
+  label: string;
+  order: number;
+  title?: string;
+  description?: string;
+  video_url: string;
+  poster?: string;
+  thumbnail?: string;
+  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+  sourcePipeline?: 'hls_pipeline' | 'direct_upload' | 'remote_mkv_to_mp4' | 'remote_mp4_ingest';
+  sourceFileName?: string;
+  sourceUrl?: string;
+  jobStatus?: 'queued' | 'validating' | 'downloading' | 'uploading_source' | 'transcoding' | 'packaging' | 'uploading_hls' | 'ready' | 'failed' | 'cancelled';
+  processingProgress?: number;
+  errorMessage?: string;
+  playbackType?: 'mp4' | 'hls';
+  masterPlaylistUrl?: string;
+  availableRenditions?: {
+    name: '360p' | '480p' | '720p' | '1080p';
+    width: number;
+    height: number;
+    bitrateKbps: number;
+    playlistUrl?: string;
+  }[];
+  durationSeconds?: number;
+  videoResolution?: {
+    width: number;
+    height: number;
+  } | null;
+  fileSizeBytes?: number;
+  processedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  accessTier?: 'free' | 'premium';
+  subscriptionRequired?: boolean;
+  isLocked?: boolean;
+};
+
 export type Season = {
   seasonNumber: number;
   title?: string;
@@ -78,6 +117,10 @@ export type Movie = {
   name?: string;
   overview?: string;
   description?: string;
+  language?: string;
+  releaseYear?: number | null;
+  tags?: string[];
+  cast?: string[];
   poster: string;
   genres: string[];
   category?: string[];
@@ -90,6 +133,7 @@ export type Movie = {
   file_name?: string;
   status?: string;
   is_trending_tiktok?: boolean;
+  parts?: MoviePart[];
   seasons?: Season[];
 };
 
@@ -139,6 +183,70 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
           })
           .filter(Boolean)
       : [];
+
+  const parts = Array.isArray(data.parts)
+    ? data.parts
+        .map((part, partIndex): MoviePart => {
+          const rawPart = part as Record<string, unknown>;
+          const id =
+            typeof rawPart.id === 'string' && rawPart.id.trim()
+              ? rawPart.id.trim()
+              : `part-${partIndex + 1}`;
+
+          return {
+            id,
+            label:
+              typeof rawPart.label === 'string' && rawPart.label.trim()
+                ? rawPart.label.trim()
+                : `Part ${String.fromCharCode(65 + partIndex)}`,
+            order:
+              typeof rawPart.order === 'number'
+                ? rawPart.order
+                : partIndex + 1,
+            title: typeof rawPart.title === 'string' ? rawPart.title : '',
+            description: typeof rawPart.description === 'string' ? rawPart.description : '',
+            video_url: typeof rawPart.video_url === 'string' ? rawPart.video_url : '',
+            poster: typeof rawPart.poster === 'string' ? rawPart.poster : '',
+            thumbnail: typeof rawPart.thumbnail === 'string' ? rawPart.thumbnail : '',
+            sourceType: normalizeSourceType(rawPart.sourceType),
+            sourcePipeline: normalizeSourcePipeline(rawPart.sourcePipeline),
+            sourceFileName: typeof rawPart.sourceFileName === 'string' ? rawPart.sourceFileName : '',
+            sourceUrl: typeof rawPart.sourceUrl === 'string' ? rawPart.sourceUrl : '',
+            jobStatus:
+              typeof rawPart.jobStatus === 'string'
+                ? (rawPart.jobStatus as MoviePart['jobStatus'])
+                : undefined,
+            processingProgress:
+              typeof rawPart.processingProgress === 'number' ? rawPart.processingProgress : 0,
+            errorMessage: typeof rawPart.errorMessage === 'string' ? rawPart.errorMessage : '',
+            playbackType:
+              rawPart.playbackType === 'hls' || rawPart.playbackType === 'mp4'
+                ? rawPart.playbackType
+                : 'mp4',
+            masterPlaylistUrl: typeof rawPart.masterPlaylistUrl === 'string' ? rawPart.masterPlaylistUrl : '',
+            availableRenditions: normalizeRenditions(rawPart.availableRenditions) as MoviePart['availableRenditions'],
+            durationSeconds:
+              typeof rawPart.durationSeconds === 'number' ? rawPart.durationSeconds : 0,
+            videoResolution:
+              rawPart.videoResolution &&
+              typeof (rawPart.videoResolution as Record<string, unknown>).width === 'number' &&
+              typeof (rawPart.videoResolution as Record<string, unknown>).height === 'number'
+                ? {
+                    width: (rawPart.videoResolution as Record<string, number>).width,
+                    height: (rawPart.videoResolution as Record<string, number>).height,
+                  }
+                : null,
+            fileSizeBytes: typeof rawPart.fileSizeBytes === 'number' ? rawPart.fileSizeBytes : 0,
+            processedAt: typeof rawPart.processedAt === 'string' ? rawPart.processedAt : '',
+            createdAt: typeof rawPart.createdAt === 'string' ? rawPart.createdAt : '',
+            updatedAt: typeof rawPart.updatedAt === 'string' ? rawPart.updatedAt : '',
+            accessTier: rawPart.accessTier === 'free' ? 'free' : 'premium',
+            subscriptionRequired: rawPart.subscriptionRequired !== false,
+            isLocked: Boolean(rawPart.isLocked),
+          };
+        })
+        .sort((left, right) => left.order - right.order)
+    : [];
 
   const seasons = Array.isArray(data.seasons)
     ? data.seasons.map((season, seasonIndex): Season => {
@@ -243,6 +351,14 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     name: typeof data.name === 'string' ? data.name : '',
     overview: typeof data.overview === 'string' ? data.overview : '',
     description: typeof data.description === 'string' ? data.description : '',
+    language: typeof data.language === 'string' ? data.language : '',
+    releaseYear: typeof data.releaseYear === 'number' ? data.releaseYear : null,
+    tags: Array.isArray(data.tags)
+      ? data.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
+    cast: Array.isArray(data.cast)
+      ? data.cast.filter((castMember): castMember is string => typeof castMember === 'string')
+      : [],
     poster: typeof data.poster === 'string' ? data.poster : '',
     genres: Array.isArray(data.genres)
       ? data.genres.filter((genre): genre is string => typeof genre === 'string')
@@ -259,6 +375,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     file_name: typeof data.file_name === 'string' ? data.file_name : '',
     status: typeof data.status === 'string' ? data.status : '',
     is_trending_tiktok: Boolean(data.is_trending_tiktok),
+    parts,
     seasons,
   };
 }

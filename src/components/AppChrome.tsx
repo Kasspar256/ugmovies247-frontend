@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import DesktopHeader from './DesktopHeader';
 import MobileBottomNav from './MobileBottomNav';
 
 function shouldShowMobileNav(pathname: string) {
@@ -31,6 +32,7 @@ export default function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <DesktopHeader />
       {children}
       {showMobileNav ? <MobileBottomNav /> : null}
     </>

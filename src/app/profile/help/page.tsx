@@ -1,5 +1,4 @@
 'use client';
-import Link from 'next/link';
 import { ArrowLeft, MessageCircle, HelpCircle, FileText, Send, Mail } from 'lucide-react';
 import { useState } from 'react';
 import MobilePageHeader from '@/components/MobilePageHeader';
@@ -19,19 +18,11 @@ export default function HelpSupportPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24">
+    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24 md:px-8 md:pb-14 lg:px-10">
       <MobilePageHeader title="Support Center" fallbackHref="/profile" />
 
-      <header className="hidden fixed top-0 left-0 w-full z-40 items-center justify-between border-b border-[#1F2833] bg-[#0B0C10]/95 p-4 shadow-xl backdrop-blur-md md:flex">
-        <Link href="/profile" className="text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
-          <ArrowLeft size={20} />
-        </Link>
-        <h1 className="text-lg font-black text-white uppercase tracking-widest drop-shadow-md">Support Center</h1>
-        <div className="w-8"></div>
-      </header>
-
       {/* Main Content */}
-      <div className="pt-24 px-4 max-w-lg mx-auto w-full">
+      <div className="pt-24 px-4 md:mx-auto md:max-w-2xl md:px-0 md:pt-[138px] w-full">
         
         <div className="flex justify-center mb-8">
            <div className="w-20 h-20 rounded-full bg-[#1F2833]/40 border-2 border-[#D90429]/40 shadow-[0_0_20px_rgba(217,4,41,0.2)] flex items-center justify-center">

@@ -60,32 +60,12 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:pb-12 pt-16 md:pt-28 px-4 md:px-12 font-sans">
-      
-      {/* Desktop Header */}
-      <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="flex items-center justify-center p-1 w-64 hover:scale-105 transition-transform z-50">
-             <img src="/logo2_perfect.png" alt="UG Movies 247" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_2px_20px_rgba(217,4,41,0.9)]" />
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/" className="text-white hover:text-[#D90429] transition-colors">Home</Link>
-            <Link href="/vjs" className="text-[#888888] hover:text-[#D90429] transition-colors">VJ Directory</Link>
-            <Link href="/genres" className="text-[#888888] hover:text-[#D90429] transition-colors">Genres</Link>
-            <Link href="/search" className="text-[#888888] hover:text-[#D90429] transition-colors">Search</Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/profile" className="w-10 h-10 rounded-md bg-[#1F2833] overflow-hidden border border-[#D90429] hover:border-white transition-colors cursor-pointer shadow-[0_0_10px_rgba(217,4,41,0.5)]">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=AdminBossy&colors=D90429,0B0C10" alt="Profile" className="w-full h-full object-cover scale-110" />
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
 
       <MobilePageHeader title={displayTitle} fallbackHref="/" />
 
       {/* Desktop Info */}
-      <div className="hidden md:flex items-center gap-6 mb-10 w-full max-w-7xl mx-auto">
+      <div className="hidden md:flex items-center gap-6 mb-10 w-full max-w-[1380px] mx-auto">
         <Link href="/" className="w-12 h-12 rounded-full bg-[#1F2833]/50 flex items-center justify-center text-white hover:bg-[#D90429] transition-colors group border border-white/5 shadow-md">
           <ArrowLeft size={24} className="group-hover:-translate-x-1 transition-transform" />
         </Link>
@@ -96,7 +76,7 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
       </div>
 
       {/* Massive Cinematic Grid of Category Movies */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 md:gap-5 mt-4 md:mt-0 max-w-7xl mx-auto">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 md:gap-5 mt-4 md:mt-0 max-w-[1380px] mx-auto">
         {movies.map((movie) => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group bg-[#1F2833]/10 md:bg-[#1F2833]/30 p-1 md:p-3 rounded-lg md:rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg flex flex-col h-full">
             <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2 md:mb-3 relative flex-shrink-0">

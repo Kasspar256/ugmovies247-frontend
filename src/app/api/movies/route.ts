@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
+import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession } from '@/lib/auth/server';
 import {
   getViewerEntitlement,
@@ -15,7 +15,7 @@ import {
   readMovieCatalogFromDisk,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
-import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { getMoviesCollectionRef } from '@/lib/server/movieCollection';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,8 +29,23 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
 function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   const movieJobStatus = typeof movieDoc.jobStatus === 'string' ? movieDoc.jobStatus : '';
   const hasPrimaryPlaybackAsset = Boolean(movieDoc.masterPlaylistUrl || movieDoc.video_url);
+  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
 
   if ((!movieJobStatus || movieJobStatus === 'ready') && hasPrimaryPlaybackAsset) {
+    return true;
+  }
+
+  if (
+    parts.some((part) => {
+      const rawPart = part as Record<string, unknown>;
+      const partJobStatus = typeof rawPart.jobStatus === 'string' ? rawPart.jobStatus : '';
+
+      return (
+        (!partJobStatus || partJobStatus === 'ready') &&
+        Boolean(rawPart.masterPlaylistUrl || rawPart.video_url)
+      );
+    })
+  ) {
     return true;
   }
 
@@ -54,19 +69,20 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
 }
 
 async function fetchMovieCatalog() {
-  if (isFreshMovieCache(inMemoryMovieCache)) {
+  if (isFreshMovieCache(inMemoryMovieCache) && (inMemoryMovieCache?.movies?.length || 0) > 0) {
     return inMemoryMovieCache;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
 
-  if (isFreshMovieCache(diskCache)) {
+  if (isFreshMovieCache(diskCache) && (diskCache?.movies?.length || 0) > 0) {
     setInMemoryMovieCache(diskCache);
     return diskCache;
   }
 
   try {
-    const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+    const moviesCollection = await getMoviesCollectionRef();
+    const snapshot = await moviesCollection.orderBy('date_added', 'desc').get();
     const cache: CachedMovieCatalog = {
       movies: snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,

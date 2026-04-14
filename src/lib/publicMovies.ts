@@ -87,13 +87,13 @@ function readCatalogFromSessionStorage() {
 }
 
 function getBestAvailableCatalog() {
-  if (isFreshCatalog(inMemoryMovieCatalog)) {
+  if (isFreshCatalog(inMemoryMovieCatalog) && (inMemoryMovieCatalog?.movies?.length || 0) > 0) {
     return inMemoryMovieCatalog;
   }
 
   const diskCache = readCatalogFromSessionStorage();
 
-  if (isFreshCatalog(diskCache)) {
+  if (isFreshCatalog(diskCache) && (diskCache?.movies?.length || 0) > 0) {
     inMemoryMovieCatalog = diskCache;
     return diskCache;
   }

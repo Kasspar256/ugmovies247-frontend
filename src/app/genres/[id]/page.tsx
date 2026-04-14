@@ -65,27 +65,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:pb-12 pt-16 md:pt-28 px-4 md:px-12">
-      
-      {/* Desktop Header */}
-      <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="flex items-center justify-center p-1 w-64 hover:scale-105 transition-transform z-50">
-             <img src="/logo2_perfect.png" alt="UG Movies 247" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_2px_20px_rgba(217,4,41,0.9)]" />
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/" className="text-[#888888] hover:text-[#D90429] transition-colors">Home</Link>
-            <Link href="/vjs" className="text-[#888888] hover:text-[#D90429] transition-colors">VJ Directory</Link>
-            <Link href="/genres" className="text-[#888888] hover:text-[#D90429] transition-colors">Genres</Link>
-            <Link href="/search" className="text-[#888888] hover:text-[#D90429] transition-colors">Search</Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/profile" className="w-10 h-10 rounded-md bg-[#1F2833] overflow-hidden border border-[#D90429] hover:border-white transition-colors cursor-pointer shadow-[0_0_10px_rgba(217,4,41,0.5)]">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=AdminBossy&colors=D90429,0B0C10" alt="Profile" className="w-full h-full object-cover scale-110" />
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
 
       <MobilePageHeader
         title={genreId}
@@ -94,13 +74,13 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
       />
 
       {/* Desktop Info */}
-      <div className="hidden md:block mb-8">
+      <div className="hidden md:block mb-8 max-w-[1380px] mx-auto">
         <h1 className="text-5xl font-black text-white uppercase tracking-widest mb-2 border-l-4 border-[#D90429] pl-6">{genreId}</h1>
         <p className="text-[#888888] pl-6 font-bold uppercase tracking-widest">{movies.length} Encrypted Files</p>
       </div>
 
       {/* Grid of Movies */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-6">
+      <div className="grid max-w-[1380px] mx-auto grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-6">
         {movies.map(movie => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group bg-[#1F2833]/30 p-2 md:p-3 rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg">
             <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">

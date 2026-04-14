@@ -257,7 +257,7 @@ export default function SubscribePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-16 md:pt-24">
+    <div className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-16 md:px-8 md:pt-[118px] lg:px-10">
       {showUpgradeSuccess && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#0B0C10]/88 px-4 backdrop-blur-md">
           <div className="w-full max-w-md rounded-[28px] border border-emerald-500/20 bg-[#11141C] p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
@@ -303,7 +303,7 @@ export default function SubscribePage() {
         actionLabel="Billing"
       />
 
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <div className="hidden items-center justify-between gap-3 md:flex">
           <Link
             href={billingHref}

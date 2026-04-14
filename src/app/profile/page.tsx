@@ -139,10 +139,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-28 pt-16 md:pt-24 px-4 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] px-4 pb-28 pt-16 md:px-8 md:pt-[118px] lg:px-10 font-sans">
       <MobilePageHeader title="My Account" fallbackHref="/" />
 
-      <div className="max-w-4xl mx-auto md:grid md:grid-cols-[0.9fr_1.1fr] md:gap-8 mt-4 md:mt-10">
+      <div className="max-w-5xl mx-auto md:grid md:grid-cols-[0.92fr_1.08fr] md:gap-8 mt-4 md:mt-6">
         <div className="rounded-3xl border border-white/10 bg-[#11141C]/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           <div className="flex flex-col items-center text-center">
             <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#D90429] bg-[#1F2833] shadow-[0_0_20px_rgba(217,4,41,0.2)]">

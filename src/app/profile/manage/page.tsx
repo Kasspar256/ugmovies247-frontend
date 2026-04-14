@@ -1,6 +1,5 @@
 'use client';
-import Link from 'next/link';
-import { ArrowLeft, Bell, Smartphone, MonitorPlay, Maximize, AlertCircle, Save } from 'lucide-react';
+import { Bell, Smartphone, MonitorPlay, Save } from 'lucide-react';
 import { useState } from 'react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
@@ -18,20 +17,11 @@ export default function SubSettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24">
+    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24 md:px-8 md:pb-14 lg:px-10">
       <MobilePageHeader title="App Settings" fallbackHref="/profile" />
 
-      <header className="hidden fixed top-0 left-0 w-full z-40 items-center gap-4 border-b border-[#1F2833] bg-[#0B0C10]/95 p-4 shadow-xl backdrop-blur-md md:flex">
-        <Link href="/profile" className="text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
-          <ArrowLeft size={20} />
-        </Link>
-        <div>
-          <h1 className="text-lg font-black text-white uppercase tracking-widest drop-shadow-md">App Settings</h1>
-        </div>
-      </header>
-
       {/* Main Container */}
-      <div className="pt-24 px-4 max-w-2xl mx-auto w-full">
+      <div className="pt-24 px-4 max-w-2xl mx-auto w-full md:px-0 md:pt-[138px]">
         
         <p className="text-[#888888] text-sm font-medium mb-6 px-1">Customize your Dark CDN streaming experience and network preferences.</p>
 

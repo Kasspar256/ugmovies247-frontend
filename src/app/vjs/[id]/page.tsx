@@ -58,28 +58,25 @@ export default function VJDetail({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24">
+    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
         title={vjInfo.name}
         subtitle={`${movies.length} Dubbed Movies`}
         fallbackHref="/vjs"
       />
 
-      <header className="hidden md:flex fixed top-0 left-0 w-full z-40 items-center gap-4 border-b border-[#1F2833] bg-[#0B0C10]/95 p-4 shadow-xl backdrop-blur-md">
-        <Link href="/vjs" className="text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center">
+      <div className="hidden md:flex mx-auto w-full max-w-[1380px] items-center gap-4">
+        <Link href="/vjs" className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1F2833]/70 text-white transition-colors hover:bg-[#D90429]">
           <ArrowLeft size={20} />
         </Link>
         <div>
-          <h1 className="text-xl font-black text-white uppercase tracking-wider drop-shadow-md">{vjInfo.name}</h1>
-          <p className="text-[#D90429] text-[10px] uppercase tracking-widest font-black">{movies.length} Dubbed Movies</p>
+          <h1 className="text-2xl font-black uppercase tracking-[0.18em] text-white">{vjInfo.name}</h1>
+          <p className="mt-1 text-[11px] font-black uppercase tracking-[0.26em] text-[#D90429]">{movies.length} Dubbed Movies</p>
         </div>
-      </header>
-
-      {/* spacer for fixed header */}
-      <div className="pt-20"></div>
+      </div>
 
       {/* Grid of Movies */}
-      <div className="p-4 grid grid-cols-3 gap-3 mt-4">
+      <div className="mx-auto mt-4 grid max-w-[1380px] grid-cols-3 gap-3 p-4 md:grid-cols-4 md:gap-5 md:px-0">
         {movies.map(movie => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group">
             <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2">

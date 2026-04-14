@@ -24,5 +24,9 @@ function getScopedCollectionName(baseCollectionName: string) {
 }
 
 export const MOVIES_COLLECTION = getScopedCollectionName('movies');
+export const LEGACY_MOVIES_COLLECTION = 'movies';
 export const VIDEO_JOBS_COLLECTION = getScopedCollectionName('video_jobs');
 export const VIDEO_JOB_RUNTIME_COLLECTION = getScopedCollectionName('video_job_runtime');
+export const CATEGORIES_COLLECTION = getScopedCollectionName('categories');
+export const REQUESTS_COLLECTION = getScopedCollectionName('requests');
+export const MEDIA_LIBRARY_COLLECTION = getScopedCollectionName('media_library');

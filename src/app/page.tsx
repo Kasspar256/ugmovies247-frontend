@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { HOME_ROW_ORDER } from '@/lib/homeCategories';
-import { Bell, Cast, Clapperboard, Download } from 'lucide-react';
+import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
@@ -14,6 +14,45 @@ type SessionUser = {
   role: 'user' | 'admin';
   name: string;
 };
+
+const DESKTOP_CATEGORY_PILLS = [
+  {
+    label: 'ALL',
+    value: 'ALL',
+    activeClass: 'bg-white text-[#0B0C10]',
+    idleClass: 'bg-[#3B3118] text-[#F2D7A1] hover:bg-[#4A3B1C]',
+  },
+  {
+    label: 'ACTION',
+    value: 'Action',
+    activeClass: 'bg-[#D90429] text-white',
+    idleClass: 'bg-[#3A0D14] text-red-200 hover:bg-[#4A121C]',
+  },
+  {
+    label: 'SCI-FI',
+    value: 'Sci-Fi',
+    activeClass: 'bg-cyan-400 text-[#081217]',
+    idleClass: 'bg-cyan-900/40 text-cyan-200 hover:bg-cyan-800/50',
+  },
+  {
+    label: 'DRAMA',
+    value: 'Drama',
+    activeClass: 'bg-violet-500 text-white',
+    idleClass: 'bg-violet-900/40 text-violet-200 hover:bg-violet-800/50',
+  },
+  {
+    label: 'ROMANCE',
+    value: 'Romance',
+    activeClass: 'bg-pink-500 text-white',
+    idleClass: 'bg-pink-900/40 text-pink-200 hover:bg-pink-800/50',
+  },
+  {
+    label: 'ADVENTURE',
+    value: 'Adventure',
+    activeClass: 'bg-emerald-400 text-[#09130E]',
+    idleClass: 'bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/50',
+  },
+] as const;
 
 export default function Home() {
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -259,7 +298,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-24 md:pb-8">
+    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-24 md:pb-12">
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -332,66 +371,26 @@ export default function Home() {
         />
       </header>
 
-      {/* Desktop Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 px-12 py-6 hidden md:flex items-center justify-between gap-3 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-         <div className="w-48 h-14 flex items-center justify-start overflow-hidden rounded-full pointer-events-auto">
-          <img 
-            src="/logow.png" 
-            alt="UG Movies 247" 
-            className="w-auto h-[110px] object-contain flex-shrink-0"
-          />
-        </div>
-        <div className="flex gap-8 text-[11px] font-semibold text-gray-300 pointer-events-auto">
-          <Link href="/" className="text-white">Home</Link>
-          <Link href="/vjs" className="hover:text-white transition-colors cursor-pointer">VJs</Link>
-          <Link href="/genres" className="hover:text-white transition-colors cursor-pointer">Genres</Link>
-          <Link href="/search" className="hover:text-white transition-colors cursor-pointer">Search</Link>
-          <Link href="/profile" className="hover:text-white transition-colors cursor-pointer">Profile</Link>
-        </div>
-        <div className="flex items-center gap-6 text-white pointer-events-auto">
-           {sessionUser?.role === 'admin' && (
-             <Link
-               href="/admin"
-               className="inline-flex items-center rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.28em] text-amber-200 shadow-[0_10px_20px_rgba(0,0,0,0.2)]"
-             >
-               Admin Mode
-             </Link>
-           )}
-           <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-             <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"></path>
-             <line x1="2" y1="20" x2="2.01" y2="20"></line>
-           </svg>
-           <svg className="w-5 h-5 md:w-6 md:h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-           <div className="relative flex items-center">
-             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
-             </svg>
-             <span className="absolute top-0 right-0 w-2 h-2 bg-[#D90429] rounded-full"></span>
-           </div>
-        </div>
-      </header>
-
       {/* Hero Section */}
       {heroMovie && (
-        <div className="relative w-full h-[54vh] md:h-[64vh] flex flex-col justify-end pb-10 md:pb-16 px-4 md:px-12 pt-20 transition-all duration-1000 ease-in-out">
+        <>
+        <section className="relative w-full h-[62vh] sm:h-[68vh] flex flex-col justify-end pb-10 px-4 pt-20 transition-all duration-1000 ease-in-out md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
-            <img 
-              src={heroMovie.poster} 
-              alt="Hero Backdrop" 
-              className="w-full h-full object-cover transition-opacity duration-1000"
+            <img
+              src={heroMovie.poster}
+              alt="Hero Backdrop"
+              className="w-full h-full object-cover object-top transition-opacity duration-1000"
             />
-            {/* Exactly recreating the shadow gradients from screenshot */}
             <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/80 to-transparent h-[60%] bottom-0 mt-auto"></div>
-            <div className="absolute inset-0 bg-black/30"></div> 
+            <div className="absolute inset-0 bg-black/30"></div>
           </div>
-          
-          <div className="relative z-10 w-full max-w-4xl mx-auto md:mx-0 flex flex-col items-center md:items-start text-center md:text-left">
-            <h1 className="text-4xl md:text-7xl font-extrabold text-white mb-4 tracking-tight leading-tight w-full drop-shadow-2xl">
+
+          <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
+            <h1 className="text-4xl font-extrabold text-white mb-4 tracking-tight leading-tight w-full drop-shadow-2xl">
               {heroMovie.title}
             </h1>
-            
-            {/* Metadata Row */}
-            <div className="flex items-center justify-center md:justify-start gap-4 text-[11px] font-semibold text-gray-400 mb-8 tracking-widest w-full">
+
+            <div className="flex items-center justify-center gap-4 text-[11px] font-semibold text-gray-400 mb-8 tracking-widest w-full">
               <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
               <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
               <span>2h 49m</span>
@@ -402,41 +401,160 @@ export default function Home() {
                 </span>
               )}
             </div>
-            
-            {/* Action Buttons */}
-            <div className="flex flex-row w-full sm:w-auto gap-3 justify-center md:justify-start px-2 md:px-0">
-              <Link href={`/movie/${heroMovie.id}`} className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 sm:flex-none px-4 py-3 md:py-4 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30 sm:w-[220px]">
-                <svg className="w-5 h-5 md:w-6 md:h-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <span className="text-[11px] md:text-xs">{heroMovie.isLocked ? 'UNLOCK TO WATCH' : 'PLAY NOW'}</span>
+
+            <div className="flex flex-row w-full gap-3 justify-center px-2">
+              <Link
+                href={`/movie/${heroMovie.id}`}
+                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+              >
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <span className="text-[11px]">{heroMovie.isLocked ? 'UNLOCK TO WATCH' : 'PLAY NOW'}</span>
               </Link>
-              <button onClick={() => setShowHeroDetails((prev) => !prev)} className="bg-[#1F2833] hover:bg-gray-800 text-white font-bold flex-1 sm:flex-none px-4 py-3 md:py-4 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/5 sm:w-[220px]">
-                <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                <span className="text-[11px] md:text-xs">{showHeroDetails ? "HIDE DETAILS" : "DETAILS"}</span>
+              <button
+                onClick={() => setShowHeroDetails((prev) => !prev)}
+                className="bg-[#1F2833] hover:bg-gray-800 text-white font-bold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span className="text-[11px]">{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
               </button>
             </div>
 
             {showHeroDetails && (
-              <div className="mt-4 w-full max-w-2xl rounded-xl border border-white/10 bg-black/60 backdrop-blur-md p-4 md:p-5 shadow-2xl">
-                <h3 className="text-[11px] md:text-xs font-bold text-white mb-2 uppercase tracking-wide">
+              <div className="mt-4 w-full max-w-2xl rounded-xl border border-white/10 bg-black/60 backdrop-blur-md p-4 shadow-2xl">
+                <h3 className="text-[11px] font-bold text-white mb-2 uppercase tracking-wide">
                   About this movie
                 </h3>
-                <p className="text-[11px] md:text-xs leading-6 text-gray-200">
-                  {heroMovie?.overview || heroMovie?.description || "No description available for this movie yet."}
+                <p className="text-[11px] leading-6 text-gray-200">
+                  {heroMovie?.overview || heroMovie?.description || 'No description available for this movie yet.'}
                 </p>
               </div>
             )}
           </div>
-        </div>
+        </section>
+        <section className="relative hidden overflow-hidden md:block md:pt-[88px]">
+          <div className="relative min-h-[1040px] overflow-hidden bg-[#05070C]">
+            <img
+              src={heroMovie.poster}
+              alt="Hero Backdrop"
+              className="absolute inset-0 h-full w-full object-cover object-[center_10%] transition-opacity duration-1000 [filter:brightness(1.12)_contrast(1.06)_saturate(1.08)]"
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(90deg, rgba(5,7,12,0.88) 0%, rgba(5,7,12,0.58) 24%, rgba(5,7,12,0.22) 50%, rgba(5,7,12,0.16) 100%), linear-gradient(180deg, rgba(11,12,16,0.03) 0%, rgba(11,12,16,0.02) 42%, rgba(11,12,16,0.08) 62%, rgba(11,12,16,0.72) 100%)',
+              }}
+            />
+
+            <div className="relative z-10 mx-auto flex min-h-[1040px] w-full max-w-[1440px] flex-col justify-between px-8 pb-12 pt-20 lg:px-10">
+              <div className="max-w-[760px] pt-14">
+                <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/26 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-white/78 backdrop-blur-xl">
+                  <span className="h-2 w-2 rounded-full bg-[#D90429]" />
+                  Now Streaming
+                  {sessionUser?.role === 'admin' && (
+                    <Link
+                      href="/admin"
+                      className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[9px] text-amber-200"
+                    >
+                      Admin Mode
+                    </Link>
+                  )}
+                </div>
+
+                <h1 className="max-w-[760px] text-[84px] font-extrabold leading-[0.92] tracking-[-0.04em] text-white drop-shadow-2xl">
+                  {heroMovie.title}
+                </h1>
+
+                <div className="mb-5 mt-5 flex flex-wrap items-center gap-4 text-[12px] font-semibold tracking-[0.22em] text-gray-200">
+                  <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-gray-500" />
+                  <span>{isSeriesMovie(heroMovie) ? 'Series' : 'Movie'}</span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-gray-500" />
+                  {heroMovie.vj && heroMovie.vj !== 'Unknown' && (
+                    <span className="border-l-2 border-[#D90429] pl-4 font-bold uppercase tracking-[0.2em] text-[#D90429]">
+                      VJ {heroMovie.vj}
+                    </span>
+                  )}
+                </div>
+
+                <p className="max-w-[650px] text-[18px] leading-8 text-white/86">
+                  {heroMovie?.overview || heroMovie?.description || 'No description available for this movie yet.'}
+                </p>
+
+                <div className="mt-10 flex items-center gap-4">
+                  <Link
+                    href={`/movie/${heroMovie.id}`}
+                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
+                  >
+                    <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <span>{heroMovie.isLocked ? 'UNLOCK TO WATCH' : 'PLAY NOW'}</span>
+                  </Link>
+                  <button
+                    onClick={() => setShowHeroDetails((prev) => !prev)}
+                    className="flex h-14 min-w-[190px] items-center justify-center gap-2 rounded-md bg-[#3A4558] px-6 text-[13px] font-bold text-white transition-colors hover:bg-[#4C5A72]"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
+                  </button>
+                </div>
+
+                {showHeroDetails && (
+                  <div className="mt-7 w-full max-w-2xl rounded-[24px] border border-white/10 bg-black/34 p-6 shadow-2xl backdrop-blur-md">
+                    <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-white">
+                      About this movie
+                    </h3>
+                    <p className="text-[13px] leading-7 text-gray-200">
+                      {heroMovie?.overview || heroMovie?.description || 'No description available for this movie yet.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-16">
+                <div className="text-[11px] font-black uppercase tracking-[0.28em] text-white/42">
+                  Browse
+                </div>
+                <h2 className="mt-2 text-[24px] font-black tracking-[-0.03em] text-white">
+                  Pick a lane and keep watching
+                </h2>
+
+                <div className="relative mt-5">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-[#0B0C10] to-transparent" />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-[#0B0C10] to-transparent" />
+                  <div className="flex gap-3 overflow-x-auto pb-3 pr-12 style-hide-scrollbar">
+                    {DESKTOP_CATEGORY_PILLS.map((category) => {
+                      const isActive = activeCategory === category.value;
+
+                      return (
+                        <button
+                          key={category.value}
+                          onClick={() => setActiveCategory(category.value)}
+                          className={`${
+                            isActive
+                              ? 'bg-white text-[#0B0C10]'
+                              : 'bg-white/[0.08] text-white/76 hover:bg-white/[0.12] hover:text-white'
+                          } shrink-0 rounded-full px-5 py-2.5 text-[11px] font-black uppercase tracking-[0.2em] transition-colors`}
+                        >
+                          {category.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        </>
       )}
 
-      {/* Category Filter Pills (Horizontal Scroll) */}
-    <div className="relative z-20 px-4 md:px-12 -mt-4 md:-mt-8 mb-4">
+      <div className="relative z-20 px-4 -mt-4 mb-4 md:hidden">
          <div className="flex gap-2 overflow-x-auto pb-3 style-hide-scrollbar snap-x">
            <button
   onClick={() => setActiveCategory('ALL')}
   className={`${activeCategory === 'ALL' ? 'bg-white text-black' : 'bg-yellow-600/80 text-white hover:bg-yellow-500'} px-2 py-1.5 rounded-full text-[10px] sm:text-xs font-bold shrink-0 flex items-center gap-1.5 snap-start transition-colors border border-white/5`}
 >
-  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
   </svg>
   ALL
@@ -495,7 +613,7 @@ export default function Home() {
 </Link>
 
       {/* Main Content Rows Container */}
-      <div className="relative z-20 space-y-5 md:space-y-6">
+      <div className="relative z-20 space-y-5 md:space-y-12 md:pt-2">
         {!movies.length && !IS_PRODUCTION_APP && (
           <section className="px-4 md:px-12">
             <div className="rounded-2xl border border-sky-500/25 bg-sky-500/10 p-5 md:p-6 text-sky-100 shadow-[0_12px_28px_rgba(0,0,0,0.25)]">
@@ -571,10 +689,25 @@ function MovieRow({
   onToggle?: () => void
 }) {
   const rowMovies = dedupeSeriesMovies(movies || []);
+  const railRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollRail = (direction: 'left' | 'right') => {
+    const container = railRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const amount = Math.max(320, Math.floor(container.clientWidth * 0.72));
+    container.scrollBy({
+      left: direction === 'left' ? -amount : amount,
+      behavior: 'smooth',
+    });
+  };
 
   const renderCard = (m: Movie) => (
-    <Link href={`/movie/${m.id}`} key={m.id} className="w-[110px] md:w-[260px] cursor-pointer snap-start shrink-0">
-      <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-[#1F2833] group/card">
+    <Link href={`/movie/${m.id}`} key={m.id} className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]">
+      <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
         <img
           src={m.poster || 'https://via.placeholder.com/300x450/1F2833/888888?text=NO+POSTER'}
           alt={m.title}
@@ -600,59 +733,71 @@ function MovieRow({
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none"></div>
 
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
-          <div className="w-12 h-12 bg-[#D90429]/90 backdrop-blur rounded-full flex items-center justify-center pl-1 shadow-[0_0_15px_rgba(217,4,41,1)]">
+        <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 transition-opacity duration-300 pointer-events-none group-hover/card:opacity-100">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 pl-1 backdrop-blur-md shadow-[0_16px_30px_rgba(0,0,0,0.35)]">
             <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
               <path d="M4 4l12 6-12 6z"/>
             </svg>
           </div>
         </div>
       </div>
-      <p className="mt-2 min-h-[2.5rem] text-xs font-semibold text-white leading-5 line-clamp-2">
+      <p className="mt-2 min-h-[2.5rem] text-xs font-semibold leading-5 text-white line-clamp-2 md:mt-3 md:min-h-[3rem] md:text-[14px] md:leading-6 md:text-white/90">
         {`${m.title || m.name} - ${m.vj && m.vj !== 'Unknown' ? `VJ ${m.vj}` : 'VJ HD'}`}
       </p>
     </Link>
   );
 
   return (
-    <section className="px-4 md:px-12 w-full relative">
-      <div className="flex items-center justify-between gap-3 mb-4">
-        <h2 className="text-[16px] md:text-[11px] font-bold text-white tracking-wide">
+    <section className="relative mx-auto w-full max-w-[1440px] px-4 md:px-8 lg:px-10">
+      <div className="mb-4 flex items-center justify-between gap-4 md:mb-5">
+        <div>
+          <div className="mb-2 hidden h-[2px] w-10 bg-white/16 md:block" />
+          <h2 className="text-[16px] font-bold tracking-wide text-white md:text-[22px] md:font-black md:tracking-[-0.02em]">
           {title}
-        </h2>
-        {hasViewAll && (
-          <button
-            onClick={onToggle}
-            className="text-[#D90429] text-[8px] md:text-[10px] font-bold px-2 py-1 border border-[#D90429]/30 rounded flex items-center gap-1 uppercase tracking-wider backdrop-blur-sm bg-red-900/10 flex hover:bg-red-900/30 transition-colors"
-          >
-            {expanded ? 'VIEW LESS' : 'VIEW ALL'}
-            <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
-            </svg>
-          </button>
-        )}
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {rowMovies.length > 0 && (
+            <div className="hidden items-center gap-2 md:flex">
+              <button
+                onClick={() => scrollRail('left')}
+                aria-label={`Scroll ${title} left`}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <ChevronLeft size={18} strokeWidth={2.2} />
+              </button>
+              <button
+                onClick={() => scrollRail('right')}
+                aria-label={`Scroll ${title} right`}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <ChevronRight size={18} strokeWidth={2.2} />
+              </button>
+            </div>
+          )}
+          {hasViewAll && (
+            <button
+              onClick={onToggle}
+              className="flex items-center gap-1 rounded-full border border-[#D90429]/25 bg-red-900/10 px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-[#D90429] backdrop-blur-sm transition-colors hover:bg-red-900/30 md:text-[10px]"
+            >
+              {expanded ? 'VIEW LESS' : 'VIEW ALL'}
+              <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="group relative">
-        {rowMovies.length > 0 && (
-          <button className="absolute left-0 top-1/2 -translate-y-2/2 z-30 w-12 h-full bg-black/60 opacity-0 group-hover:opacity-100 hidden md:flex items-center justify-center transition-opacity text-white hover:bg-black/80">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7"></path>
-            </svg>
-          </button>
-        )}
-
         {rowMovies.length > 0 ? (
           <>
-            <div className="flex gap-3 md:gap-4 overflow-x-auto pb-4 snap-x style-hide-scrollbar">
+            <div
+              ref={railRef}
+              className="flex gap-3 overflow-x-auto pb-4 snap-x style-hide-scrollbar md:gap-5"
+            >
               {rowMovies.map((m) => renderCard(m))}
             </div>
-
-            <button className="absolute right-0 top-1/2 -translate-y-2/2 z-30 w-12 h-full bg-black/60 opacity-0 group-hover:opacity-100 hidden md:flex items-center justify-center transition-opacity text-white hover:bg-black/80">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7"></path>
-              </svg>
-            </button>
           </>
         ) : (
           <div className="rounded-xl border border-dashed border-white/10 bg-[#11141C]/60 px-4 py-6 text-sm text-gray-500">

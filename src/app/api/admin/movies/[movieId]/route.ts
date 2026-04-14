@@ -7,8 +7,9 @@ import {
   removeMovieFromCatalogCache,
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
-import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
-import type { Episode, Movie } from '@/types/movie';
+import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
+import { getMovieDocumentRef } from '@/lib/server/movieCollection';
+import type { Episode, Movie, MoviePart } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -56,6 +57,11 @@ function parseOptionalInteger(requestUrl: URL, name: string) {
   return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
+function parseOptionalString(requestUrl: URL, name: string) {
+  const rawValue = requestUrl.searchParams.get(name);
+  return rawValue && rawValue.trim() ? rawValue.trim() : null;
+}
+
 function collectCandidateUrls(movie: Movie) {
   const urls = new Set<string>();
 
@@ -73,6 +79,34 @@ function collectCandidateUrls(movie: Movie) {
 
   if (movie.masterPlaylistUrl) {
     urls.add(movie.masterPlaylistUrl);
+  }
+
+  for (const part of movie.parts || []) {
+    if (part.video_url) {
+      urls.add(part.video_url);
+    }
+
+    if (part.sourceUrl) {
+      urls.add(part.sourceUrl);
+    }
+
+    if (part.poster) {
+      urls.add(part.poster);
+    }
+
+    if (part.thumbnail) {
+      urls.add(part.thumbnail);
+    }
+
+    if (part.masterPlaylistUrl) {
+      urls.add(part.masterPlaylistUrl);
+    }
+
+    for (const rendition of part.availableRenditions || []) {
+      if (rendition?.playlistUrl) {
+        urls.add(rendition.playlistUrl);
+      }
+    }
   }
 
   for (const rendition of movie.availableRenditions || []) {
@@ -121,7 +155,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
     }
 
-    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
+    const movieRef = await getMovieDocumentRef(movieId);
     const snapshot = await movieRef.get();
 
     if (!snapshot.exists) {
@@ -132,8 +166,76 @@ export async function DELETE(
     const requestUrl = new URL(request.url);
     const seasonNumber = parseOptionalInteger(requestUrl, 'seasonNumber');
     const episodeNumber = parseOptionalInteger(requestUrl, 'episodeNumber');
+    const partId = parseOptionalString(requestUrl, 'partId');
 
     const deletedObjectKeys: string[] = [];
+
+    if (partId) {
+      const targetPart = (movie.parts || []).find((part) => String(part.id) === partId);
+
+      if (!targetPart) {
+        return NextResponse.json({ error: 'Movie part not found.' }, { status: 404 });
+      }
+
+      const updatedAt = new Date().toISOString();
+      const nextParts = (movie.parts || [])
+        .filter((part) => String(part.id) !== partId)
+        .map((part, index) => ({
+          ...part,
+          order: index + 1,
+          updatedAt,
+        }));
+
+      await movieRef.set(
+        {
+          parts: nextParts,
+          video_url: nextParts[0]?.video_url || '',
+          sourceUrl: nextParts[0]?.sourceUrl || nextParts[0]?.video_url || '',
+          sourceFileName: nextParts[0]?.sourceFileName || '',
+          updatedAt,
+        },
+        { merge: true }
+      );
+
+      const objectKeys = [
+        targetPart.video_url,
+        targetPart.sourceUrl,
+        targetPart.poster,
+        targetPart.thumbnail,
+      ]
+        .map((url) => getR2ObjectKeyFromPublicUrl(String(url || '')))
+        .filter(Boolean);
+
+      for (const objectKey of objectKeys) {
+        try {
+          await deleteR2Object(objectKey);
+          deletedObjectKeys.push(objectKey);
+        } catch (error) {
+          console.warn('[admin] failed to delete R2 object during movie part removal', {
+            movieId,
+            partId,
+            objectKey,
+            error: error instanceof Error ? error.message : error,
+          });
+        }
+      }
+
+      await upsertMovieInCatalogCache({
+        ...movie,
+        parts: nextParts as MoviePart[],
+        video_url: nextParts[0]?.video_url || '',
+        sourceUrl: nextParts[0]?.sourceUrl || nextParts[0]?.video_url || '',
+        sourceFileName: nextParts[0]?.sourceFileName || '',
+        updatedAt,
+      });
+
+      return NextResponse.json({
+        success: true,
+        movieId,
+        partId,
+        deletedObjectKeys,
+      });
+    }
 
     if (seasonNumber !== null && episodeNumber !== null) {
       const targetSeason = (movie.seasons || []).find(
@@ -271,9 +373,10 @@ export async function PATCH(
       description?: string;
       poster?: string;
       vj?: string;
+      movie?: Record<string, unknown>;
     };
 
-    const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(movieId);
+    const movieRef = await getMovieDocumentRef(movieId);
     const snapshot = await movieRef.get();
 
     if (!snapshot.exists) {
@@ -285,6 +388,10 @@ export async function PATCH(
     const seasonNumber = parseOptionalInteger(requestUrl, 'seasonNumber');
     const episodeNumber = parseOptionalInteger(requestUrl, 'episodeNumber');
     const nextUpdatedAt = new Date().toISOString();
+    const fullMoviePayload =
+      body.movie && typeof body.movie === 'object'
+        ? (body.movie as Record<string, unknown>)
+        : null;
 
     const nextTitle = typeof body.title === 'string' ? body.title.trim() : undefined;
     const nextDescription =
@@ -294,6 +401,48 @@ export async function PATCH(
 
     if (nextTitle !== undefined && !nextTitle) {
       return NextResponse.json({ error: 'Title cannot be empty.' }, { status: 400 });
+    }
+
+    if (fullMoviePayload) {
+      const nextMovie = {
+        ...buildEditableMovieDocument(fullMoviePayload, movie),
+        movieId: movie.movieId || movie.id,
+      };
+
+      if (
+        nextMovie.contentType === 'movie' &&
+        !nextMovie.video_url &&
+        (!nextMovie.parts || nextMovie.parts.length === 0)
+      ) {
+        return NextResponse.json(
+          { error: 'Movie entries need either one MP4 source or at least one movie part.' },
+          { status: 400 }
+        );
+      }
+
+      if (
+        nextMovie.contentType === 'series' &&
+        (!nextMovie.seasons || nextMovie.seasons.length === 0)
+      ) {
+        return NextResponse.json(
+          { error: 'Series entries need at least one season with one episode.' },
+          { status: 400 }
+        );
+      }
+
+      await movieRef.set(nextMovie, { merge: false });
+      await upsertMovieInCatalogCache({
+        id: movie.id,
+        ...nextMovie,
+      });
+
+      return NextResponse.json({
+        success: true,
+        movie: {
+          id: movie.id,
+          ...nextMovie,
+        },
+      });
     }
 
     if (seasonNumber !== null && episodeNumber !== null) {

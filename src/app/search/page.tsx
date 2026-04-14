@@ -50,26 +50,7 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 pt-16 md:pt-28 px-4 md:px-12 font-sans">
-      
-      {/* Desktop Header */}
-      <header className="hidden md:flex absolute top-0 w-full z-50 justify-between items-center p-6 bg-gradient-to-b from-black/90 to-transparent left-0">
-        <div className="flex items-center gap-12">
-          <Link href="/" className="flex items-center justify-center p-1 w-64 hover:scale-105 transition-transform z-50">
-             <img src="/images/ugmovieslogo_transparent.png" alt="UG Movies 247" className="h-16 md:h-20 w-auto object-contain drop-shadow-[0_2px_20px_rgba(217,4,41,0.9)]" />
-          </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
-            <Link href="/" className="text-[#888888] hover:text-[#D90429] transition-colors">Home</Link>
-            <Link href="/vjs" className="text-[#888888] hover:text-[#D90429] transition-colors">VJ Directory</Link>
-            <Link href="/search" className="text-white hover:text-[#D90429] transition-colors">Search</Link>
-          </nav>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link href="/profile" className="w-10 h-10 rounded-md bg-[#1F2833] overflow-hidden border border-[#D90429] hover:border-white transition-colors cursor-pointer shadow-[0_0_10px_rgba(217,4,41,0.5)]">
-            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=AdminBossy&colors=D90429,0B0C10" alt="Profile" className="w-full h-full object-cover scale-110" />
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0B0C10] pb-24 pt-16 md:px-8 md:pb-16 md:pt-[118px] lg:px-10 font-sans">
 
       {/* Search Bar Container (Mobile) */}
       <div className="md:hidden fixed top-4 left-4 right-4 z-50">
@@ -112,7 +93,7 @@ export default function SearchPage() {
       </div>
 
       {/* Desktop Search Bar */}
-      <div className="hidden md:block max-w-4xl mx-auto mb-10 relative">
+      <div className="hidden md:block max-w-5xl mx-auto mb-12 relative">
         <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-[#888888]" size={28} />
         <input 
           type="text" 
@@ -130,7 +111,7 @@ export default function SearchPage() {
       </div>
 
       {/* Results Area */}
-      <div className="mt-2 md:mt-8 max-w-7xl mx-auto">
+      <div className="mt-2 md:mt-10 max-w-[1380px] mx-auto">
         {query === '' ? (
           <div className="text-center mt-24 md:mt-32 flex flex-col items-center">
             <div className="w-20 h-20 bg-[#1F2833]/40 rounded-full flex items-center justify-center mb-6 border border-white/5 shadow-inner">
