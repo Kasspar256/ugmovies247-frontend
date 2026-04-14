@@ -57,6 +57,14 @@ type AdminControlCenterProps = {
   section?: AdminTab;
 };
 
+type ResolvedVideoSource = {
+  video_url: string;
+  sourceUrl: string;
+  sourceFileName: string;
+  fileSizeBytes: number;
+  sourceType: 'direct_upload' | 'remote_link';
+};
+
 function createEmptyCategoryDraft(): CategoryDraft {
   return {
     id: '',
@@ -351,7 +359,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     onProgress?: (progress: number) => void,
     onDiagnostic?: (message: string) => void,
     stage: 'final' | 'library' | 'staging' = 'final'
-  ) => {
+  ): Promise<ResolvedVideoSource> => {
     if (source.mode === 'file' && source.file) {
       const uploadedAsset = await uploadMultipartFileToAdmin({
         file: source.file,
@@ -414,7 +422,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
     try {
       const posterUrl = await resolvePosterUrl(movieDraft.poster, movieDraft.posterFile);
-      let rootSource = {
+      let rootSource: ResolvedVideoSource = {
         video_url: '',
         sourceUrl: '',
         sourceFileName: '',
