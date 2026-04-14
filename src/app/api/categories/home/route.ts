@@ -6,6 +6,14 @@ import { HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+type PublicHomeCategory = {
+  id: string;
+  name: string;
+  displayLabel: string;
+  homeOrder: number;
+  isVisible: boolean;
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -15,34 +23,26 @@ function slugify(value: string) {
 
 export async function GET() {
   const adminSetupError = getFirebaseAdminSetupError();
+  const defaultCategories: PublicHomeCategory[] = HOME_PAGE_CATEGORY_CONFIG.map((category) => ({
+    id: slugify(category.name),
+    name: category.name,
+    displayLabel: category.displayLabel,
+    homeOrder: category.homeOrder,
+    isVisible: true,
+  }));
 
   if (adminSetupError) {
     return NextResponse.json(
       {
-        categories: HOME_PAGE_CATEGORY_CONFIG.map((category) => ({
-          id: slugify(category.name),
-          name: category.name,
-          displayLabel: category.displayLabel,
-          homeOrder: category.homeOrder,
-          isVisible: true,
-        })),
+        categories: defaultCategories,
       },
       { status: 200 }
     );
   }
 
   try {
-    const defaults = new Map(
-      HOME_PAGE_CATEGORY_CONFIG.map((category) => [
-        slugify(category.name),
-        {
-          id: slugify(category.name),
-          name: category.name,
-          displayLabel: category.displayLabel,
-          homeOrder: category.homeOrder,
-          isVisible: true,
-        },
-      ])
+    const defaults = new Map<string, PublicHomeCategory>(
+      defaultCategories.map((category) => [slugify(category.name), category])
     );
     const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
 
@@ -79,13 +79,7 @@ export async function GET() {
     console.error('[public-home-categories] failed to load categories', error);
     return NextResponse.json(
       {
-        categories: HOME_PAGE_CATEGORY_CONFIG.map((category) => ({
-          id: slugify(category.name),
-          name: category.name,
-          displayLabel: category.displayLabel,
-          homeOrder: category.homeOrder,
-          isVisible: true,
-        })),
+        categories: defaultCategories,
       },
       { status: 200 }
     );
