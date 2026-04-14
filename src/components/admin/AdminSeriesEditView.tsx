@@ -259,7 +259,10 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
   }, [categories]);
 
   const categoryLabelMap = useMemo(
-    () => new Map(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
+    () =>
+      new Map<string, string>(
+        SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])
+      ),
     []
   );
 
