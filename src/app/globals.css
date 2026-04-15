@@ -20,7 +20,29 @@
   }
 }
 
+html {
+  min-height: 100%;
+  background-color: #0B0C10;
+}
+
 body {
   background-color: #0B0C10;
   color: #FFFFFF;
+  min-height: 100%;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+main {
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+
+  .h-screen {
+    height: 100dvh;
+  }
 }

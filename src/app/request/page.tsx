@@ -48,7 +48,7 @@ export default function RequestPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 lg:px-10 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 lg:px-10 font-sans">
 
       {/* Floating Action Toast */}
       {showToast && (

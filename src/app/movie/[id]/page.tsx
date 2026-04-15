@@ -881,7 +881,7 @@ const billingHref = `/profile/billing?returnTo=${encodeURIComponent(currentMovie
 const hasPlaybackSource = Boolean(playbackVideoUrl);
 const shouldShowPlaybackError = !isPlaybackLocked && (!hasPlaybackSource || isVideoError);
 
-return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-24 md:px-8 md:pb-10 lg:px-10">
+return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
 
   {/* Mobile Header */}
   <header className="fixed top-4 left-4 right-4 z-50 md:hidden">

@@ -58,7 +58,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
         title={vjInfo.name}
         subtitle={`${movies.length} Dubbed Movies`}

@@ -105,7 +105,7 @@ export default function BillingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-16 md:px-8 md:pt-[118px] lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 md:px-8 md:pt-[118px] lg:px-10">
       <MobilePageHeader
         title="Billing Status"
         fallbackHref="/profile"

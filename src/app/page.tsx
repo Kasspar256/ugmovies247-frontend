@@ -408,7 +408,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-12">
+    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-12">
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -716,7 +716,7 @@ export default function Home() {
       {/* Floating Request Movie Button */}
       <Link
         href="/request"
-        className="fixed bottom-20 md:bottom-8 right-4 md:right-6 z-[60] group"
+        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] group md:bottom-8 md:right-6"
         aria-label="Request a movie"
       >
         <div className="w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 hover:scale-105 active:scale-95 flex items-center justify-center shadow-[0_10px_25px_rgba(217,4,41,0.45)] ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 animate-[float_3s_ease-in-out_infinite]">

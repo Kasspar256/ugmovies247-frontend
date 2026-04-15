@@ -35,7 +35,7 @@ export default function LikesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
       <MobilePageHeader title="My liked movies" fallbackHref="/profile" />
 
       <div className="mt-4 md:mt-2 max-w-5xl mx-auto">

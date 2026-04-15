@@ -18,7 +18,7 @@ export default function EditProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-24 md:px-8 md:pb-14 lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 lg:px-10">
       <MobilePageHeader title="Edit Profile" fallbackHref="/profile" />
 
       {/* Main Content */}

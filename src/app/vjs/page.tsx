@@ -6,7 +6,7 @@ import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function VJsDirectory() {
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-24 md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
 
       <MobilePageHeader
         title="VJ Directory"
