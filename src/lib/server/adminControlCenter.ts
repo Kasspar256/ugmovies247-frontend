@@ -17,6 +17,11 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import {
+  persistAdminCache,
+  readPersistedAdminCache,
+  type PersistedAdminCache,
+} from '@/lib/server/adminRuntimeCache';
+import {
   CATEGORIES_COLLECTION,
   MEDIA_LIBRARY_COLLECTION,
   MOVIES_COLLECTION,
@@ -74,6 +79,19 @@ function isFreshAdminCache<T>(cache: TimedAdminCache<T> | null, ttlMs: number) {
   return Boolean(cache && Date.now() - cache.cachedAt < ttlMs);
 }
 
+function pickLatestAdminCache<T>(
+  ...caches: Array<TimedAdminCache<T> | PersistedAdminCache<T> | null | undefined>
+) {
+  return (
+    caches
+      .filter(
+        (cache): cache is TimedAdminCache<T> | PersistedAdminCache<T> =>
+          Boolean(cache && typeof cache.cachedAt === 'number')
+      )
+      .sort((left, right) => right.cachedAt - left.cachedAt)[0] || null
+  );
+}
+
 function isQuotaExceededAdminError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '');
   return /resource_exhausted|quota exceeded/i.test(message);
@@ -116,16 +134,32 @@ async function readCachedAdminValue<T>(options: {
   timeoutMs?: number;
   allowFallbackWithoutCache?: boolean;
 }) {
-  const hasWarmCache = options.cache !== null;
+  const persistedCache = await readPersistedAdminCache<T>(options.resource);
+  const bestCache = pickLatestAdminCache(options.cache, persistedCache);
+  const hasWarmCache = bestCache !== null;
   const canUsePlaceholderFallback = options.allowFallbackWithoutCache === true;
 
-  if (isFreshAdminCache(options.cache, options.ttlMs)) {
-    return options.cache?.value as T;
+  if (isFreshAdminCache(bestCache, options.ttlMs)) {
+    if (bestCache !== options.cache) {
+      options.onWrite({
+        value: bestCache.value,
+        cachedAt: bestCache.cachedAt,
+      });
+    }
+
+    return bestCache?.value as T;
   }
 
   if (isAdminQuotaBlocked(options.resource)) {
-    if (options.cache?.value) {
-      return options.cache.value;
+    if (bestCache?.value) {
+      if (bestCache !== options.cache) {
+        options.onWrite({
+          value: bestCache.value,
+          cachedAt: bestCache.cachedAt,
+        });
+      }
+
+      return bestCache.value;
     }
 
     if (options.fallback && canUsePlaceholderFallback) {
@@ -157,18 +191,27 @@ async function readCachedAdminValue<T>(options: {
         loaderPromise.catch(() => undefined);
       }
     })();
-    options.onWrite({
+    const nextCache = {
       value,
       cachedAt: Date.now(),
-    });
+    };
+    options.onWrite(nextCache);
+    await persistAdminCache(options.resource, nextCache);
     clearAdminQuotaFailure(options.resource);
     return value;
   } catch (error) {
     recordAdminQuotaFailure(options.resource, error);
     logAdminDataFailure(options.resource, error);
 
-    if (options.cache?.value) {
-      return options.cache.value;
+    if (bestCache?.value) {
+      if (bestCache !== options.cache) {
+        options.onWrite({
+          value: bestCache.value,
+          cachedAt: bestCache.cachedAt,
+        });
+      }
+
+      return bestCache.value;
     }
 
     if (options.fallback && canUsePlaceholderFallback) {
