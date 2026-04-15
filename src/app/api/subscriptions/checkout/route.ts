@@ -183,6 +183,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Phone number is required.' }, { status: 400 });
     }
 
+    if (plan.currency !== 'UGX') {
+      return NextResponse.json(
+        { error: 'This plan is not configured for Mobile Money checkout.' },
+        { status: 500 }
+      );
+    }
+
     paymentId = randomUUID();
     const clientReferenceId = `ugmovies-${session.uid}-${Date.now()}`;
 
@@ -205,7 +212,7 @@ export async function POST(request: Request) {
     const providerResponse = await initiatePawaPayDeposit({
       depositId: paymentId,
       amount: plan.amount,
-      currency: plan.currency,
+      currency: 'UGX',
       phoneNumber,
       provider,
       planType,
