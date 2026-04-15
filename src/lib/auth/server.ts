@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { ADMIN_EMAILS, AUTH_ROLE_COOKIE, AUTH_SESSION_COOKIE } from './constants';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
+import { resolveUserAvatar } from '@/lib/avatarPresets';
 
 export type UserRole = 'user' | 'admin';
 
@@ -17,6 +18,7 @@ export type AppUserRecord = {
   updatedAt: string;
   lastLoginAt: string;
   isActive: boolean;
+  avatarPresetId?: string;
   avatarUrl?: string;
   notificationPreferences?: {
     marketing: boolean;
@@ -32,6 +34,36 @@ export type AuthSession = {
   role: UserRole;
   userRecord: AppUserRecord;
 };
+
+function buildFallbackUserRecord(
+  uid: string,
+  fallback: { email?: string; name?: string; role?: UserRole }
+) {
+  const now = new Date().toISOString();
+  const fallbackRole = normalizeUserRole(fallback.role || (isAdminEmail(fallback.email) ? 'admin' : 'user'));
+  const avatar = resolveUserAvatar({
+    fallbackSeed: uid || fallback.email || fallback.name || 'ugmovies247-user',
+  });
+
+  return {
+    id: uid,
+    name: fallback.name || 'User',
+    email: fallback.email || '',
+    authProvider: 'password',
+    role: fallbackRole,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: now,
+    isActive: true,
+    avatarPresetId: avatar.avatarPresetId,
+    avatarUrl: avatar.avatarUrl,
+    notificationPreferences: {
+      marketing: false,
+      productUpdates: true,
+    },
+    subscription: undefined,
+  } satisfies AppUserRecord;
+}
 
 function normalizeUserRole(value: unknown): UserRole {
   return value === 'admin' ? 'admin' : 'user';
@@ -57,34 +89,6 @@ export function isAdminEmail(email?: string | null) {
   return Boolean(email && ADMIN_EMAILS.includes(email.toLowerCase()));
 }
 
-function buildFallbackUserRecord(
-  uid: string,
-  fallback: { email?: string; name?: string; role?: UserRole }
-): AppUserRecord {
-  const now = new Date().toISOString();
-  const fallbackRole = normalizeUserRole(
-    fallback.role || (isAdminEmail(fallback.email) ? 'admin' : 'user')
-  );
-
-  return {
-    id: uid,
-    name: fallback.name || 'User',
-    email: fallback.email || '',
-    authProvider: 'password',
-    role: fallbackRole,
-    createdAt: now,
-    updatedAt: now,
-    lastLoginAt: now,
-    isActive: true,
-    avatarUrl: '',
-    notificationPreferences: {
-      marketing: false,
-      productUpdates: true,
-    },
-    subscription: undefined,
-  };
-}
-
 async function fetchUserRecord(uid: string, fallback: { email?: string; name?: string }) {
   const now = new Date().toISOString();
   const fallbackRole = normalizeUserRole(isAdminEmail(fallback.email) ? 'admin' : 'user');
@@ -92,6 +96,11 @@ async function fetchUserRecord(uid: string, fallback: { email?: string; name?: s
   try {
     const snapshot = await adminDb.collection('users').doc(uid).get();
     const data = snapshot.data() as Partial<AppUserRecord> | undefined;
+    const avatar = resolveUserAvatar({
+      avatarPresetId: typeof data?.avatarPresetId === 'string' ? data.avatarPresetId : '',
+      avatarUrl: typeof data?.avatarUrl === 'string' ? data.avatarUrl : '',
+      fallbackSeed: uid || fallback.email || fallback.name || 'ugmovies247-user',
+    });
 
     return {
       id: uid,
@@ -103,7 +112,8 @@ async function fetchUserRecord(uid: string, fallback: { email?: string; name?: s
       updatedAt: data?.updatedAt || now,
       lastLoginAt: data?.lastLoginAt || now,
       isActive: data?.isActive !== false,
-      avatarUrl: data?.avatarUrl || '',
+      avatarPresetId: avatar.avatarPresetId,
+      avatarUrl: avatar.avatarUrl,
       notificationPreferences: data?.notificationPreferences || {
         marketing: false,
         productUpdates: true,

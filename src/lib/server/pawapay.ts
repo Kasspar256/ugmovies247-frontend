@@ -90,10 +90,10 @@ export function getPawaPayConfig() {
   };
 }
 
-function getProviderLabel(provider: string) {
+export function getPawaPayProviderLabel(provider: string) {
   const knownLabels: Record<string, string> = {
-    MTN_MOMO_UGA: 'MTN Mobile Money Uganda',
-    AIRTEL_OAPI_UGA: 'Airtel Money Uganda',
+    MTN_MOMO_UGA: 'MTN Mobile Money',
+    AIRTEL_OAPI_UGA: 'Airtel Money',
   };
 
   return knownLabels[provider] || provider.replace(/_/g, ' ');
@@ -108,7 +108,7 @@ export function getConfiguredPawaPayProviders(): PaymentMethodProviderOption[] {
     .filter(Boolean)
     .map((provider) => ({
       id: provider,
-      label: getProviderLabel(provider),
+      label: getPawaPayProviderLabel(provider),
       country: provider.endsWith('_UGA') ? 'UGA' : '',
     }));
 }
