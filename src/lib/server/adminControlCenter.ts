@@ -3,7 +3,15 @@ import { adminDb } from '@/lib/firebaseAdmin';
 import { HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { getSubscriptionSnapshotFromData, listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
 import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
-import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
+import {
+  type CachedMovieCatalog,
+  inMemoryMovieCache,
+  isFreshMovieCache,
+  persistMovieCatalog,
+  readMovieCatalogFromDisk,
+  setInMemoryMovieCache,
+  upsertMovieInCatalogCache,
+} from '@/lib/server/movieCatalogCache';
 import {
   CATEGORIES_COLLECTION,
   MEDIA_LIBRARY_COLLECTION,
@@ -24,8 +32,98 @@ import type {
   AdminUserSummary,
 } from '@/types/admin';
 
+const ADMIN_COLLECTION_CACHE_TTL_MS = 1000 * 45;
+const ADMIN_REVENUE_CACHE_TTL_MS = 1000 * 60 * 2;
+
+type TimedAdminCache<T> = {
+  value: T;
+  cachedAt: number;
+};
+
+let adminUsersCache: TimedAdminCache<AdminUserSummary[]> | null = null;
+let adminRequestsCache: TimedAdminCache<AdminRequest[]> | null = null;
+let adminRevenueCache: TimedAdminCache<AdminRevenueSummary> | null = null;
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function createEmptyRevenueSummary(): AdminRevenueSummary {
+  const now = new Date();
+
+  return {
+    monthLabel: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+    monthRevenue: 0,
+    activeSubscriberCount: 0,
+    activeSubscriptionRevenue: 0,
+    activePlanBreakdown: [],
+    recentPayments: [],
+  };
+}
+
+function isFreshAdminCache<T>(cache: TimedAdminCache<T> | null, ttlMs: number) {
+  return Boolean(cache && Date.now() - cache.cachedAt < ttlMs);
+}
+
+function isQuotaExceededAdminError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /resource_exhausted|quota exceeded/i.test(message);
+}
+
+function logAdminDataFailure(resource: string, error: unknown) {
+  if (isQuotaExceededAdminError(error)) {
+    console.error(`[admin-data] ${resource} read hit backend quota`, error);
+    return;
+  }
+
+  console.error(`[admin-data] ${resource} read failed`, error);
+}
+
+async function readCachedAdminValue<T>(options: {
+  resource: string;
+  cache: TimedAdminCache<T> | null;
+  ttlMs: number;
+  loader: () => Promise<T>;
+  onWrite: (value: TimedAdminCache<T> | null) => void;
+}) {
+  if (isFreshAdminCache(options.cache, options.ttlMs)) {
+    return options.cache?.value as T;
+  }
+
+  try {
+    const value = await options.loader();
+    options.onWrite({
+      value,
+      cachedAt: Date.now(),
+    });
+    return value;
+  } catch (error) {
+    logAdminDataFailure(options.resource, error);
+
+    if (options.cache?.value) {
+      return options.cache.value;
+    }
+
+    throw error;
+  }
+}
+
+export function clearAdminPanelServerCache(
+  ...resources: Array<'users' | 'requests' | 'revenue'>
+) {
+  const targets = resources.length ? resources : ['users', 'requests', 'revenue'];
+
+  if (targets.includes('users')) {
+    adminUsersCache = null;
+  }
+
+  if (targets.includes('requests')) {
+    adminRequestsCache = null;
+  }
+
+  if (targets.includes('revenue')) {
+    adminRevenueCache = null;
+  }
 }
 
 function slugify(value: string) {
@@ -124,15 +222,52 @@ function buildDefaultCategories(movies: Movie[]) {
 }
 
 export async function listAllMoviesForAdmin() {
-  const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
-  const movies = snapshot.docs.map((doc) =>
-    normalizeMovie(doc.id, {
+  const normalizeCatalog = (catalog: CachedMovieCatalog) =>
+    catalog.movies
+      .map((movie) =>
+        normalizeMovie(String(movie.id || movie.movieId || ''), {
+          id: String(movie.id || movie.movieId || ''),
+          ...movie,
+        })
+      )
+      .sort((left, right) => (right.date_added || '').localeCompare(left.date_added || ''));
+
+  if (isFreshMovieCache(inMemoryMovieCache)) {
+    return normalizeCatalog(inMemoryMovieCache);
+  }
+
+  const diskCache = await readMovieCatalogFromDisk();
+
+  if (isFreshMovieCache(diskCache)) {
+    setInMemoryMovieCache(diskCache);
+    return normalizeCatalog(diskCache);
+  }
+
+  try {
+    const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
+    const movies = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
-    })
-  );
+    }));
+    const cache: CachedMovieCatalog = {
+      movies,
+      cachedAt: new Date().toISOString(),
+    };
 
-  return movies.sort((left, right) => (right.date_added || '').localeCompare(left.date_added || ''));
+    setInMemoryMovieCache(cache);
+    await persistMovieCatalog(cache);
+
+    return normalizeCatalog(cache);
+  } catch (error) {
+    const staleCache = diskCache || inMemoryMovieCache;
+
+    if (staleCache?.movies?.length) {
+      console.warn('[admin-data] serving stale admin movie catalog cache', error);
+      return normalizeCatalog(staleCache);
+    }
+
+    throw error;
+  }
 }
 
 export async function listCategoriesForAdmin(movies?: Movie[]) {
@@ -365,59 +500,83 @@ export async function deleteCategoryForAdmin(categoryId: string) {
 }
 
 export async function listUsersForAdmin(limit = 200) {
-  const snapshot = await adminDb.collection('users').limit(limit).get();
+  return readCachedAdminValue({
+    resource: 'users',
+    cache: adminUsersCache,
+    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminUsersCache = value;
+    },
+    loader: async () => {
+      const snapshot = await adminDb.collection('users').limit(limit).get();
 
-  return snapshot.docs
-    .map((doc): AdminUserSummary => {
-      const data = doc.data() as Record<string, unknown>;
+      return snapshot.docs
+        .map((doc): AdminUserSummary => {
+          const data = doc.data() as Record<string, unknown>;
 
-      return {
-        id: doc.id,
-        name: String(data.name || 'User'),
-        email: String(data.email || ''),
-        role: data.role === 'admin' ? 'admin' : 'user',
-        joinDate: String(data.createdAt || ''),
-        lastLoginAt: String(data.lastLoginAt || ''),
-        isActive: data.isActive !== false,
-        avatarUrl: String(data.avatarUrl || ''),
-        subscription: getSubscriptionSnapshotFromData(
-          data.subscription && typeof data.subscription === 'object'
-            ? (data.subscription as Record<string, unknown>)
-            : null
-        ),
-      };
-    })
-    .sort((left, right) => (right.lastLoginAt || right.joinDate || '').localeCompare(left.lastLoginAt || left.joinDate || ''));
+          return {
+            id: doc.id,
+            name: String(data.name || 'User'),
+            email: String(data.email || ''),
+            role: data.role === 'admin' ? 'admin' : 'user',
+            joinDate: String(data.createdAt || ''),
+            lastLoginAt: String(data.lastLoginAt || ''),
+            isActive: data.isActive !== false,
+            avatarUrl: String(data.avatarUrl || ''),
+            subscription: getSubscriptionSnapshotFromData(
+              data.subscription && typeof data.subscription === 'object'
+                ? (data.subscription as Record<string, unknown>)
+                : null
+            ),
+          };
+        })
+        .sort((left, right) =>
+          (right.lastLoginAt || right.joinDate || '').localeCompare(
+            left.lastLoginAt || left.joinDate || ''
+          )
+        );
+    },
+  });
 }
 
 export async function listRequestsForAdmin(limit = 200) {
-  const snapshot = await adminDb.collection(REQUESTS_COLLECTION).limit(limit).get();
+  return readCachedAdminValue({
+    resource: 'requests',
+    cache: adminRequestsCache,
+    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminRequestsCache = value;
+    },
+    loader: async () => {
+      const snapshot = await adminDb.collection(REQUESTS_COLLECTION).limit(limit).get();
 
-  return snapshot.docs
-    .map((doc): AdminRequest => {
-      const data = doc.data() as Partial<AdminRequest>;
+      return snapshot.docs
+        .map((doc): AdminRequest => {
+          const data = doc.data() as Partial<AdminRequest>;
 
-      return {
-        id: doc.id,
-        title: data.title || 'Untitled request',
-        preferredVj: data.preferredVj || '',
-        notes: data.notes || '',
-        status:
-          data.status === 'reviewing' ||
-          data.status === 'planned' ||
-          data.status === 'uploaded' ||
-          data.status === 'closed'
-            ? data.status
-            : 'new',
-        requesterId: data.requesterId || '',
-        requesterName: data.requesterName || '',
-        requesterEmail: data.requesterEmail || '',
-        adminNotes: data.adminNotes || '',
-        createdAt: data.createdAt || '',
-        updatedAt: data.updatedAt || '',
-      };
-    })
-    .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
+          return {
+            id: doc.id,
+            title: data.title || 'Untitled request',
+            preferredVj: data.preferredVj || '',
+            notes: data.notes || '',
+            status:
+              data.status === 'reviewing' ||
+              data.status === 'planned' ||
+              data.status === 'uploaded' ||
+              data.status === 'closed'
+                ? data.status
+                : 'new',
+            requesterId: data.requesterId || '',
+            requesterName: data.requesterName || '',
+            requesterEmail: data.requesterEmail || '',
+            adminNotes: data.adminNotes || '',
+            createdAt: data.createdAt || '',
+            updatedAt: data.updatedAt || '',
+          };
+        })
+        .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
+    },
+  });
 }
 
 export async function createRequestForAdmin(input: {
@@ -451,6 +610,7 @@ export async function createRequestForAdmin(input: {
   };
 
   await ref.set(payload);
+  clearAdminPanelServerCache('requests');
   return payload;
 }
 
@@ -481,6 +641,7 @@ export async function updateRequestForAdmin(
   }
 
   await ref.set(updates, { merge: true });
+  clearAdminPanelServerCache('requests');
 }
 
 function collectMovieAssignments(movie: Movie) {
@@ -692,89 +853,129 @@ function collectAssignmentsForUrl(url: string, movies: Movie[]) {
 }
 
 export async function getRevenueSummaryForAdmin(): Promise<AdminRevenueSummary> {
-  const [payments, subscriptions] = await Promise.all([
-    listPaymentsForAdmin(500),
-    listSubscriptionsForAdmin(500),
-  ]);
+  return readCachedAdminValue({
+    resource: 'revenue',
+    cache: adminRevenueCache,
+    ttlMs: ADMIN_REVENUE_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminRevenueCache = value;
+    },
+    loader: async () => {
+      const [payments, subscriptions] = await Promise.all([
+        listPaymentsForAdmin(500),
+        listSubscriptionsForAdmin(500),
+      ]);
 
-  const now = new Date();
-  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const monthRevenue = payments
-    .filter((payment) => payment.status === 'completed')
-    .filter((payment) => String(payment.createdAt || '').startsWith(monthKey))
-    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+      const now = new Date();
+      const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+      const monthRevenue = payments
+        .filter((payment) => payment.status === 'completed')
+        .filter((payment) => String(payment.createdAt || '').startsWith(monthKey))
+        .reduce((total, payment) => total + Number(payment.amount || 0), 0);
 
-  const activeSubscriptions = subscriptions.filter((subscription) => {
-    if (!subscription.isActive || subscription.status !== 'active' || !subscription.expiresAt) {
-      return false;
-    }
+      const activeSubscriptions = subscriptions.filter((subscription) => {
+        if (!subscription.isActive || subscription.status !== 'active' || !subscription.expiresAt) {
+          return false;
+        }
 
-    return new Date(subscription.expiresAt).getTime() > Date.now();
+        return new Date(subscription.expiresAt).getTime() > Date.now();
+      });
+
+      const activePlanBreakdown = new Map<string, AdminRevenuePlanSummary>();
+
+      for (const subscription of activeSubscriptions) {
+        const key = subscription.planType || 'unknown';
+        const current = activePlanBreakdown.get(key) || {
+          planType: key,
+          planName: subscription.planName || 'Unknown plan',
+          activeCount: 0,
+          totalAmount: 0,
+        };
+
+        current.activeCount += 1;
+        current.totalAmount += Number(subscription.amount || 0);
+        activePlanBreakdown.set(key, current);
+      }
+
+      return {
+        monthLabel: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+        monthRevenue,
+        activeSubscriberCount: activeSubscriptions.length,
+        activeSubscriptionRevenue: activeSubscriptions.reduce(
+          (total, subscription) => total + Number(subscription.amount || 0),
+          0
+        ),
+        activePlanBreakdown: [...activePlanBreakdown.values()].sort(
+          (left, right) => right.totalAmount - left.totalAmount
+        ),
+        recentPayments: payments.slice(0, 20).map((payment) => ({
+          id: payment.id,
+          userId: payment.userId,
+          planType: payment.planType,
+          planName: payment.planName,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: payment.status,
+          paymentProvider: payment.paymentProvider,
+          paymentMethodProvider: payment.paymentMethodProvider,
+          phoneNumber: payment.phoneNumber,
+          providerStatus: payment.providerStatus,
+          providerMessage: payment.providerMessage,
+          createdAt: payment.createdAt,
+          updatedAt: payment.updatedAt,
+        })),
+      };
+    },
   });
-
-  const activePlanBreakdown = new Map<string, AdminRevenuePlanSummary>();
-
-  for (const subscription of activeSubscriptions) {
-    const key = subscription.planType || 'unknown';
-    const current = activePlanBreakdown.get(key) || {
-      planType: key,
-      planName: subscription.planName || 'Unknown plan',
-      activeCount: 0,
-      totalAmount: 0,
-    };
-
-    current.activeCount += 1;
-    current.totalAmount += Number(subscription.amount || 0);
-    activePlanBreakdown.set(key, current);
-  }
-
-  return {
-    monthLabel: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
-    monthRevenue,
-    activeSubscriberCount: activeSubscriptions.length,
-    activeSubscriptionRevenue: activeSubscriptions.reduce(
-      (total, subscription) => total + Number(subscription.amount || 0),
-      0
-    ),
-    activePlanBreakdown: [...activePlanBreakdown.values()].sort(
-      (left, right) => right.totalAmount - left.totalAmount
-    ),
-    recentPayments: payments.slice(0, 20).map((payment) => ({
-      id: payment.id,
-      userId: payment.userId,
-      planType: payment.planType,
-      planName: payment.planName,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      paymentProvider: payment.paymentProvider,
-      paymentMethodProvider: payment.paymentMethodProvider,
-      phoneNumber: payment.phoneNumber,
-      providerStatus: payment.providerStatus,
-      providerMessage: payment.providerMessage,
-      createdAt: payment.createdAt,
-      updatedAt: payment.updatedAt,
-    })),
-  };
 }
 
 export async function getAdminControlCenterPayload(): Promise<AdminControlCenterPayload> {
-  const movies = await listAllMoviesForAdmin();
-  const [categories, users, requests, libraryAssets, revenue] = await Promise.all([
-    listCategoriesForAdmin(movies),
-    listUsersForAdmin(),
-    listRequestsForAdmin(),
-    listLibraryAssetsForAdmin(movies),
-    getRevenueSummaryForAdmin(),
-  ]);
+  const [moviesEntry] = await Promise.allSettled([listAllMoviesForAdmin()]);
+  const movies = moviesEntry.status === 'fulfilled' ? moviesEntry.value : [];
+
+  if (moviesEntry.status === 'rejected') {
+    logAdminDataFailure('movies', moviesEntry.reason);
+  }
+
+  const [categoriesResult, usersResult, requestsResult, libraryAssetsResult, revenueResult] =
+    await Promise.allSettled([
+      listCategoriesForAdmin(movies),
+      listUsersForAdmin(),
+      listRequestsForAdmin(),
+      listLibraryAssetsForAdmin(movies),
+      getRevenueSummaryForAdmin(),
+    ]);
+
+  if (categoriesResult.status === 'rejected') {
+    logAdminDataFailure('categories', categoriesResult.reason);
+  }
+
+  if (usersResult.status === 'rejected') {
+    logAdminDataFailure('users', usersResult.reason);
+  }
+
+  if (requestsResult.status === 'rejected') {
+    logAdminDataFailure('requests', requestsResult.reason);
+  }
+
+  if (libraryAssetsResult.status === 'rejected') {
+    logAdminDataFailure('library', libraryAssetsResult.reason);
+  }
+
+  if (revenueResult.status === 'rejected') {
+    logAdminDataFailure('revenue', revenueResult.reason);
+  }
 
   return {
     movies,
-    categories,
-    users,
-    requests,
-    libraryAssets,
-    revenue,
+    categories: categoriesResult.status === 'fulfilled' ? categoriesResult.value : [],
+    users: usersResult.status === 'fulfilled' ? usersResult.value : [],
+    requests: requestsResult.status === 'fulfilled' ? requestsResult.value : [],
+    libraryAssets: libraryAssetsResult.status === 'fulfilled' ? libraryAssetsResult.value : [],
+    revenue:
+      revenueResult.status === 'fulfilled'
+        ? revenueResult.value
+        : createEmptyRevenueSummary(),
   };
 }
 

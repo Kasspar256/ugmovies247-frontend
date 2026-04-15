@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Gauge, Search, UploadCloud } from 'lucide-react';
-import type { AdminCategory, AdminControlCenterPayload } from '@/types/admin';
+import type { AdminCategory } from '@/types/admin';
 import { extractMovieData } from '@/lib/movieUtils';
 import {
   MAX_DIRECT_MULTIPART_PART_SIZE_BYTES,
@@ -13,6 +13,7 @@ import {
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
 } from '@/lib/admin/directUploadClient';
+import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 
@@ -116,17 +117,9 @@ export function AdminMovieCreateView() {
 
     const loadCategories = async () => {
       try {
-        const response = await fetch('/api/admin/control-center', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        const payload = (await response.json()) as Partial<AdminControlCenterPayload> & {
-          error?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'Failed to load movie uploader.');
-        }
+        const payload = await fetchAdminJson<{ categories?: AdminCategory[] }>(
+          '/api/admin/categories'
+        );
 
         if (mounted) {
           setCategories(payload.categories || []);

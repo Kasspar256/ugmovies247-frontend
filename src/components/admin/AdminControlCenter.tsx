@@ -29,6 +29,7 @@ import {
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
 } from '@/lib/admin/directUploadClient';
+import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import {
   AdminTab,
   CategoryDraft,
@@ -65,6 +66,65 @@ type ResolvedVideoSource = {
   sourceType: 'direct_upload' | 'remote_link';
 };
 
+const EMPTY_ADMIN_REVENUE: AdminControlCenterPayload['revenue'] = {
+  monthLabel: '',
+  monthRevenue: 0,
+  activeSubscriberCount: 0,
+  activeSubscriptionRevenue: 0,
+  activePlanBreakdown: [],
+  recentPayments: [],
+};
+
+const EMPTY_ADMIN_PAYLOAD: AdminControlCenterPayload = {
+  movies: [],
+  categories: [],
+  users: [],
+  requests: [],
+  libraryAssets: [],
+  revenue: EMPTY_ADMIN_REVENUE,
+};
+
+function isQuotaExceededMessage(message: string) {
+  return /resource_exhausted|quota exceeded/i.test(message);
+}
+
+function formatAdminLoadErrors(issues: string[]) {
+  if (!issues.length) {
+    return '';
+  }
+
+  if (issues.length === 1) {
+    const message = issues[0];
+    return isQuotaExceededMessage(message)
+      ? 'One admin data source hit a backend quota limit. The rest of the panel remains available.'
+      : message;
+  }
+
+  return `Some admin data is temporarily unavailable: ${issues.join(' | ')}`;
+}
+
+function buildRequestEdits(requests: AdminRequest[]) {
+  return requests.reduce(
+    (
+      accumulator: Record<
+        string,
+        {
+          status: AdminRequestStatus;
+          adminNotes: string;
+        }
+      >,
+      request: AdminRequest
+    ) => {
+      accumulator[request.id] = {
+        status: request.status,
+        adminNotes: request.adminNotes || '',
+      };
+      return accumulator;
+    },
+    {}
+  );
+}
+
 function createEmptyCategoryDraft(): CategoryDraft {
   return {
     id: '',
@@ -78,7 +138,8 @@ function createEmptyCategoryDraft(): CategoryDraft {
 }
 
 export default function AdminControlCenter({ section }: AdminControlCenterProps) {
-  const [payload, setPayload] = useState<AdminControlCenterPayload | null>(null);
+  const activeTab = section ?? null;
+  const [payload, setPayload] = useState<AdminControlCenterPayload>(EMPTY_ADMIN_PAYLOAD);
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -106,7 +167,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
   const [seriesDiagnostics, setSeriesDiagnostics] = useState('');
   const [seriesProgress, setSeriesProgress] = useState(0);
 
-  const loadControlCenter = async (showSpinner = true) => {
+  const loadControlCenter = async (showSpinner = true, force = false) => {
     if (showSpinner) {
       setLoading(true);
     }
@@ -114,41 +175,158 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/admin/control-center', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      const data = await response.json();
+      const issues: string[] = [];
+      const nextPayload: Partial<AdminControlCenterPayload> = {};
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to load admin control center.');
+      const captureIssue = (label: string, error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : `Failed to load ${label.toLowerCase()}.`;
+        issues.push(`${label}: ${message}`);
+      };
+
+      const loadResource = async <T,>(
+        label: string,
+        url: string,
+        apply: (payload: T) => void
+      ) => {
+        try {
+          const response = await fetchAdminJson<T>(url, { force });
+          apply(response);
+        } catch (error) {
+          captureIssue(label, error);
+        }
+      };
+
+      if (activeTab === 'movies') {
+        await loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
+          nextPayload.movies = response.movies || [];
+        });
+      } else if (activeTab === 'library') {
+        await loadResource<{ assets: AdminLibraryAsset[] }>(
+          'Library',
+          '/api/admin/library',
+          (response) => {
+            nextPayload.libraryAssets = response.assets || [];
+          }
+        );
+      } else if (activeTab === 'categories') {
+        await Promise.all([
+          loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
+            nextPayload.movies = response.movies || [];
+          }),
+          loadResource<{ categories: AdminCategory[] }>(
+            'Categories',
+            '/api/admin/categories',
+            (response) => {
+              nextPayload.categories = response.categories || [];
+            }
+          ),
+        ]);
+      } else if (activeTab === 'users') {
+        await loadResource<{ users: AdminControlCenterPayload['users'] }>(
+          'Users',
+          '/api/admin/users',
+          (response) => {
+            nextPayload.users = response.users || [];
+          }
+        );
+      } else if (activeTab === 'requests') {
+        await loadResource<{ requests: AdminRequest[] }>(
+          'Requests',
+          '/api/admin/requests',
+          (response) => {
+            nextPayload.requests = response.requests || [];
+          }
+        );
+      } else if (activeTab === 'revenue') {
+        await loadResource<{ revenue: AdminControlCenterPayload['revenue'] }>(
+          'Revenue',
+          '/api/admin/revenue',
+          (response) => {
+            nextPayload.revenue = response.revenue || EMPTY_ADMIN_REVENUE;
+          }
+        );
+      } else if (activeTab === 'overview') {
+        await Promise.all([
+          loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
+            nextPayload.movies = response.movies || [];
+          }),
+          loadResource<{ users: AdminControlCenterPayload['users'] }>(
+            'Users',
+            '/api/admin/users',
+            (response) => {
+              nextPayload.users = response.users || [];
+            }
+          ),
+          loadResource<{ requests: AdminRequest[] }>('Requests', '/api/admin/requests', (response) => {
+            nextPayload.requests = response.requests || [];
+          }),
+          loadResource<{ revenue: AdminControlCenterPayload['revenue'] }>(
+            'Revenue',
+            '/api/admin/revenue',
+            (response) => {
+              nextPayload.revenue = response.revenue || EMPTY_ADMIN_REVENUE;
+            }
+          ),
+        ]);
+      } else {
+        await Promise.all([
+          loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
+            nextPayload.movies = response.movies || [];
+          }),
+          loadResource<{ categories: AdminCategory[] }>(
+            'Categories',
+            '/api/admin/categories',
+            (response) => {
+              nextPayload.categories = response.categories || [];
+            }
+          ),
+          loadResource<{ assets: AdminLibraryAsset[] }>('Library', '/api/admin/library', (response) => {
+            nextPayload.libraryAssets = response.assets || [];
+          }),
+          loadResource<{ users: AdminControlCenterPayload['users'] }>(
+            'Users',
+            '/api/admin/users',
+            (response) => {
+              nextPayload.users = response.users || [];
+            }
+          ),
+          loadResource<{ requests: AdminRequest[] }>('Requests', '/api/admin/requests', (response) => {
+            nextPayload.requests = response.requests || [];
+          }),
+          loadResource<{ revenue: AdminControlCenterPayload['revenue'] }>(
+            'Revenue',
+            '/api/admin/revenue',
+            (response) => {
+              nextPayload.revenue = response.revenue || EMPTY_ADMIN_REVENUE;
+            }
+          ),
+        ]);
       }
 
-      const nextPayload = data as AdminControlCenterPayload;
-      setPayload(nextPayload);
-      setRequestEdits(
-        (nextPayload.requests || []).reduce(
-          (
-            accumulator: Record<
-              string,
-              {
-                status: AdminRequestStatus;
-                adminNotes: string;
-              }
-            >,
-            request: AdminRequest
-          ) => {
-            accumulator[request.id] = {
-              status: request.status,
-              adminNotes: request.adminNotes || '',
-            };
-            return accumulator;
-          },
-          {}
-        )
-      );
+      if (Object.keys(nextPayload).length === 0) {
+        throw new Error(
+          issues[0] || 'Failed to load admin data for this section.'
+        );
+      }
 
-      return nextPayload;
+      const mergedPayload = {
+        ...EMPTY_ADMIN_PAYLOAD,
+        ...payload,
+        ...nextPayload,
+      };
+
+      setPayload(mergedPayload);
+
+      if (nextPayload.requests) {
+        setRequestEdits(buildRequestEdits(nextPayload.requests));
+      }
+
+      if (issues.length) {
+        setErrorMessage(formatAdminLoadErrors(issues));
+      }
+
+      return mergedPayload;
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Failed to load admin control center.'
@@ -163,9 +341,9 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
   useEffect(() => {
     void loadControlCenter();
-  }, []);
+  }, [activeTab]);
 
-  const movies = payload?.movies || [];
+  const movies = payload.movies || [];
   const movieItems = useMemo(
     () => movies.filter((movie) => movie.contentType !== 'series'),
     [movies]
@@ -229,7 +407,6 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     () => movieItems.find((movie) => movie.id === editingMovieId) || null,
     [movieItems, editingMovieId]
   );
-  const activeTab = section ?? null;
   const navCards = useMemo(
     () => [
       {
@@ -494,7 +671,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to save movie.');
       }
 
-      const refreshedPayload = await loadControlCenter(false);
+      const refreshedPayload = await loadControlCenter(false, true);
       const savedMovieId = editingMovieId || String(result.payload.movie?.id || '');
 
       if (refreshedPayload && savedMovieId) {
@@ -621,7 +798,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to save series.');
       }
 
-      const refreshedPayload = await loadControlCenter(false);
+      const refreshedPayload = await loadControlCenter(false, true);
       const savedSeriesId = editingSeriesId || String(result.payload.movie?.id || '');
 
       if (refreshedPayload && savedSeriesId) {
@@ -659,7 +836,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to delete movie.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
 
       if (editingMovieId === movieId) {
         resetMovieEditor();
@@ -694,7 +871,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to delete movie part.');
       }
 
-      const refreshedPayload = await loadControlCenter(false);
+      const refreshedPayload = await loadControlCenter(false, true);
       const refreshedMovie = refreshedPayload?.movies.find((movie) => movie.id === movieId);
 
       if (refreshedMovie) {
@@ -731,7 +908,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to delete episode.');
       }
 
-      const refreshedPayload = await loadControlCenter(false);
+      const refreshedPayload = await loadControlCenter(false, true);
       const refreshedSeries = refreshedPayload?.movies.find((movie) => movie.id === movieId);
 
       if (refreshedSeries) {
@@ -767,7 +944,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to save category.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setCategoryDraft(createEmptyCategoryDraft());
       setStatusMessage(
         categoryDraft.id
@@ -796,7 +973,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to delete category.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
 
       if (categoryDraft.id === category.id) {
         setCategoryDraft(createEmptyCategoryDraft());
@@ -850,7 +1027,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to reorder homepage categories.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setStatusMessage('Homepage categories reordered.');
     } catch (error) {
       setErrorMessage(
@@ -885,7 +1062,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to update category visibility.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setStatusMessage(
         `${category.displayLabel || category.name} ${category.isVisible ? 'hidden' : 'shown'}.`
       );
@@ -918,7 +1095,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to remove title from category.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setStatusMessage(`Removed "${movie.title}" from ${category.displayLabel || category.name}.`);
     } catch (error) {
       setErrorMessage(
@@ -955,7 +1132,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to update request.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setStatusMessage('Request updated.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to update request.');
@@ -1003,7 +1180,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to register library asset.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setLibraryUploadFile(null);
       setLibraryUploadProgress(100);
       setStatusMessage('Library asset uploaded and ready for reuse.');
@@ -1031,7 +1208,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         throw new Error(result.payload.error || 'Failed to delete library asset.');
       }
 
-      await loadControlCenter(false);
+      await loadControlCenter(false, true);
       setStatusMessage(`Deleted library asset "${asset.label}".`);
     } catch (error) {
       setErrorMessage(
@@ -1080,7 +1257,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
             </div>
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => void loadControlCenter()}
+                onClick={() => void loadControlCenter(true, true)}
                 className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-white"
               >
                 <RefreshCw size={14} />
