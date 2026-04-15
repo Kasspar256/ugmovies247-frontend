@@ -14,7 +14,7 @@ import {
   Trash2,
   UploadCloud,
 } from 'lucide-react';
-import type { AdminCategory, AdminControlCenterPayload } from '@/types/admin';
+import type { AdminCategory } from '@/types/admin';
 import type { Movie, Season } from '@/types/movie';
 import {
   parseApiResponse,
@@ -22,6 +22,7 @@ import {
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
 } from '@/lib/admin/directUploadClient';
+import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import {
   Card,
   FieldLabel,
@@ -445,30 +446,23 @@ export function AdminSeriesUploadView() {
     setDiagnostics((current) => clampLogLines([...current, trimmed]));
   };
 
-  const loadControlCenter = async (showSpinner = true) => {
+  const loadControlCenter = async (showSpinner = true, force = false) => {
     if (showSpinner) {
       setLoading(true);
     }
 
     try {
-      const response = await fetch('/api/admin/control-center', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      const payload = (await response.json()) as Partial<AdminControlCenterPayload> & {
-        error?: string;
-      };
+      const [moviesPayload, categoriesPayload] = await Promise.all([
+        fetchAdminJson<{ movies?: Movie[] }>('/api/admin/movies', { force }),
+        fetchAdminJson<{ categories?: AdminCategory[] }>('/api/admin/categories', { force }),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to load series workspace.');
-      }
-
-      const nextSeriesItems = (payload.movies || [])
+      const nextSeriesItems = (moviesPayload.movies || [])
         .filter((movie) => movie.contentType === 'series')
         .sort((left, right) => left.title.localeCompare(right.title));
 
       setSeriesItems(nextSeriesItems);
-      setCategories(payload.categories || []);
+      setCategories(categoriesPayload.categories || []);
       return nextSeriesItems;
     } catch (error) {
       setErrorMessage(
@@ -1028,7 +1022,7 @@ export function AdminSeriesUploadView() {
         throw new Error(result.payload.error || 'Failed to delete series.');
       }
 
-      const refreshedSeries = await loadControlCenter(false);
+      const refreshedSeries = await loadControlCenter(false, true);
 
       if (selectedSeriesId === series.id) {
         if (refreshedSeries && refreshedSeries.length) {
@@ -1102,7 +1096,7 @@ export function AdminSeriesUploadView() {
         );
 
         await publishExistingSeries(selectedSeries.id, nextSeasons);
-        const refreshedSeries = await loadControlCenter(false);
+        const refreshedSeries = await loadControlCenter(false, true);
         const updatedSeries =
           refreshedSeries?.find((series) => series.id === selectedSeries.id) || null;
 
@@ -1164,7 +1158,7 @@ export function AdminSeriesUploadView() {
         );
 
         await publishExistingSeries(selectedSeries.id, nextSeasons);
-        const refreshedSeries = await loadControlCenter(false);
+        const refreshedSeries = await loadControlCenter(false, true);
         const updatedSeries =
           refreshedSeries?.find((series) => series.id === selectedSeries.id) || null;
 
@@ -1237,7 +1231,7 @@ export function AdminSeriesUploadView() {
 
         const createdSeriesId = String(result.payload.movie?.id || '');
         const createdSeriesTitle = createSeriesDraft.title.trim();
-        const refreshedSeries = await loadControlCenter(false);
+        const refreshedSeries = await loadControlCenter(false, true);
         const createdSeries =
           refreshedSeries?.find((series) => series.id === createdSeriesId) || null;
 

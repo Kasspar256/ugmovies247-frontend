@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 import type {
   AdminCategory,
-  AdminControlCenterPayload,
   AdminLibraryAsset,
 } from '@/types/admin';
 import type { Movie } from '@/types/movie';
@@ -23,6 +22,7 @@ import {
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
 } from '@/lib/admin/directUploadClient';
+import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import {
   CategoryChecklist,
   SourceEditor,
@@ -194,26 +194,20 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
     setDiagnostics((current) => clampLogLines([...current, trimmed]));
   };
 
-  const loadEditor = async (showSpinner = true) => {
+  const loadEditor = async (showSpinner = true, force = false) => {
     if (showSpinner) {
       setLoading(true);
     }
 
     try {
-      const response = await fetch('/api/admin/control-center', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      const payload = (await response.json()) as Partial<AdminControlCenterPayload> & {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error || 'Failed to load series editor.');
-      }
+      const [moviesPayload, categoriesPayload, libraryPayload] = await Promise.all([
+        fetchAdminJson<{ movies?: Movie[] }>('/api/admin/movies', { force }),
+        fetchAdminJson<{ categories?: AdminCategory[] }>('/api/admin/categories', { force }),
+        fetchAdminJson<{ assets?: AdminLibraryAsset[] }>('/api/admin/library', { force }),
+      ]);
 
       const nextSeries =
-        (payload.movies || []).find(
+        (moviesPayload.movies || []).find(
           (entry) => entry.id === seriesId && entry.contentType === 'series'
         ) || null;
 
@@ -223,8 +217,8 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
 
       setSeries(nextSeries);
       setDraft(seriesToDraft(nextSeries));
-      setCategories(payload.categories || []);
-      setLibraryAssets(payload.libraryAssets || []);
+      setCategories(categoriesPayload.categories || []);
+      setLibraryAssets(libraryPayload.assets || []);
       return nextSeries;
     } catch (error) {
       setErrorMessage(
@@ -376,7 +370,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
         throw new Error(result.payload.error || 'Failed to delete stored episode.');
       }
 
-      await loadEditor(false);
+      await loadEditor(false, true);
       setStatusMessage(`Deleted ${label}.`);
       router.refresh();
     } catch (error) {
@@ -541,7 +535,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
         throw new Error(result.payload.error || 'Failed to save series changes.');
       }
 
-      const refreshedSeries = await loadEditor(false);
+      const refreshedSeries = await loadEditor(false, true);
 
       if (refreshedSeries) {
         setSeries(refreshedSeries);
