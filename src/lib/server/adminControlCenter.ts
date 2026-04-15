@@ -114,7 +114,11 @@ async function readCachedAdminValue<T>(options: {
   onWrite: (value: TimedAdminCache<T> | null) => void;
   fallback?: () => T;
   timeoutMs?: number;
+  allowFallbackWithoutCache?: boolean;
 }) {
+  const hasWarmCache = options.cache !== null;
+  const canUsePlaceholderFallback = options.allowFallbackWithoutCache === true;
+
   if (isFreshAdminCache(options.cache, options.ttlMs)) {
     return options.cache?.value as T;
   }
@@ -124,14 +128,14 @@ async function readCachedAdminValue<T>(options: {
       return options.cache.value;
     }
 
-    if (options.fallback) {
+    if (options.fallback && canUsePlaceholderFallback) {
       return options.fallback();
     }
   }
 
   try {
     const value = await (async () => {
-      if (!options.fallback) {
+      if (!options.fallback || (!hasWarmCache && !canUsePlaceholderFallback)) {
         return options.loader();
       }
 
@@ -167,7 +171,7 @@ async function readCachedAdminValue<T>(options: {
       return options.cache.value;
     }
 
-    if (options.fallback) {
+    if (options.fallback && canUsePlaceholderFallback) {
       return options.fallback();
     }
 
@@ -395,6 +399,7 @@ export async function listCategoriesForAdmin(movies?: Movie[]) {
     onWrite: (value) => {
       adminCategoriesCache = value;
     },
+    allowFallbackWithoutCache: true,
     fallback: () => defaults,
     loader: async () => {
       const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
@@ -883,6 +888,7 @@ export async function listLibraryAssetsForAdmin(movies: Movie[]) {
     onWrite: (value) => {
       adminLibraryCache = value;
     },
+    allowFallbackWithoutCache: true,
     fallback: () => derivedAssets,
     loader: async () => {
       const managedSnapshot = await adminDb.collection(MEDIA_LIBRARY_COLLECTION).limit(500).get();
