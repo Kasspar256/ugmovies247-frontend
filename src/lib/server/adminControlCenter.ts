@@ -4,11 +4,15 @@ import { HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { getSubscriptionSnapshotFromData, listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
 import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import {
+  clearMovieCatalogQuotaFailure,
   type CachedMovieCatalog,
   inMemoryMovieCache,
   isFreshMovieCache,
+  isMovieCatalogQuotaBlocked,
+  pickMovieCatalogCache,
   persistMovieCatalog,
   readMovieCatalogFromDisk,
+  recordMovieCatalogQuotaFailure,
   setInMemoryMovieCache,
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
@@ -34,15 +38,20 @@ import type {
 
 const ADMIN_COLLECTION_CACHE_TTL_MS = 1000 * 45;
 const ADMIN_REVENUE_CACHE_TTL_MS = 1000 * 60 * 2;
+const ADMIN_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
+const ADMIN_FALLBACK_READ_TIMEOUT_MS = 1000 * 4;
 
 type TimedAdminCache<T> = {
   value: T;
   cachedAt: number;
 };
 
+let adminCategoriesCache: TimedAdminCache<AdminCategory[]> | null = null;
 let adminUsersCache: TimedAdminCache<AdminUserSummary[]> | null = null;
 let adminRequestsCache: TimedAdminCache<AdminRequest[]> | null = null;
+let adminLibraryCache: TimedAdminCache<AdminLibraryAsset[]> | null = null;
 let adminRevenueCache: TimedAdminCache<AdminRevenueSummary> | null = null;
+const adminQuotaBlockedUntil = new Map<string, number>();
 
 function nowIso() {
   return new Date().toISOString();
@@ -79,29 +88,87 @@ function logAdminDataFailure(resource: string, error: unknown) {
   console.error(`[admin-data] ${resource} read failed`, error);
 }
 
+function isAdminQuotaBlocked(resource: string) {
+  return (adminQuotaBlockedUntil.get(resource) || 0) > Date.now();
+}
+
+function recordAdminQuotaFailure(resource: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  if (!/resource_exhausted|quota exceeded|timed out/i.test(message)) {
+    return;
+  }
+
+  adminQuotaBlockedUntil.set(resource, Date.now() + ADMIN_QUOTA_COOLDOWN_MS);
+}
+
+function clearAdminQuotaFailure(resource: string) {
+  adminQuotaBlockedUntil.delete(resource);
+}
+
 async function readCachedAdminValue<T>(options: {
   resource: string;
   cache: TimedAdminCache<T> | null;
   ttlMs: number;
   loader: () => Promise<T>;
   onWrite: (value: TimedAdminCache<T> | null) => void;
+  fallback?: () => T;
+  timeoutMs?: number;
 }) {
   if (isFreshAdminCache(options.cache, options.ttlMs)) {
     return options.cache?.value as T;
   }
 
+  if (isAdminQuotaBlocked(options.resource)) {
+    if (options.cache?.value) {
+      return options.cache.value;
+    }
+
+    if (options.fallback) {
+      return options.fallback();
+    }
+  }
+
   try {
-    const value = await options.loader();
+    const value = await (async () => {
+      if (!options.fallback) {
+        return options.loader();
+      }
+
+      const loaderPromise = options.loader();
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${options.resource} read timed out while fallback data was available.`));
+        }, options.timeoutMs ?? ADMIN_FALLBACK_READ_TIMEOUT_MS);
+      });
+
+      try {
+        return await Promise.race([loaderPromise, timeoutPromise]);
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+
+        loaderPromise.catch(() => undefined);
+      }
+    })();
     options.onWrite({
       value,
       cachedAt: Date.now(),
     });
+    clearAdminQuotaFailure(options.resource);
     return value;
   } catch (error) {
+    recordAdminQuotaFailure(options.resource, error);
     logAdminDataFailure(options.resource, error);
 
     if (options.cache?.value) {
       return options.cache.value;
+    }
+
+    if (options.fallback) {
+      return options.fallback();
     }
 
     throw error;
@@ -109,9 +176,15 @@ async function readCachedAdminValue<T>(options: {
 }
 
 export function clearAdminPanelServerCache(
-  ...resources: Array<'users' | 'requests' | 'revenue'>
+  ...resources: Array<'categories' | 'users' | 'requests' | 'library' | 'revenue'>
 ) {
-  const targets = resources.length ? resources : ['users', 'requests', 'revenue'];
+  const targets = resources.length
+    ? resources
+    : ['categories', 'users', 'requests', 'library', 'revenue'];
+
+  if (targets.includes('categories')) {
+    adminCategoriesCache = null;
+  }
 
   if (targets.includes('users')) {
     adminUsersCache = null;
@@ -121,8 +194,16 @@ export function clearAdminPanelServerCache(
     adminRequestsCache = null;
   }
 
+  if (targets.includes('library')) {
+    adminLibraryCache = null;
+  }
+
   if (targets.includes('revenue')) {
     adminRevenueCache = null;
+  }
+
+  for (const resource of targets) {
+    clearAdminQuotaFailure(resource);
   }
 }
 
@@ -221,6 +302,31 @@ function buildDefaultCategories(movies: Movie[]) {
   return sortCategories([...categories.values()]);
 }
 
+async function readAdminMovieSnapshotWithFallback(hasFallback: boolean) {
+  const queryPromise = adminDb.collection(MOVIES_COLLECTION).get();
+
+  if (!hasFallback) {
+    return queryPromise;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Movies read timed out while fallback data was available.'));
+    }, ADMIN_FALLBACK_READ_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    queryPromise.catch(() => undefined);
+  }
+}
+
 export async function listAllMoviesForAdmin() {
   const normalizeCatalog = (catalog: CachedMovieCatalog) =>
     catalog.movies
@@ -237,14 +343,23 @@ export async function listAllMoviesForAdmin() {
   }
 
   const diskCache = await readMovieCatalogFromDisk();
+  const staleCache = pickMovieCatalogCache(inMemoryMovieCache, diskCache);
 
   if (isFreshMovieCache(diskCache)) {
     setInMemoryMovieCache(diskCache);
     return normalizeCatalog(diskCache);
   }
 
+  if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
+    if (diskCache) {
+      setInMemoryMovieCache(diskCache);
+    }
+
+    return normalizeCatalog(staleCache);
+  }
+
   try {
-    const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
+    const snapshot = await readAdminMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length));
     const movies = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
@@ -256,10 +371,11 @@ export async function listAllMoviesForAdmin() {
 
     setInMemoryMovieCache(cache);
     await persistMovieCatalog(cache);
+    clearMovieCatalogQuotaFailure();
 
     return normalizeCatalog(cache);
   } catch (error) {
-    const staleCache = diskCache || inMemoryMovieCache;
+    recordMovieCatalogQuotaFailure(error);
 
     if (staleCache?.movies?.length) {
       console.warn('[admin-data] serving stale admin movie catalog cache', error);
@@ -271,72 +387,83 @@ export async function listAllMoviesForAdmin() {
 }
 
 export async function listCategoriesForAdmin(movies?: Movie[]) {
-  const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
   const defaults = buildDefaultCategories(movies || []);
+  return readCachedAdminValue({
+    resource: 'categories',
+    cache: adminCategoriesCache,
+    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminCategoriesCache = value;
+    },
+    fallback: () => defaults,
+    loader: async () => {
+      const snapshot = await adminDb.collection(CATEGORIES_COLLECTION).get();
 
-  if (snapshot.empty) {
-    if (defaults.length > 0) {
-      const batch = adminDb.batch();
+      if (snapshot.empty) {
+        if (defaults.length > 0) {
+          const batch = adminDb.batch();
 
-      for (const category of defaults) {
-        const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
-        batch.set(ref, category, { merge: true });
+          for (const category of defaults) {
+            const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
+            batch.set(ref, category, { merge: true });
+          }
+
+          await batch.commit();
+        }
+
+        return defaults;
       }
 
-      await batch.commit();
-    }
+      const existingCategories = snapshot.docs
+        .map((doc): AdminCategory => {
+          const data = doc.data() as Partial<AdminCategory>;
+          const homeCategoryDefaults = findHomeCategoryConfig(data.name || doc.id);
 
-    return defaults;
-  }
+          return {
+            id: doc.id,
+            name: data.name || doc.id,
+            slug: data.slug || slugify(data.name || doc.id),
+            displayLabel:
+              data.displayLabel ||
+              homeCategoryDefaults?.displayLabel ||
+              data.name ||
+              doc.id,
+            description: data.description || '',
+            type:
+              data.type === 'home_row' || data.type === 'genre' || data.type === 'custom'
+                ? data.type
+                : homeCategoryDefaults
+                  ? 'home_row'
+                  : 'custom',
+            homeOrder:
+              typeof data.homeOrder === 'number'
+                ? data.homeOrder
+                : homeCategoryDefaults?.homeOrder ?? null,
+            isVisible: data.isVisible !== false,
+            createdAt: data.createdAt || '',
+            updatedAt: data.updatedAt || '',
+            isSystem: data.isSystem === true || Boolean(homeCategoryDefaults),
+          };
+        });
 
-  const existingCategories = snapshot.docs
-    .map((doc): AdminCategory => {
-      const data = doc.data() as Partial<AdminCategory>;
-      const homeCategoryDefaults = findHomeCategoryConfig(data.name || doc.id);
+      const categoryMap = new Map(existingCategories.map((category) => [category.slug, category]));
+      const missingDefaults = defaults.filter((category) => !categoryMap.has(category.slug));
 
-      return {
-        id: doc.id,
-        name: data.name || doc.id,
-        slug: data.slug || slugify(data.name || doc.id),
-        displayLabel:
-          data.displayLabel ||
-          homeCategoryDefaults?.displayLabel ||
-          data.name ||
-          doc.id,
-        description: data.description || '',
-        type:
-          data.type === 'home_row' || data.type === 'genre' || data.type === 'custom'
-            ? data.type
-            : homeCategoryDefaults
-              ? 'home_row'
-              : 'custom',
-        homeOrder:
-          typeof data.homeOrder === 'number'
-            ? data.homeOrder
-            : homeCategoryDefaults?.homeOrder ?? null,
-        isVisible: data.isVisible !== false,
-        createdAt: data.createdAt || '',
-        updatedAt: data.updatedAt || '',
-        isSystem: data.isSystem === true || Boolean(homeCategoryDefaults),
-      };
-    });
+      if (missingDefaults.length > 0) {
+        const batch = adminDb.batch();
 
-  const categoryMap = new Map(existingCategories.map((category) => [category.slug, category]));
-  const missingDefaults = defaults.filter((category) => !categoryMap.has(category.slug));
+        for (const category of missingDefaults) {
+          const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
+          batch.set(ref, category, { merge: true });
+          categoryMap.set(category.slug, category);
+        }
 
-  if (missingDefaults.length > 0) {
-    const batch = adminDb.batch();
+        await batch.commit();
+      }
 
-    for (const category of missingDefaults) {
-      const ref = adminDb.collection(CATEGORIES_COLLECTION).doc(category.id);
-      batch.set(ref, category, { merge: true });
-      categoryMap.set(category.slug, category);
-    }
-
-    await batch.commit();
-  }
-
-  return sortCategories([...categoryMap.values()]);
+      return sortCategories([...categoryMap.values()]);
+    },
+  });
 }
 
 export async function upsertCategoryForAdmin(input: {
@@ -386,6 +513,7 @@ export async function upsertCategoryForAdmin(input: {
   };
 
   await ref.set(payload, { merge: true });
+  clearAdminPanelServerCache('categories');
   return payload;
 }
 
@@ -410,6 +538,7 @@ export async function reorderHomeCategoriesForAdmin(categoryIds: string[]) {
   }
 
   await batch.commit();
+  clearAdminPanelServerCache('categories');
 }
 
 export async function removeMovieFromCategoryForAdmin(categoryId: string, movieId: string) {
@@ -456,6 +585,7 @@ export async function removeMovieFromCategoryForAdmin(categoryId: string, movieI
     ...movie,
     ...updates,
   });
+  clearAdminPanelServerCache('categories');
 }
 
 export async function deleteCategoryForAdmin(categoryId: string) {
@@ -497,6 +627,7 @@ export async function deleteCategoryForAdmin(categoryId: string) {
   }
 
   await ref.delete();
+  clearAdminPanelServerCache('categories');
 }
 
 export async function listUsersForAdmin(limit = 200) {
@@ -507,6 +638,7 @@ export async function listUsersForAdmin(limit = 200) {
     onWrite: (value) => {
       adminUsersCache = value;
     },
+    fallback: () => [],
     loader: async () => {
       const snapshot = await adminDb.collection('users').limit(limit).get();
 
@@ -547,6 +679,7 @@ export async function listRequestsForAdmin(limit = 200) {
     onWrite: (value) => {
       adminRequestsCache = value;
     },
+    fallback: () => [],
     loader: async () => {
       const snapshot = await adminDb.collection(REQUESTS_COLLECTION).limit(limit).get();
 
@@ -703,48 +836,12 @@ type ManagedLibraryAssetDocument = {
   updatedAt?: string;
 };
 
-export async function listLibraryAssetsForAdmin(movies: Movie[]) {
-  const assignmentMap = new Map<string, AdminLibraryAssignment[]>();
-
-  for (const movie of movies) {
-    const movieAssignments = collectMovieAssignments(movie);
-
-    for (const [url, assignments] of movieAssignments.entries()) {
-      const current = assignmentMap.get(url) || [];
-      assignmentMap.set(url, [...current, ...assignments]);
-    }
-  }
-
-  const managedSnapshot = await adminDb.collection(MEDIA_LIBRARY_COLLECTION).limit(500).get();
-  const managedAssets = managedSnapshot.docs.map((doc) => {
-    const data = doc.data() as ManagedLibraryAssetDocument;
-    const url = String(data.url || '');
-    const assignments = assignmentMap.get(url) || [];
-
-    return {
-      id: doc.id,
-      label: data.label || data.fileName || 'Library asset',
-      fileName: data.fileName || '',
-      url,
-      contentType: data.contentType || 'video/mp4',
-      sourceType: data.sourceType || 'direct_upload',
-      fileSizeBytes: typeof data.fileSizeBytes === 'number' ? data.fileSizeBytes : 0,
-      createdAt: data.createdAt || '',
-      updatedAt: data.updatedAt || '',
-      isManaged: true,
-      canDelete: assignments.length === 0,
-      assignments,
-    } satisfies AdminLibraryAsset;
-  });
-
-  const managedUrlSet = new Set(managedAssets.map((asset) => asset.url).filter(Boolean));
+function buildDerivedLibraryAssets(
+  assignmentMap: Map<string, AdminLibraryAssignment[]>
+): AdminLibraryAsset[] {
   const derivedAssets: AdminLibraryAsset[] = [];
 
   for (const [url, assignments] of assignmentMap.entries()) {
-    if (managedUrlSet.has(url)) {
-      continue;
-    }
-
     const fileName = url.split('/').pop() || '';
     derivedAssets.push({
       id: `derived:${slugify(url).slice(0, 60)}`,
@@ -762,9 +859,64 @@ export async function listLibraryAssetsForAdmin(movies: Movie[]) {
     });
   }
 
-  return [...managedAssets, ...derivedAssets].sort((left, right) =>
-    (right.updatedAt || right.createdAt || '').localeCompare(left.updatedAt || left.createdAt || '')
-  );
+  return derivedAssets;
+}
+
+export async function listLibraryAssetsForAdmin(movies: Movie[]) {
+  const assignmentMap = new Map<string, AdminLibraryAssignment[]>();
+
+  for (const movie of movies) {
+    const movieAssignments = collectMovieAssignments(movie);
+
+    for (const [url, assignments] of movieAssignments.entries()) {
+      const current = assignmentMap.get(url) || [];
+      assignmentMap.set(url, [...current, ...assignments]);
+    }
+  }
+
+  const derivedAssets = buildDerivedLibraryAssets(assignmentMap);
+
+  return readCachedAdminValue({
+    resource: 'library',
+    cache: adminLibraryCache,
+    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminLibraryCache = value;
+    },
+    fallback: () => derivedAssets,
+    loader: async () => {
+      const managedSnapshot = await adminDb.collection(MEDIA_LIBRARY_COLLECTION).limit(500).get();
+      const managedAssets = managedSnapshot.docs.map((doc) => {
+        const data = doc.data() as ManagedLibraryAssetDocument;
+        const url = String(data.url || '');
+        const assignments = assignmentMap.get(url) || [];
+
+        return {
+          id: doc.id,
+          label: data.label || data.fileName || 'Library asset',
+          fileName: data.fileName || '',
+          url,
+          contentType: data.contentType || 'video/mp4',
+          sourceType: data.sourceType || 'direct_upload',
+          fileSizeBytes: typeof data.fileSizeBytes === 'number' ? data.fileSizeBytes : 0,
+          createdAt: data.createdAt || '',
+          updatedAt: data.updatedAt || '',
+          isManaged: true,
+          canDelete: assignments.length === 0,
+          assignments,
+        } satisfies AdminLibraryAsset;
+      });
+
+      const managedUrlSet = new Set(managedAssets.map((asset) => asset.url).filter(Boolean));
+
+      return [...managedAssets, ...derivedAssets.filter((asset) => !managedUrlSet.has(asset.url))].sort(
+        (left, right) =>
+          (right.updatedAt || right.createdAt || '').localeCompare(
+            left.updatedAt || left.createdAt || ''
+          )
+      );
+    },
+  });
 }
 
 export async function registerLibraryAssetForAdmin(input: {
@@ -809,6 +961,7 @@ export async function registerLibraryAssetForAdmin(input: {
   };
 
   await ref.set(payload, { merge: true });
+  clearAdminPanelServerCache('library');
 
   return {
     id: ref.id,
@@ -839,6 +992,7 @@ export async function deleteLibraryAssetForAdmin(assetId: string, movies: Movie[
   }
 
   await ref.delete();
+  clearAdminPanelServerCache('library');
 }
 
 function collectAssignmentsForUrl(url: string, movies: Movie[]) {
@@ -860,6 +1014,7 @@ export async function getRevenueSummaryForAdmin(): Promise<AdminRevenueSummary> 
     onWrite: (value) => {
       adminRevenueCache = value;
     },
+    fallback: () => createEmptyRevenueSummary(),
     loader: async () => {
       const [payments, subscriptions] = await Promise.all([
         listPaymentsForAdmin(500),

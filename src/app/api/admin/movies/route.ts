@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import {
+  clearMovieCatalogQuotaFailure,
   type CachedMovieCatalog,
   inMemoryMovieCache,
   isFreshMovieCache,
+  isMovieCatalogQuotaBlocked,
+  pickMovieCatalogCache,
   persistMovieCatalog,
   readMovieCatalogFromDisk,
+  recordMovieCatalogQuotaFailure,
   setInMemoryMovieCache,
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
@@ -15,6 +19,32 @@ import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+const ADMIN_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
+
+async function readAdminMovieSnapshotWithFallback(hasFallback: boolean) {
+  const queryPromise = adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+
+  if (!hasFallback) {
+    return queryPromise;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Admin movie catalog read timed out while cache fallback was available.'));
+    }, ADMIN_MOVIE_FALLBACK_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    queryPromise.catch(() => undefined);
+  }
+}
 
 export async function GET() {
   try {
@@ -41,16 +71,25 @@ export async function GET() {
     }
 
     const diskCache = await readMovieCatalogFromDisk();
+    const staleCache = pickMovieCatalogCache(inMemoryMovieCache, diskCache);
 
     if (isFreshMovieCache(diskCache)) {
       setInMemoryMovieCache(diskCache);
       return NextResponse.json({ movies: diskCache.movies, source: 'disk-cache' });
     }
 
+    if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
+      if (diskCache) {
+        setInMemoryMovieCache(diskCache);
+      }
+
+      return NextResponse.json({ movies: staleCache.movies, source: 'stale-cache-quota-cooldown' });
+    }
+
     let movies: Array<Record<string, unknown>>;
 
     try {
-      const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+      const snapshot = await readAdminMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length));
       movies = snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,
         ...movieDoc.data(),
@@ -63,8 +102,9 @@ export async function GET() {
 
       setInMemoryMovieCache(cache);
       await persistMovieCatalog(cache);
+      clearMovieCatalogQuotaFailure();
     } catch (firestoreError) {
-      const staleCache = diskCache || inMemoryMovieCache;
+      recordMovieCatalogQuotaFailure(firestoreError);
 
       if (staleCache?.movies?.length) {
         console.warn('[admin] Firestore unavailable, serving stale admin movie cache', firestoreError);

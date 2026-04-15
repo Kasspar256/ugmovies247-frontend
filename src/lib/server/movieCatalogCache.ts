@@ -3,6 +3,7 @@ import path from 'path';
 import { FIRESTORE_ENV_NAMESPACE } from './firestoreNamespaces';
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 2;
+export const MOVIE_CACHE_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
 export const MOVIE_CACHE_PATH = path.join(
   process.cwd(),
   '.runtime-cache',
@@ -15,9 +16,47 @@ export type CachedMovieCatalog = {
 };
 
 export let inMemoryMovieCache: CachedMovieCatalog | null = null;
+let movieCatalogQuotaBlockedUntil = 0;
 
 export function setInMemoryMovieCache(cache: CachedMovieCatalog | null) {
   inMemoryMovieCache = cache;
+}
+
+function isMovieCatalogQuotaError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /resource_exhausted|quota exceeded|timed out/i.test(message);
+}
+
+export function setMovieCatalogQuotaCooldown(durationMs = MOVIE_CACHE_QUOTA_COOLDOWN_MS) {
+  movieCatalogQuotaBlockedUntil = Date.now() + durationMs;
+}
+
+export function recordMovieCatalogQuotaFailure(error: unknown) {
+  if (!isMovieCatalogQuotaError(error)) {
+    return false;
+  }
+
+  setMovieCatalogQuotaCooldown();
+  return true;
+}
+
+export function clearMovieCatalogQuotaFailure() {
+  movieCatalogQuotaBlockedUntil = 0;
+}
+
+export function isMovieCatalogQuotaBlocked() {
+  return movieCatalogQuotaBlockedUntil > Date.now();
+}
+
+export function pickMovieCatalogCache(
+  ...caches: Array<CachedMovieCatalog | null | undefined>
+) {
+  return caches
+    .filter((cache): cache is CachedMovieCatalog => Boolean(cache?.movies))
+    .sort(
+      (left, right) =>
+        new Date(right.cachedAt || 0).getTime() - new Date(left.cachedAt || 0).getTime()
+    )[0] || null;
 }
 
 export function isFreshMovieCache(cache: CachedMovieCatalog | null) {

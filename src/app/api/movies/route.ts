@@ -7,17 +7,22 @@ import {
 } from '@/lib/server/subscriptions';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
 import {
+  clearMovieCatalogQuotaFailure,
   type CachedMovieCatalog,
   inMemoryMovieCache,
   isFreshMovieCache,
+  isMovieCatalogQuotaBlocked,
+  pickMovieCatalogCache,
   persistMovieCatalog,
   readMovieCatalogFromDisk,
+  recordMovieCatalogQuotaFailure,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+const PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   hasPremiumAccess: false,
@@ -129,20 +134,54 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
+async function readMovieSnapshotWithFallback(hasFallback: boolean) {
+  const queryPromise = adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+
+  if (!hasFallback) {
+    return queryPromise;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Movie catalog read timed out while cache fallback was available.'));
+    }, PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([queryPromise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    queryPromise.catch(() => undefined);
+  }
+}
+
 async function fetchMovieCatalog() {
   if (isFreshMovieCache(inMemoryMovieCache)) {
     return inMemoryMovieCache;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
+  const staleCache = pickMovieCatalogCache(inMemoryMovieCache, diskCache);
 
   if (isFreshMovieCache(diskCache)) {
     setInMemoryMovieCache(diskCache);
     return diskCache;
   }
 
+  if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
+    if (diskCache) {
+      setInMemoryMovieCache(diskCache);
+    }
+
+    return staleCache;
+  }
+
   try {
-    const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+    const snapshot = await readMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length));
     const cache: CachedMovieCatalog = {
       movies: snapshot.docs.map((movieDoc) => ({
         id: movieDoc.id,
@@ -153,9 +192,10 @@ async function fetchMovieCatalog() {
 
     setInMemoryMovieCache(cache);
     await persistMovieCatalog(cache);
+    clearMovieCatalogQuotaFailure();
     return cache;
   } catch (error) {
-    const staleCache = diskCache || inMemoryMovieCache;
+    recordMovieCatalogQuotaFailure(error);
 
     if (staleCache?.movies?.length) {
       console.warn('[movies-api] Firestore unavailable, serving stale movie cache', error);
@@ -207,4 +247,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
