@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
+import {
+  getDefaultAvatarPresetId,
+  isValidAvatarPresetId,
+  resolveAvatarPresetUrl,
+  resolveUserAvatar,
+} from '@/lib/avatarPresets';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -26,6 +32,7 @@ export async function GET() {
       createdAt: session.userRecord.createdAt,
       updatedAt: session.userRecord.updatedAt,
       lastLoginAt: session.userRecord.lastLoginAt,
+      avatarPresetId: session.userRecord.avatarPresetId || '',
       avatarUrl: session.userRecord.avatarUrl || '',
       notificationPreferences: session.userRecord.notificationPreferences,
       subscription: entitlement.subscription,
@@ -43,22 +50,48 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json();
     const name = String(body.name || '').trim();
-    const avatarUrl = String(body.avatarUrl || '').trim();
+    const avatarPresetId = String(
+      body.avatarPresetId || session.userRecord.avatarPresetId || getDefaultAvatarPresetId(session.uid)
+    ).trim();
+    const rawNotificationPreferences =
+      body.notificationPreferences && typeof body.notificationPreferences === 'object'
+        ? body.notificationPreferences
+        : null;
+    const notificationPreferences = rawNotificationPreferences
+      ? {
+          marketing: Boolean(rawNotificationPreferences.marketing),
+          productUpdates:
+            rawNotificationPreferences.productUpdates === undefined
+              ? true
+              : Boolean(rawNotificationPreferences.productUpdates),
+        }
+      : null;
     const timestamp = new Date().toISOString();
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required.' }, { status: 400 });
     }
 
+    if (!isValidAvatarPresetId(avatarPresetId)) {
+      return NextResponse.json({ error: 'Choose a valid avatar preset.' }, { status: 400 });
+    }
+
     const { adminAuth, adminDb } = await import('@/lib/firebaseAdmin');
+    const resolvedAvatar = resolveUserAvatar({
+      avatarPresetId,
+      avatarUrl: resolveAvatarPresetUrl(avatarPresetId),
+      fallbackSeed: session.uid,
+    });
+
     await adminAuth.updateUser(session.uid, {
       displayName: name,
-      photoURL: avatarUrl || undefined,
     });
     await adminDb.collection('users').doc(session.uid).set(
       {
         name,
-        avatarUrl,
+        avatarPresetId: resolvedAvatar.avatarPresetId,
+        avatarUrl: '',
+        ...(notificationPreferences ? { notificationPreferences } : {}),
         updatedAt: timestamp,
       },
       { merge: true }

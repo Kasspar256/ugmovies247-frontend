@@ -4,7 +4,15 @@ import { useEffect, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { fetchAuthStatus } from '@/lib/auth/status-client';
 
-const AUTH_FREE_PREFIXES = ['/login', '/signup', '/forgot-password', '/admin'];
+const AUTH_FREE_PREFIXES = [
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/admin',
+  '/terms',
+  '/privacy-policy',
+  '/dcma',
+];
 
 function isAuthFreePath(pathname: string) {
   return AUTH_FREE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

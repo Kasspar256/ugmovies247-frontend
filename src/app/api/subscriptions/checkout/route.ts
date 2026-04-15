@@ -1,7 +1,13 @@
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
+import { BILLING_OPERATOR } from '@/lib/billingIdentity';
 import { checkRateLimit } from '@/lib/server/rateLimit';
+import {
+  buildPayFastCheckout,
+  getPayFastConfigError,
+  getPayFastPlanPrice,
+} from '@/lib/server/payfast';
 import {
   getConfiguredPawaPayProviders,
   getPawaPayConfigError,
@@ -10,7 +16,11 @@ import {
   mapPawaPayStatusToPaymentState,
 } from '@/lib/server/pawapay';
 import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
-import type { PaymentMethodProvider, SubscriptionPlanType } from '@/types/subscriptions';
+import type {
+  CheckoutPaymentMethod,
+  PaymentMethodProvider,
+  SubscriptionPlanType,
+} from '@/types/subscriptions';
 import {
   applySuccessfulSubscriptionPayment,
   createPaymentAttempt,
@@ -32,18 +42,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const configError = getPawaPayConfigError();
-
-  if (configError) {
-    return NextResponse.json(
-      {
-        error: 'Subscription payments are not configured for this environment yet.',
-        detail: configError,
-      },
-      { status: 500 }
-    );
-  }
-
   const rateLimit = checkRateLimit(`subscription-checkout:${getRequestIp(request)}:${session.uid}`, {
     limit: 8,
     windowMs: 1000 * 60 * 15,
@@ -61,14 +59,121 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const planType = String(body.planType || '') as SubscriptionPlanType;
+    const paymentMethod = String(body.paymentMethod || 'mobile_money') as CheckoutPaymentMethod;
     const provider = String(body.provider || '') as PaymentMethodProvider;
     const phoneNumber = String(body.phoneNumber || '').trim();
+    const returnTo = String(body.returnTo || '').trim();
     const plan = SUBSCRIPTION_PLANS[planType];
-    const allowedProviders = getConfiguredPawaPayProviders().map((entry) => entry.id);
 
     if (!plan) {
       return NextResponse.json({ error: 'Choose a valid subscription plan.' }, { status: 400 });
     }
+
+    if (paymentMethod === 'card') {
+      const configError = getPayFastConfigError();
+
+      if (configError) {
+        return NextResponse.json(
+          {
+            error: 'Card payments are not configured for this environment yet.',
+            detail: configError,
+          },
+          { status: 500 }
+        );
+      }
+
+      const amount = getPayFastPlanPrice(plan.type);
+
+      if (!amount) {
+        return NextResponse.json(
+          {
+            error: 'This plan is not priced for PayFast card checkout yet.',
+          },
+          { status: 500 }
+        );
+      }
+
+      paymentId = randomUUID();
+
+      await createPaymentAttempt({
+        id: paymentId,
+        userId: session.uid,
+        planType,
+        planName: plan.name,
+        amount,
+        currency: 'ZAR',
+        paymentProvider: 'payfast',
+        paymentMethodProvider: 'CARD_PAYFAST',
+        phoneNumber: '',
+        providerDepositId: paymentId,
+        clientReferenceId: paymentId,
+        providerResponse: {
+          processor: 'PayFast',
+          billedBy: BILLING_OPERATOR,
+        },
+        providerCallbackPayload: {},
+      });
+
+      const checkout = buildPayFastCheckout({
+        paymentId,
+        plan,
+        amount,
+        returnTo,
+      });
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[subscriptions] payfast redirect payload', {
+          action: checkout.processUrl,
+          merchantId: checkout.fields.merchant_id,
+          amount: checkout.fields.amount,
+          itemName: checkout.fields.item_name,
+          returnUrl: checkout.fields.return_url,
+          cancelUrl: checkout.fields.cancel_url,
+          notifyUrl: checkout.fields.notify_url,
+          fieldOrder: Object.keys(checkout.fields),
+          billedBy: BILLING_OPERATOR,
+          signature: checkout.fields.signature,
+        });
+      }
+
+      await updatePaymentAttempt(paymentId, {
+        status: 'submitted',
+        providerStatus: 'REDIRECT_READY',
+        providerMessage: 'Redirecting to PayFast secure card checkout.',
+        providerResponse: {
+          processor: 'PayFast',
+          processUrl: checkout.processUrl,
+          billedBy: BILLING_OPERATOR,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        paymentId,
+        status: 'submitted',
+        providerStatus: 'REDIRECT_READY',
+        message: 'Redirecting to PayFast secure card checkout.',
+        redirect: {
+          action: checkout.processUrl,
+          method: 'POST',
+          fields: checkout.fields,
+        },
+      });
+    }
+
+    const configError = getPawaPayConfigError();
+
+    if (configError) {
+      return NextResponse.json(
+        {
+          error: 'Subscription payments are not configured for this environment yet.',
+          detail: configError,
+        },
+        { status: 500 }
+      );
+    }
+
+    const allowedProviders = getConfiguredPawaPayProviders().map((entry) => entry.id);
 
     if (!allowedProviders.includes(provider)) {
       return NextResponse.json({ error: 'Choose a valid Mobile Money provider.' }, { status: 400 });

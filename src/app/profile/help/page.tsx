@@ -1,82 +1,145 @@
 'use client';
-import { ArrowLeft, MessageCircle, HelpCircle, FileText, Send, Mail } from 'lucide-react';
-import { useState } from 'react';
+
+import { type ComponentType } from 'react';
+import { FileText, Mail, MessageCircle, Scale, Send } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
-export default function HelpSupportPage() {
-  const [expandedText, setExpanded] = useState<number | null>(null);
+const EMAIL_SUBJECT = encodeURIComponent('UG Movies 247 Support Request');
+const EMAIL_BODY = encodeURIComponent(
+  "Hello UG Movies 247 Support,\r\n\r\nI'd like help with the platform. Please advise on the next steps.\r\n\r\nThank you."
+);
+const EMAIL_LINK = `mailto:info@ugmovies247.com?subject=${EMAIL_SUBJECT}&body=${EMAIL_BODY}`;
+const COMMUNITY_LINK = 'https://t.me/+8d6j762RBs8zYjY0';
+const DEVELOPER_MESSAGE = encodeURIComponent(
+  "Hello, I'm reaching out from UG Movies 247. I'd like assistance or to discuss something related to the platform. Please advise on the next steps."
+);
+const DEVELOPER_WHATSAPP_LINK = `https://wa.me/27836376772?text=${DEVELOPER_MESSAGE}`;
 
-  const toggle = (i: number) => {
-    if (expandedText === i) setExpanded(null);
-    else setExpanded(i);
-  };
-
-  const FAQS = [
-    { q: "How do I download a movie?", a: "Head to any movie detail page and tap the Download icon. Content will appear in the My Downloads section for offline viewing. Subscriptions must be active." },
-    { q: "My video is buffering constantly, why?", a: "UGMOVIES 247 leverages the ultra-fast Cloudflare Dark CDN. Buffering usually indicates a poor connection on your MTN or Airtel line. Try lowering the stream quality in Settings." },
-    { q: "Can I request a VJ if my movie isn't there?", a: "Yes. Use the Request target in our navigation menu on the homepage or submit directly through our Telegram community channel." }
-  ];
+function SupportAction({
+  href,
+  label,
+  description,
+  icon: Icon,
+  accentClass,
+}: {
+  href: string;
+  label: string;
+  description: string;
+  icon: ComponentType<{ size?: number; className?: string }>;
+  accentClass: string;
+}) {
+  const isMailTo = href.startsWith('mailto:');
+  const isInternal = href.startsWith('/');
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 lg:px-10">
-      <MobilePageHeader title="Support Center" fallbackHref="/profile" />
-
-      {/* Main Content */}
-      <div className="pt-24 px-4 md:mx-auto md:max-w-2xl md:px-0 md:pt-[138px] w-full">
-        
-        <div className="flex justify-center mb-8">
-           <div className="w-20 h-20 rounded-full bg-[#1F2833]/40 border-2 border-[#D90429]/40 shadow-[0_0_20px_rgba(217,4,41,0.2)] flex items-center justify-center">
-              <HelpCircle size={40} className="text-[#D90429]" />
-           </div>
-        </div>
-
-        <h2 className="text-white font-black text-2xl uppercase tracking-widest text-center mb-2">How can we help?</h2>
-        <p className="text-[#888888] text-sm text-center mb-8 px-4 font-medium leading-relaxed">Search through the guides or drop a direct secure message to the admin terminal.</p>
-
-        {/* Direct Connect Buttons */}
-        <div className="flex gap-4 mb-6">
-           <button onClick={() => window.open('https://wa.me/27836376772', '_blank')} className="flex-1 bg-[#1F2833]/60 hover:bg-[#1F2833] border border-green-500/20 transition-all rounded-xl p-4 flex flex-col items-center justify-center gap-2 group shadow-sm">
-             <MessageCircle size={24} className="text-green-500 group-hover:text-white transition-colors" />
-             <span className="text-white font-black text-[10px] uppercase tracking-widest text-center">Instant WhatsApp</span>
-           </button>
-           <button onClick={() => window.open('https://t.me/+8d6j762RBs8zYjY0', '_blank')} className="flex-1 bg-[#1F2833]/60 hover:bg-[#1F2833] border border-blue-500/20 transition-all rounded-xl p-4 flex flex-col items-center justify-center gap-2 group shadow-sm">
-             <Send size={24} className="text-blue-500 group-hover:text-white transition-colors" />
-             <span className="text-white font-black text-[10px] uppercase tracking-widest text-center">Telegram Support</span>
-           </button>
-        </div>
-
-        {/* Feedback Section */}
-        <button onClick={() => window.location.href='mailto:support@ugmovies247.com?subject=App Feedback'} className="w-full bg-[#1F2833]/40 hover:bg-[#1F2833] border border-[#1F2833] hover:border-[#D90429]/50 transition-all rounded-xl p-4 flex items-center justify-between mb-10 shadow-sm group">
-           <div className="flex items-center gap-4">
-             <div className="w-10 h-10 bg-black/40 rounded-lg flex items-center justify-center group-hover:bg-[#1F2833] transition-colors">
-               <Mail size={20} className="text-yellow-500" />
-             </div>
-             <div className="text-left">
-               <span className="text-white font-black text-sm uppercase tracking-widest block mb-0.5">Send Feedback</span>
-               <span className="text-[#888888] text-[10px] font-bold uppercase tracking-wider block">Help us improve the app</span>
-             </div>
-           </div>
-           <ArrowLeft size={16} className="text-[#888888] rotate-180 group-hover:text-[#D90429] transition-colors" />
-        </button>
-
-        {/* FAQs */}
-        <h3 className="text-white font-black tracking-widest uppercase text-xs border-b border-[#1F2833] pb-3 mb-4 flex items-center gap-2"><FileText size={16} className="text-[#D90429]"/> Frequently Asked Questions</h3>
-        
-        <div className="space-y-3">
-          {FAQS.map((faq, idx) => (
-             <div onClick={() => toggle(idx)} key={idx} className="bg-[#1F2833]/40 border border-[#1F2833] rounded-lg p-4 cursor-pointer hover:border-[#D90429]/50 transition-colors shadow-sm">
-                <div className="flex justify-between items-center gap-4">
-                   <h4 className="text-white font-bold text-xs uppercase tracking-wider">{faq.q}</h4>
-                   <span className="text-[#D90429] font-black">{expandedText === idx ? '−' : '+'}</span>
-                </div>
-                {expandedText === idx && (
-                   <p className="mt-3 text-[#888888] text-xs leading-relaxed font-mono">{faq.a}</p>
-                )}
-             </div>
-          ))}
-        </div>
-
+    <a
+      href={href}
+      target={isMailTo || isInternal ? undefined : '_blank'}
+      rel={isMailTo || isInternal ? undefined : 'noreferrer'}
+      className="flex items-center gap-4 rounded-[24px] border border-white/10 bg-[#11141C]/75 px-4 py-4 transition-colors hover:border-white/20"
+    >
+      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${accentClass}`}>
+        <Icon size={20} />
       </div>
-    </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-base font-semibold text-white">{label}</div>
+        <div className="mt-1.5 text-sm leading-6 text-white/54">{description}</div>
+      </div>
+    </a>
+  );
+}
+
+export default function HelpPage() {
+  return (
+    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
+      <MobilePageHeader title="Support" fallbackHref="/profile" />
+
+      <div className="mx-auto max-w-3xl">
+        <div className="hidden md:block">
+          <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+            Support
+          </div>
+          <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">Support</h1>
+        </div>
+
+        <section className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/82 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.32)]">
+          <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+            Support
+          </div>
+          <div className="mt-3 text-[15px] leading-7 text-white/68">
+            Use these options for account help, platform questions, and community access.
+          </div>
+
+          <div className="mt-5 space-y-3">
+            <SupportAction
+              href={EMAIL_LINK}
+              label="Email support"
+              description="Write to info@ugmovies247.com for account, billing, and platform support."
+              icon={Mail}
+              accentClass="border border-sky-500/20 bg-sky-500/10 text-sky-200"
+            />
+            <SupportAction
+              href={COMMUNITY_LINK}
+              label="Join the community"
+              description="Open the Telegram community for announcements and discussion."
+              icon={Send}
+              accentClass="border border-cyan-500/20 bg-cyan-500/10 text-cyan-200"
+            />
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-white/10 bg-[#11141C]/76 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
+          <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+            Contact Developer
+          </div>
+          <div className="mt-3 text-[15px] leading-7 text-white/68">
+            Use this direct line when you specifically need to reach the developer.
+          </div>
+
+          <div className="mt-5">
+            <SupportAction
+              href={DEVELOPER_WHATSAPP_LINK}
+              label="Developer on WhatsApp"
+              description="Open a direct WhatsApp conversation with the professional prefilled message."
+              icon={MessageCircle}
+              accentClass="border border-green-500/20 bg-green-500/10 text-green-300"
+            />
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-white/10 bg-[#11141C]/72 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+          <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+            Legal
+          </div>
+          <div className="mt-3 text-[15px] leading-7 text-white/68">
+            Review the legal policies that govern privacy, platform access, and copyright notices.
+          </div>
+
+          <div className="mt-5 space-y-3">
+            <SupportAction
+              href="/terms"
+              label="Terms of Service"
+              description="Read the rules for accounts, subscriptions, billing, and acceptable use."
+              icon={Scale}
+              accentClass="border border-white/10 bg-white/5 text-white"
+            />
+            <SupportAction
+              href="/privacy-policy"
+              label="Privacy Policy"
+              description="See what information we collect, how it is used, and how deletion requests work."
+              icon={FileText}
+              accentClass="border border-white/10 bg-white/5 text-white"
+            />
+            <SupportAction
+              href="/dcma"
+              label="DMCA"
+              description="Read the copyright notice policy for rights holders and authorized agents."
+              icon={FileText}
+              accentClass="border border-white/10 bg-white/5 text-white"
+            />
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }

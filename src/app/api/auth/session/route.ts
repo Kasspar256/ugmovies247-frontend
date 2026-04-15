@@ -11,6 +11,9 @@ import {
 import { AUTH_SESSION_MAX_AGE_MS } from '@/lib/auth/constants';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getSubscriptionSnapshotFromData } from '@/lib/server/subscriptions';
+import {
+  getDefaultAvatarPresetId,
+} from '@/lib/avatarPresets';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -80,6 +83,10 @@ export async function POST(request: Request) {
       (typeof decoded.name === 'string' ? decoded.name : '') ||
       String(existing?.name || '') ||
       'User';
+    const avatarPresetId =
+      typeof existing?.avatarPresetId === 'string' && existing.avatarPresetId
+        ? existing.avatarPresetId
+        : getDefaultAvatarPresetId(decoded.uid || email);
 
     try {
       if (existing?.role !== role) {
@@ -101,9 +108,8 @@ export async function POST(request: Request) {
           updatedAt: timestamp,
           lastLoginAt: timestamp,
           isActive: existing?.isActive !== false,
-          avatarUrl:
-            String(existing?.avatarUrl || '') ||
-            (typeof decoded.picture === 'string' ? decoded.picture : ''),
+          avatarPresetId,
+          avatarUrl: String(existing?.avatarUrl || ''),
           notificationPreferences: existing?.notificationPreferences || {
             marketing: false,
             productUpdates: true,
@@ -115,6 +121,12 @@ export async function POST(request: Request) {
         },
         { merge: true }
       );
+
+      await adminAuth.updateUser(decoded.uid, {
+        displayName: resolvedName,
+      }).catch((error) => {
+        console.warn('[auth] display name sync failed', error);
+      });
     } catch (userRecordError) {
       console.warn('[auth] user record sync failed', userRecordError);
     }

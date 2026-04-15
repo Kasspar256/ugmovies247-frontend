@@ -9,6 +9,9 @@ import {
 } from '@/lib/auth/server';
 import { adminAuth, adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getSubscriptionSnapshotFromData } from '@/lib/server/subscriptions';
+import {
+  getDefaultAvatarPresetId,
+} from '@/lib/avatarPresets';
 
 type FirebaseIdentitySuccess = Record<string, unknown>;
 
@@ -194,6 +197,10 @@ export async function createAuthSessionResponse(options: {
     (typeof decoded.name === 'string' ? decoded.name : '') ||
     String(existing?.name || '') ||
     'User';
+  const avatarPresetId =
+    typeof existing?.avatarPresetId === 'string' && existing.avatarPresetId
+      ? existing.avatarPresetId
+      : getDefaultAvatarPresetId(decoded.uid || email);
 
   try {
     if (existing?.role !== role) {
@@ -215,9 +222,8 @@ export async function createAuthSessionResponse(options: {
         updatedAt: timestamp,
         lastLoginAt: timestamp,
         isActive: existing?.isActive !== false,
-        avatarUrl:
-          String(existing?.avatarUrl || '') ||
-          (typeof decoded.picture === 'string' ? decoded.picture : ''),
+        avatarPresetId,
+        avatarUrl: String(existing?.avatarUrl || ''),
         notificationPreferences: existing?.notificationPreferences || {
           marketing: false,
           productUpdates: true,
@@ -229,6 +235,12 @@ export async function createAuthSessionResponse(options: {
       },
       { merge: true }
     );
+
+    await adminAuth.updateUser(decoded.uid, {
+      displayName: resolvedName,
+    }).catch((error) => {
+      console.warn('[auth] failed to sync display name to Firebase Auth user', error);
+    });
   } catch (userRecordError) {
     console.warn('[auth] user record sync failed', userRecordError);
   }

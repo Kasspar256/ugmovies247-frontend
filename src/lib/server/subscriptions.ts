@@ -247,6 +247,56 @@ export async function listPaymentsForAdmin(limit = 50) {
   }));
 }
 
+export async function listPaymentsForUser(userId: string, limit = 20) {
+  try {
+    let docs: Array<{ id: string; data: () => unknown }> | null = null;
+
+    try {
+      const snapshot = await adminDb
+        .collection(PAYMENTS_COLLECTION)
+        .where('userId', '==', userId)
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .get();
+
+      docs = snapshot.docs;
+    } catch (orderedReadError) {
+      const message =
+        orderedReadError instanceof Error ? orderedReadError.message : String(orderedReadError || '');
+
+      if (/requires an index/i.test(message)) {
+        console.warn(
+          '[subscriptions] user payment history index is missing in this environment, retrying without orderBy'
+        );
+      } else {
+        console.warn(
+          '[subscriptions] ordered user payment history read failed, retrying without orderBy',
+          orderedReadError
+        );
+      }
+
+      const snapshot = await adminDb
+        .collection(PAYMENTS_COLLECTION)
+        .where('userId', '==', userId)
+        .limit(limit)
+        .get();
+
+      docs = snapshot.docs;
+    }
+
+    return (docs || [])
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as PaymentAttemptDocument),
+      }))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, limit);
+  } catch (error) {
+    console.warn('[subscriptions] failed to read user payment history, using empty fallback', error);
+    return [];
+  }
+}
+
 export async function listSubscriptionsForAdmin(limit = 50) {
   const snapshot = await adminDb
     .collection(SUBSCRIPTIONS_COLLECTION)

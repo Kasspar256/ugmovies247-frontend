@@ -41,14 +41,14 @@ export default function WatchlistPage() {
       <div className="mt-4 md:mt-2 max-w-5xl mx-auto">
         <div className="hidden md:flex items-center gap-4 mb-8">
           <Bookmark size={32} className="text-[#D90429]" />
-          <h1 className="text-3xl font-black text-white uppercase tracking-wider">Watchlist Vault</h1>
+          <h1 className="text-3xl font-black text-white uppercase tracking-wider">My List</h1>
         </div>
 
         <div className="bg-[#1F2833]/30 border border-[#1F2833] rounded-lg p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={20} className="text-[#888888]" />
             <span className="text-[#888888] text-sm font-medium">
-              Saved for later viewing
+              Titles saved to your account
             </span>
           </div>
           <span className="text-xs text-[#888888] font-mono">

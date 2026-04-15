@@ -3,7 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
+import {
+  buildHomeCollections,
+  DEFAULT_HOME_PAGE_CATEGORIES,
+  type HomePageCategoryRecord,
+} from '@/lib/homeRows';
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
@@ -14,22 +18,6 @@ type SessionUser = {
   role: 'user' | 'admin';
   name: string;
 };
-
-type HomePageCategory = {
-  id: string;
-  name: string;
-  displayLabel: string;
-  homeOrder: number;
-  isVisible: boolean;
-};
-
-const DEFAULT_HOME_PAGE_CATEGORIES: HomePageCategory[] = HOME_PAGE_CATEGORY_CONFIG.map((category) => ({
-  id: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-  name: category.name,
-  displayLabel: category.displayLabel,
-  homeOrder: category.homeOrder,
-  isVisible: true,
-}));
 
 const DESKTOP_CATEGORY_PILLS = [
   {
@@ -97,14 +85,13 @@ function formatRuntimeLabel(movie: Movie | null) {
 
 export default function Home() {
   const [movies, setMovies] = useState<Movie[]>([]);
-  const [homePageCategories, setHomePageCategories] = useState<HomePageCategory[]>(
+  const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
     DEFAULT_HOME_PAGE_CATEGORIES
   );
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -139,7 +126,7 @@ export default function Home() {
           cache: 'no-store',
         });
         const payload = (await response.json().catch(() => ({}))) as {
-          categories?: HomePageCategory[];
+          categories?: HomePageCategoryRecord[];
         };
 
         if (!mounted || !response.ok || !Array.isArray(payload.categories)) {
@@ -205,18 +192,6 @@ export default function Home() {
     };
   }, []);
 
-  const filteredMovies = activeCategory === 'ALL' 
-    ? movies 
-    : movies.filter(m => m.genres?.map((g) => g.toLowerCase()).includes(activeCategory.toLowerCase()));
-
-  const hasCategory = (movie: Movie, category: string) =>
-    (movie.category || []).some((entry) => entry.toLowerCase() === category.toLowerCase());
-
-  const hasVj = (movie: Movie, ...names: string[]) => {
-    const normalizedVj = (movie.vj || '').toLowerCase();
-    return names.some((name) => normalizedVj.includes(name.toLowerCase()));
-  };
-
   const latestForHero = movies.slice(0, 5);
 
   useEffect(() => {
@@ -246,70 +221,11 @@ export default function Home() {
       </main>
     );
   }
-
-  const manualHomeRows = homePageCategories
-    .filter((category) => category.isVisible !== false)
-    .map((category) => ({
-      title: category.displayLabel,
-      categoryKey: category.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      usesSeriesBackdropCards: ['ongoing series', 'latest series', 'asian series', 'western series'].includes(
-        category.name.toLowerCase()
-      ),
-      sortOrder: category.homeOrder,
-      movies:
-        category.name.toLowerCase() === 'trending on tiktok'
-          ? filteredMovies.filter(
-              (movie) => movie.is_trending_tiktok || hasCategory(movie, category.name)
-            )
-          : filteredMovies.filter((movie) => hasCategory(movie, category.name)),
-    }));
-
-  const autoRows = AUTO_HOME_ROW_CONFIG.map((row) => ({
-    title: row.title,
-    categoryKey: row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    usesSeriesBackdropCards: false,
-    sortOrder: row.order,
-    movies:
-      row.title === 'VJ JUNIOR'
-        ? filteredMovies.filter((movie) => hasVj(movie, 'junior'))
-        : row.title === 'VJ EMMY'
-          ? filteredMovies.filter((movie) => hasVj(movie, 'emmy'))
-          : row.title === 'VJ ULIO'
-            ? filteredMovies.filter((movie) => hasVj(movie, 'ulio'))
-            : row.title === 'VJ SOUL'
-              ? filteredMovies.filter((movie) => hasVj(movie, 'soul'))
-              : row.title === 'VJ JINGO'
-                ? filteredMovies.filter((movie) => hasVj(movie, 'jingo'))
-                : row.title === 'OMUTAKA ICE P'
-                  ? filteredMovies.filter((movie) => hasVj(movie, 'ice p', 'omutaka ice p'))
-                  : row.title === 'ANIMATIONS'
-                    ? filteredMovies.filter((movie) => movie.genres?.includes('Animation'))
-                    : row.title === 'ACTION & THRILLER'
-                      ? filteredMovies.filter((movie) =>
-                          movie.genres?.some((genre) =>
-                            ['Action', 'Thriller', 'Crime', 'Detective', 'Mystery'].includes(genre)
-                          )
-                        )
-                      : row.title === 'ROMANCE'
-                        ? filteredMovies.filter((movie) => movie.genres?.includes('Romance'))
-                        : row.title === 'COMEDY'
-                          ? filteredMovies.filter((movie) => movie.genres?.includes('Comedy'))
-                          : row.title === 'HORROR'
-                            ? filteredMovies.filter((movie) => movie.genres?.includes('Horror'))
-                            : row.title === 'ADVENTURE'
-                              ? filteredMovies.filter((movie) => movie.genres?.includes('Adventure'))
-                              : filteredMovies.filter(
-                                  (movie) =>
-                                    movie.country === 'India' || movie.genres?.includes('Indian')
-                                ),
-  }));
-
-  const homeRows = [...manualHomeRows, ...autoRows].sort(
-    (left, right) => left.sortOrder - right.sortOrder
-  );
-
-  const configuredRowMovieIds = new Set(homeRows.flatMap((row) => row.movies).map((movie) => movie.id));
-  const unmatchedMovies = filteredMovies.filter((movie) => !configuredRowMovieIds.has(movie.id));
+  const { homeRows, unmatchedMovies } = buildHomeCollections({
+    movies,
+    homePageCategories,
+    activeCategory,
+  });
 
   // Hero Movie
   const heroMovie = latestForHero.length > 0 ? latestForHero[heroIndex] : (movies[0] || null);
@@ -752,16 +668,8 @@ export default function Home() {
             key={row.categoryKey}
             title={row.title}
             movies={row.movies}
-            hasViewAll={row.movies.length > 0}
             categoryKey={row.categoryKey}
             usesSeriesBackdropCards={row.usesSeriesBackdropCards}
-            expanded={!!expandedSections[row.categoryKey]}
-            onToggle={() =>
-              setExpandedSections((prev) => ({
-                ...prev,
-                [row.categoryKey]: !prev[row.categoryKey],
-              }))
-            }
           />
         ))}
 
@@ -769,15 +677,7 @@ export default function Home() {
           <MovieRow
             title="MORE MOVIES"
             movies={unmatchedMovies}
-            hasViewAll
             categoryKey="more-movies"
-            expanded={!!expandedSections['more-movies']}
-            onToggle={() =>
-              setExpandedSections((prev) => ({
-                ...prev,
-                'more-movies': !prev['more-movies'],
-              }))
-            }
           />
         )}
 
@@ -793,19 +693,13 @@ export default function Home() {
 function MovieRow({
   title,
   movies,
-  hasViewAll = false,
   categoryKey,
   usesSeriesBackdropCards = false,
-  expanded = false,
-  onToggle
 }: {
   title: string,
   movies: Movie[],
-  hasViewAll?: boolean,
   categoryKey?: string,
   usesSeriesBackdropCards?: boolean,
-  expanded?: boolean,
-  onToggle?: () => void
 }) {
   const rowMovies = dedupeSeriesMovies(movies || []);
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -933,17 +827,17 @@ function MovieRow({
               </button>
             </div>
           )}
-          {hasViewAll && (
-            <button
-              onClick={onToggle}
+          {categoryKey && rowMovies.length > 0 ? (
+            <Link
+              href={`/browse/${categoryKey}`}
               className="flex items-center gap-1 rounded-full border border-[#D90429]/25 bg-red-900/10 px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-[#D90429] backdrop-blur-sm transition-colors hover:bg-red-900/30 md:text-[10px]"
             >
-              {expanded ? 'VIEW LESS' : 'VIEW ALL'}
-              <svg className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              View All
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
               </svg>
-            </button>
-          )}
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -965,18 +859,6 @@ function MovieRow({
           </div>
         )}
       </div>
-
-      {expanded && rowMovies.length > 0 && (
-        <div
-          className={`mt-4 grid gap-3 md:gap-4 ${
-            usesSeriesBackdropCards
-              ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-              : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6'
-          }`}
-        >
-          {rowMovies.map((m) => renderCard(m))}
-        </div>
-      )}
     </section>
   );
 }

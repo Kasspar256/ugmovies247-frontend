@@ -1,66 +1,184 @@
 'use client';
-import { Shield, Lock, Smartphone, Database } from 'lucide-react';
+
+import { useEffect, useState } from 'react';
+import { Loader2, LogOut, Mail, Shield } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import { fetchAccountProfile, formatAccountDate, type AccountProfile } from '@/lib/accountProfile';
+import { logoutCurrentUser, sendResetPasswordEmail } from '@/lib/auth/client';
 
 export default function SecurityPage() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadProfile = async () => {
+      try {
+        const nextProfile = await fetchAccountProfile();
+
+        if (!mounted) {
+          return;
+        }
+
+        setProfile(nextProfile);
+      } catch (loadError) {
+        if (mounted) {
+          setError(loadError instanceof Error ? loadError.message : 'Security settings could not be loaded.');
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handlePasswordReset = async () => {
+    if (!profile?.email) {
+      return;
+    }
+
+    setResetting(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await sendResetPasswordEmail(profile.email);
+      setMessage(`A password reset link has been sent to ${profile.email}.`);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Password reset could not be started.');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setError('');
+
+    try {
+      await logoutCurrentUser();
+      router.replace('/login');
+    } catch (signOutError) {
+      setError(signOutError instanceof Error ? signOutError.message : 'Sign out failed.');
+      setSigningOut(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0B0C10] flex items-center justify-center">
+        <div className="h-12 w-12 rounded-full border-4 border-[#1F2833] border-t-[#D90429] animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#0B0C10] flex flex-col font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 lg:px-10">
+    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
       <MobilePageHeader title="Security" fallbackHref="/profile" />
 
-      {/* Main Content */}
-      <div className="pt-24 px-4 max-w-lg mx-auto w-full md:px-0 md:pt-[138px]">
-        
-        <div className="flex items-center gap-4 bg-[#1F2833]/40 border border-[#D90429]/30 rounded-xl p-4 mb-8 shadow-lg shadow-[#D90429]/10">
-           <Shield size={32} className="text-[#D90429]" />
-           <div>
-              <p className="text-white font-black text-sm uppercase tracking-widest">Account Status</p>
-              <p className="text-green-500 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5 mt-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Encrypted & Active</p>
-           </div>
+      <div className="mx-auto max-w-3xl">
+        <div className="hidden md:block">
+          <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+            Profile
+          </div>
+          <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">Security</h1>
         </div>
 
-        <div className="space-y-4">
-           {/* Password Change */}
-           <div className="bg-[#1F2833]/40 border border-[#1F2833] rounded-xl p-4 shadow-sm group">
-              <div className="flex items-center gap-4 mb-4 border-b border-[#1F2833] pb-3">
-                 <Lock size={18} className="text-[#888888] group-hover:text-white transition-colors" />
-                 <span className="text-white font-black text-sm uppercase tracking-widest">Change Vault Password</span>
+        {error && !profile ? (
+          <div className="mt-6 rounded-[24px] border border-red-500/20 bg-red-500/10 p-5 text-sm text-red-100">
+            {error}
+          </div>
+        ) : profile ? (
+          <div className="mt-6 space-y-4">
+            <section className="rounded-[28px] border border-white/10 bg-[#11141C]/82 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.32)]">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
+                  <Shield size={20} />
+                </div>
+                <div>
+                  <div className="text-base font-semibold text-white">{profile.email}</div>
+                  <div className="mt-1.5 text-sm text-white/54">
+                    Last login {formatAccountDate(profile.lastLoginAt, { includeTime: true })}
+                  </div>
+                </div>
               </div>
-              <div className="space-y-3">
-                 <input type="password" placeholder="Current Password" className="w-full bg-[#0B0C10] border border-[#1F2833] focus:border-[#D90429] focus:ring-1 focus:ring-[#D90429] rounded p-3 text-white text-sm" />
-                 <input type="password" placeholder="New Password" className="w-full bg-[#0B0C10] border border-[#1F2833] focus:border-[#D90429] focus:ring-1 focus:ring-[#D90429] rounded p-3 text-white text-sm" />
-                 <button className="bg-[#D90429] text-white font-black uppercase text-[10px] tracking-widest px-4 py-2.5 rounded shadow-md mt-2 w-max transition-all hover:bg-[#B00320]">Verify & Save</button>
-              </div>
-           </div>
+            </section>
 
-           {/* Mobile Sessions */}
-           <div className="bg-[#1F2833]/40 border border-[#1F2833] rounded-xl p-4 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                 <Smartphone size={18} className="text-[#888888]" />
-                 <div>
-                    <span className="text-white font-black text-sm block tracking-widest uppercase">Active Sessions</span>
-                    <span className="text-green-500 text-[10px] font-mono tracking-widest">1 Device Connect</span>
-                 </div>
+            <section className="rounded-[28px] border border-white/10 bg-[#11141C]/75 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
+              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                Actions
               </div>
-              <button className="text-[#D90429] font-black uppercase text-[10px] tracking-widest border border-[#D90429]/30 bg-[#D90429]/10 px-3 py-1.5 rounded transition-all hover:bg-[#D90429] hover:text-white">Revoke</button>
-           </div>
-           
-           {/* Privacy Toggle */}
-           <div className="bg-[#1F2833]/40 border border-[#1F2833] rounded-xl p-4 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                 <Database size={18} className="text-[#888888]" />
-                 <div>
-                    <span className="text-white font-black text-sm block tracking-widest uppercase">Data Telemetry</span>
-                    <span className="text-[#888888] text-[10px] font-mono tracking-widest uppercase">Share bug reports</span>
-                 </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" />
-                <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#D90429]"></div>
-              </label>
-           </div>
-        </div>
+              <div className="mt-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={handlePasswordReset}
+                  disabled={resetting}
+                  className="flex w-full items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-left transition-colors hover:border-white/20 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <div>
+                    <div className="text-base font-semibold text-white">Send password reset link</div>
+                    <div className="mt-1.5 text-sm leading-6 text-white/54">
+                      We will email a secure reset link to your account address.
+                    </div>
+                  </div>
+                  {resetting ? <Loader2 size={18} className="animate-spin text-white/60" /> : <Mail size={18} className="text-[#D90429]" />}
+                </button>
 
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="flex w-full items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-4 text-left transition-colors hover:border-red-500/35 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  <div>
+                    <div className="text-base font-semibold text-white">Sign out</div>
+                    <div className="mt-1.5 text-sm leading-6 text-white/54">
+                      End your current session on this device.
+                    </div>
+                  </div>
+                  {signingOut ? <Loader2 size={18} className="animate-spin text-white/60" /> : <LogOut size={18} className="text-red-200" />}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-[28px] border border-white/10 bg-[#11141C]/70 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                More Controls Later
+              </div>
+              <p className="mt-3 text-[15px] leading-7 text-white/62">
+                Sign out of all devices, device history, and session-by-session revocation will need
+                dedicated session tracking before they can be offered safely.
+              </p>
+            </section>
+
+            {(message || error) && (
+              <div
+                className={`rounded-2xl px-4 py-3 text-sm ${
+                  error
+                    ? 'border border-red-500/20 bg-red-500/10 text-red-100'
+                    : 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+                }`}
+              >
+                {error || message}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
-    </div>
+    </main>
   );
 }

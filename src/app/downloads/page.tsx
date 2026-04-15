@@ -115,14 +115,14 @@ export default function DownloadsPage() {
       <div className="mt-4 md:mt-2 max-w-5xl mx-auto">
         <div className="hidden md:flex items-center gap-4 mb-8">
           <Download size={32} className="text-[#D90429]" />
-          <h1 className="text-3xl font-black text-white uppercase tracking-wider">Downloaded Vault</h1>
+          <h1 className="text-3xl font-black text-white uppercase tracking-wider">Downloads</h1>
         </div>
 
         <div className="bg-[#1F2833]/30 border border-[#1F2833] rounded-lg p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={20} className="text-[#888888]" />
             <span className="text-[#888888] text-sm font-medium">
-              Smart Downloads: <span className="text-green-500 font-bold">ON</span>
+              Titles saved from your account activity
             </span>
           </div>
           <span className="text-xs text-[#888888] font-mono">

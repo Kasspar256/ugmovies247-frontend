@@ -36,19 +36,19 @@ export default function LikesPage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
-      <MobilePageHeader title="My liked movies" fallbackHref="/profile" />
+      <MobilePageHeader title="Liked Movies" fallbackHref="/profile" />
 
       <div className="mt-4 md:mt-2 max-w-5xl mx-auto">
         <div className="hidden md:flex items-center gap-4 mb-8">
           <Heart size={32} className="text-[#D90429] fill-[#D90429]" />
-          <h1 className="text-3xl font-black text-white uppercase tracking-wider">My liked movies</h1>
+          <h1 className="text-3xl font-black text-white uppercase tracking-wider">Liked Movies</h1>
         </div>
 
         <div className="bg-[#1F2833]/30 border border-[#1F2833] rounded-lg p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={20} className="text-[#888888]" />
             <span className="text-[#888888] text-sm font-medium">
-              Movies you liked stay here for quick access
+              Titles you have liked across the app
             </span>
           </div>
           <span className="text-xs text-[#888888] font-mono">

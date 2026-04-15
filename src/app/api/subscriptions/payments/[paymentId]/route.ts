@@ -3,6 +3,7 @@ import { getCurrentAuthSession } from '@/lib/auth/server';
 import {
   applySuccessfulSubscriptionPayment,
   getPaymentAttempt,
+  updatePaymentAttempt,
   markPaymentAttemptFailed,
 } from '@/lib/server/subscriptions';
 import {
@@ -38,6 +39,15 @@ export async function GET(
 
   if (payment.status === 'completed' || payment.status === 'failed' || payment.status === 'cancelled') {
     return NextResponse.json({ payment });
+  }
+
+  if (payment.paymentProvider === 'payfast') {
+    await updatePaymentAttempt(params.paymentId, {
+      lastCheckedAt: new Date().toISOString(),
+    }).catch(() => undefined);
+
+    const updatedPayment = await getPaymentAttempt(params.paymentId);
+    return NextResponse.json({ payment: updatedPayment || payment });
   }
 
   const configError = getPawaPayConfigError();
