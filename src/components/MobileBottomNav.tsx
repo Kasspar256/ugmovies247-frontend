@@ -63,8 +63,15 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-white/5 bg-[#0B0C10] px-2 md:hidden"
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.125rem)' }}
+      className="fixed bottom-0 left-0 right-0 z-[1000] flex h-16 w-full items-center justify-around border-t border-white/5 bg-[#0B0C10]/95 px-2 backdrop-blur-md md:hidden"
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        width: '100%',
+        zIndex: 1000,
+        paddingBottom: 'max(env(safe-area-inset-bottom), 0.125rem)',
+      }}
       aria-label="Mobile navigation"
     >
       <NavItem href="/" label="Home" active={activeTab === 'home'}>

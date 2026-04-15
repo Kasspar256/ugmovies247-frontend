@@ -74,6 +74,27 @@ function getMovieVjLabel(movie: Movie) {
   return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
 }
 
+function formatRuntimeLabel(movie: Movie | null) {
+  if (!movie || typeof movie.durationSeconds !== 'number' || movie.durationSeconds <= 0) {
+    return null;
+  }
+
+  const totalMinutes = Math.floor(movie.durationSeconds / 60);
+
+  if (totalMinutes <= 0) {
+    return null;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${minutes}m`;
+  }
+
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
 export default function Home() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategory[]>(
@@ -297,6 +318,7 @@ export default function Home() {
     heroMovie?.sourceUrl ||
     heroMovie?.masterPlaylistUrl ||
     '';
+  const heroRuntimeLabel = formatRuntimeLabel(heroMovie);
   const unreadLatestUploadCount = countUnreadLatestUploads(movies);
 
   const handleHeaderCast = async () => {
@@ -386,7 +408,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-24 md:pb-12">
+    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-12">
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -480,13 +502,19 @@ export default function Home() {
 
             <div className="flex items-center justify-center gap-4 text-[11px] font-semibold text-gray-400 mb-8 tracking-widest w-full">
               <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
-              <span>2h 49m</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+              {heroRuntimeLabel && (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+                  <span>{heroRuntimeLabel}</span>
+                </>
+              )}
               {heroMovie.vj && heroMovie.vj !== 'Unknown' && (
-                <span className="text-[#D90429] border-l-2 border-[#D90429] pl-4 uppercase font-bold tracking-[0.2em] relative">
-                  VJ {heroMovie.vj}
-                </span>
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+                  <span className="text-[#D90429] uppercase font-bold tracking-[0.2em] relative">
+                    VJ {heroMovie.vj}
+                  </span>
+                </>
               )}
             </div>
 
