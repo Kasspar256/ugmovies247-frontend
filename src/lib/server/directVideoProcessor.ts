@@ -30,6 +30,7 @@ function isSafariCompatibleMp4(probe: Awaited<ReturnType<typeof ffprobeMedia>>) 
   const pixelFormat = String(videoStream?.pix_fmt || '').toLowerCase();
   const audioCodec = String(audioStream?.codec_name || '').toLowerCase();
   const audioProfile = String(audioStream?.profile || '').toLowerCase();
+  const audioChannels = Number(audioStream?.channels || 0);
   const videoCodec = String(videoStream?.codec_name || '').toLowerCase();
   const hasAudioStream = Boolean(audioStream);
   const isMp4Container =
@@ -40,10 +41,17 @@ function isSafariCompatibleMp4(probe: Awaited<ReturnType<typeof ffprobeMedia>>) 
   const isAudioCodecSupported =
     !hasAudioStream ||
     (audioCodec === 'aac' && (!audioProfile || audioProfile.includes('lc')));
+  const isAudioChannelLayoutSupported = !hasAudioStream || !audioChannels || audioChannels <= 2;
   const isPixelFormatSupported =
     !pixelFormat || pixelFormat === 'yuv420p' || pixelFormat === 'yuvj420p';
 
-  return isMp4Container && isVideoCodecSupported && isAudioCodecSupported && isPixelFormatSupported;
+  return (
+    isMp4Container &&
+    isVideoCodecSupported &&
+    isAudioCodecSupported &&
+    isAudioChannelLayoutSupported &&
+    isPixelFormatSupported
+  );
 }
 
 export async function inspectDirectVideoSource(sourcePath: string) {
@@ -98,11 +106,14 @@ export async function uploadDirectMp4Asset(options: {
   localMp4Path: string;
   target:
     | { kind: 'movie'; movieId: string }
+    | { kind: 'part'; movieId: string; partId: string }
     | { kind: 'episode'; movieId: string; seasonNumber: number; episodeNumber: number };
 }) {
   const basePrefix =
     options.target.kind === 'movie'
       ? `movies/${options.target.movieId}/direct`
+      : options.target.kind === 'part'
+        ? `movies/${options.target.movieId}/parts/${options.target.partId}/direct`
       : `series/${options.target.movieId}/season-${options.target.seasonNumber}/episode-${options.target.episodeNumber}/direct`;
   const key = `${basePrefix}/video.mp4`;
 
