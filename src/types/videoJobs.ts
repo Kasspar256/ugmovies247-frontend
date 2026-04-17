@@ -57,6 +57,11 @@ export type VideoJobTarget =
       movieId: string;
     }
   | {
+      kind: 'part';
+      movieId: string;
+      partId: string;
+    }
+  | {
       kind: 'episode';
       movieId: string;
       seasonNumber: number;
