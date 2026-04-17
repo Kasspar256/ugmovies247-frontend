@@ -12,6 +12,7 @@ import {
   Inbox,
   LayoutDashboard,
   Loader2,
+  MonitorPlay,
   RefreshCw,
   Tags,
   Users,
@@ -47,6 +48,7 @@ import {
   StatTile,
 } from '@/components/admin/controlCenterFields';
 import { AdminMoviesTab } from '@/components/admin/AdminMoviesTab';
+import { AdminVideoJobsTab } from '@/components/admin/AdminVideoJobsTab';
 import { AdminSeriesTab } from '@/components/admin/AdminSeriesTab';
 import { AdminLibraryTab } from '@/components/admin/AdminLibraryTab';
 import { AdminCategoriesTab } from '@/components/admin/AdminCategoriesTab';
@@ -201,6 +203,9 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         await loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
           nextPayload.movies = response.movies || [];
         });
+      } else if (activeTab === 'processing') {
+        // The processing section uses its own live polling requests and does not need
+        // the heavier control-center payload on entry.
       } else if (activeTab === 'library') {
         await loadResource<{ assets: AdminLibraryAsset[] }>(
           'Library',
@@ -304,7 +309,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         ]);
       }
 
-      if (Object.keys(nextPayload).length === 0) {
+      if (Object.keys(nextPayload).length === 0 && activeTab !== 'processing') {
         throw new Error(
           issues[0] || 'Failed to load admin data for this section.'
         );
@@ -424,6 +429,14 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         description: 'Create, edit, and manage standalone movie releases.',
         meta: `${movieItems.length} movie entries`,
         icon: <Film size={20} />,
+      },
+      {
+        id: 'processing' as AdminTab,
+        href: '/admin/processing',
+        label: 'Processing',
+        description: 'Watch queued jobs, failed uploads, and completed video repairs.',
+        meta: 'Worker queue and repairs',
+        icon: <MonitorPlay size={20} />,
       },
       {
         id: 'series' as AdminTab,
@@ -1404,6 +1417,8 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 onDeleteMovie={handleDeleteMovie}
               />
             )}
+
+            {activeTab === 'processing' && <AdminVideoJobsTab />}
 
             {activeTab === 'series' && (
               <AdminSeriesTab

@@ -4,20 +4,28 @@ import {
   CreateMultipartUploadCommand,
   type CreateMultipartUploadCommandOutput,
   DeleteObjectCommand,
+  GetObjectCommand,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createWriteStream } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
+import { pipeline } from 'stream/promises';
 import { getPublicR2BaseUrl } from './env';
 
 const R2_REQUEST_TIMEOUT_MS = Number(process.env.R2_REQUEST_TIMEOUT_MS || 1000 * 60 * 2);
+const R2_DOWNLOAD_TIMEOUT_MS = Number(process.env.R2_DOWNLOAD_TIMEOUT_MS || 1000 * 60 * 60 * 4);
 const R2_FORCE_PATH_STYLE = String(process.env.R2_FORCE_PATH_STYLE || 'true').toLowerCase() === 'true';
+const R2_MULTIPART_UPLOAD_RETRY_DELAYS_MS = [1000, 3000, 5000, 10000];
 export const R2_MULTIPART_PART_SIZE_BYTES = Number(
   process.env.R2_MULTIPART_PART_SIZE_BYTES || 10 * 1024 * 1024
+);
+const R2_MULTIPART_UPLOAD_THRESHOLD_BYTES = Number(
+  process.env.R2_MULTIPART_UPLOAD_THRESHOLD_BYTES || 64 * 1024 * 1024
 );
 export const R2_PRESIGNED_UPLOAD_EXPIRES_SECONDS = Number(
   process.env.R2_PRESIGNED_UPLOAD_EXPIRES_SECONDS || 60 * 60 * 4
@@ -90,6 +98,10 @@ async function sendR2Command<TOutput>(command: unknown, label: string): Promise<
       durationMs: Date.now() - startedAt,
     });
   }
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function getR2PublicUrl(key: string) {
@@ -221,12 +233,12 @@ export async function listMultipartR2UploadParts(options: {
   uploadId: string;
 }) {
   const parts: Array<{ partNumber: number; etag: string }> = [];
-  let nextPartNumberMarker: string | undefined;
+  let nextPartNumberMarker: number | undefined;
 
   while (true) {
     const response = await sendR2Command<{
       IsTruncated?: boolean;
-      NextPartNumberMarker?: string | number;
+      NextPartNumberMarker?: number;
       Parts?: Array<{ PartNumber?: number; ETag?: string }>;
     }>(
       new ListPartsCommand({
@@ -251,7 +263,7 @@ export async function listMultipartR2UploadParts(options: {
       break;
     }
 
-    nextPartNumberMarker = String(response.NextPartNumberMarker);
+    nextPartNumberMarker = response.NextPartNumberMarker;
   }
 
   return parts.sort((left, right) => left.partNumber - right.partNumber);
@@ -343,11 +355,168 @@ export async function deleteR2Object(key: string) {
   );
 }
 
+export async function downloadR2ObjectToFile(options: {
+  key: string;
+  targetPath: string;
+}) {
+  const abortController = new AbortController();
+  const startedAt = Date.now();
+  const timeout = setTimeout(() => abortController.abort(), R2_DOWNLOAD_TIMEOUT_MS);
+
+  console.log('[r2] starting object download', {
+    key: options.key,
+    bucket: process.env.R2_BUCKET_NAME,
+    endpoint: process.env.R2_ENDPOINT_URL,
+    timeoutMs: R2_DOWNLOAD_TIMEOUT_MS,
+  });
+
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: options.key,
+      }),
+      { abortSignal: abortController.signal }
+    );
+
+    if (!response.Body) {
+      throw new Error(`R2 returned an empty body for ${options.key}.`);
+    }
+
+    await pipeline(response.Body as NodeJS.ReadableStream, createWriteStream(options.targetPath));
+  } catch (error) {
+    console.error('[r2] object download failed', {
+      key: options.key,
+      bucket: process.env.R2_BUCKET_NAME,
+      endpoint: process.env.R2_ENDPOINT_URL,
+      timeoutMs: R2_DOWNLOAD_TIMEOUT_MS,
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : error,
+    });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    console.log('[r2] object download finished', {
+      key: options.key,
+      durationMs: Date.now() - startedAt,
+    });
+  }
+}
+
 export async function uploadFileToR2(options: {
   localPath: string;
   key: string;
   contentType?: string;
 }) {
+  const stats = await fs.stat(options.localPath);
+  const contentType = options.contentType || 'application/octet-stream';
+
+  if (stats.size > R2_MULTIPART_UPLOAD_THRESHOLD_BYTES) {
+    const uploadId = await sendR2Command<CreateMultipartUploadCommandOutput>(
+      new CreateMultipartUploadCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        Key: options.key,
+        ContentType: contentType,
+      }),
+      `multipart:create:${options.key}`
+    );
+    const openedFile = await fs.open(options.localPath, 'r');
+    const parts: Array<{ partNumber: number; etag: string }> = [];
+    const partSize = Math.max(5 * 1024 * 1024, R2_MULTIPART_PART_SIZE_BYTES);
+
+    try {
+      if (!uploadId.UploadId) {
+        throw new Error('R2 did not return a multipart upload ID.');
+      }
+
+      const totalParts = Math.ceil(stats.size / partSize);
+
+      for (let index = 0; index < totalParts; index += 1) {
+        const partNumber = index + 1;
+        const offset = index * partSize;
+        const expectedLength = Math.min(partSize, stats.size - offset);
+        const buffer = Buffer.allocUnsafe(expectedLength);
+        const { bytesRead } = await openedFile.read(buffer, 0, expectedLength, offset);
+
+        if (bytesRead !== expectedLength) {
+          throw new Error(
+            `Failed to read multipart upload part ${partNumber}. Expected ${expectedLength} bytes, got ${bytesRead}.`
+          );
+        }
+
+        let response: { ETag?: string } | null = null;
+        let lastError: unknown = null;
+
+        for (let attempt = 0; attempt <= R2_MULTIPART_UPLOAD_RETRY_DELAYS_MS.length; attempt += 1) {
+          try {
+            response = await sendR2Command<{ ETag?: string }>(
+              new UploadPartCommand({
+                Bucket: process.env.R2_BUCKET_NAME,
+                Key: options.key,
+                UploadId: uploadId.UploadId,
+                PartNumber: partNumber,
+                Body: buffer,
+                ContentLength: expectedLength,
+              }),
+              `multipart:upload:${options.key}:part-${partNumber}:attempt-${attempt + 1}`
+            );
+            break;
+          } catch (error) {
+            lastError = error;
+
+            if (attempt >= R2_MULTIPART_UPLOAD_RETRY_DELAYS_MS.length) {
+              break;
+            }
+
+            const retryDelay = R2_MULTIPART_UPLOAD_RETRY_DELAYS_MS[attempt];
+
+            console.warn('[r2] multipart upload part retry scheduled', {
+              key: options.key,
+              partNumber,
+              attempt: attempt + 1,
+              retryInMs: retryDelay,
+              error: error instanceof Error ? error.message : String(error || ''),
+            });
+
+            await wait(retryDelay);
+          }
+        }
+
+        if (!response) {
+          throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Multipart upload failed.'));
+        }
+
+        if (!response.ETag) {
+          throw new Error(`R2 did not return an ETag for multipart upload part ${partNumber}.`);
+        }
+
+        parts.push({
+          partNumber,
+          etag: String(response.ETag).trim(),
+        });
+      }
+
+      await completeMultipartR2Upload({
+        key: options.key,
+        uploadId: uploadId.UploadId,
+        parts,
+      });
+    } catch (error) {
+      await abortMultipartR2Upload({
+        key: options.key,
+        uploadId: uploadId.UploadId || '',
+      }).catch(() => undefined);
+      throw error;
+    } finally {
+      await openedFile.close();
+    }
+
+    return {
+      key: options.key,
+      publicUrl: getR2PublicUrl(options.key),
+    };
+  }
+
   const body = await fs.readFile(options.localPath);
 
   await sendR2Command(
@@ -355,7 +524,7 @@ export async function uploadFileToR2(options: {
       Bucket: process.env.R2_BUCKET_NAME,
       Key: options.key,
       Body: body,
-      ContentType: options.contentType || 'application/octet-stream',
+      ContentType: contentType,
     }),
     `put:${options.key}`
   );

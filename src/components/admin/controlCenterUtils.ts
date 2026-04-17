@@ -4,6 +4,7 @@ import type { Movie } from '@/types/movie';
 export type AdminTab =
   | 'overview'
   | 'movies'
+  | 'processing'
   | 'series'
   | 'library'
   | 'categories'

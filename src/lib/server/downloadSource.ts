@@ -5,6 +5,7 @@ import https from 'https';
 import path from 'path';
 import { pipeline } from 'stream/promises';
 import { ensureParentDir } from './fsUtils';
+import { downloadR2ObjectToFile, getR2ObjectKeyFromPublicUrl } from './r2';
 
 const REMOTE_DOWNLOAD_TIMEOUT_MS = Number(
   process.env.REMOTE_DOWNLOAD_TIMEOUT_MS || 1000 * 60 * 60 * 4
@@ -85,7 +86,16 @@ async function downloadToFile(remoteUrl: string, targetPath: string, redirectCou
 
 export async function downloadRemoteSource(remoteUrl: string, targetPath: string) {
   await ensureParentDir(targetPath);
-  await downloadToFile(remoteUrl, targetPath);
+  const r2ObjectKey = getR2ObjectKeyFromPublicUrl(remoteUrl);
+
+  if (r2ObjectKey) {
+    await downloadR2ObjectToFile({
+      key: r2ObjectKey,
+      targetPath,
+    });
+  } else {
+    await downloadToFile(remoteUrl, targetPath);
+  }
 
   const stats = await fs.stat(targetPath);
 

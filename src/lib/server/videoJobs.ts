@@ -13,9 +13,7 @@ import {
   VIDEO_OUTPUT_DIR,
   VIDEO_SOURCE_DIR,
 } from './env';
-import { transcodeSourceToHls } from './hlsProcessor';
 import { downloadRemoteSource } from './downloadSource';
-import { uploadDirectoryToR2 } from './r2';
 import { getFreeDiskSpace } from './system';
 import { prepareDirectMp4Source, uploadDirectMp4Asset } from './directVideoProcessor';
 import { upsertMovieInCatalogCache } from './movieCatalogCache';
@@ -34,6 +32,7 @@ const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
   'uploading_source',
   'uploading_hls',
 ];
+const TERMINAL_JOB_STATUSES: VideoJobStatus[] = ['ready', 'failed', 'cancelled'];
 
 function isoNow() {
   return new Date().toISOString();
@@ -140,8 +139,24 @@ async function acquireWorkerLease() {
     const activeJobId = data?.activeJobId || '';
     const staleWindow = activeJobId === '__claiming__' ? CLAIMING_STALE_MS : VIDEO_JOB_STALE_MS;
 
-    if (activeJobId && now - heartbeatAt < staleWindow) {
-      return false;
+    if (activeJobId) {
+      if (activeJobId !== '__claiming__') {
+        const activeJobSnapshot = await transaction.get(getJobDoc(activeJobId));
+        const activeJobStatus = activeJobSnapshot.exists
+          ? ((activeJobSnapshot.data()?.status as VideoJobStatus | undefined) || undefined)
+          : undefined;
+        const activeJobIsTerminal =
+          !activeJobSnapshot.exists ||
+          (activeJobStatus ? TERMINAL_JOB_STATUSES.includes(activeJobStatus) : false);
+        const activeJobNotInFlight =
+          Boolean(activeJobStatus) && !IN_FLIGHT_STATUSES.includes(activeJobStatus);
+
+        if (!activeJobIsTerminal && !activeJobNotInFlight && now - heartbeatAt < staleWindow) {
+          return false;
+        }
+      } else if (now - heartbeatAt < staleWindow) {
+        return false;
+      }
     }
 
     transaction.set(runtimeRef, { activeJobId: '__claiming__', heartbeatAt: isoNow() }, { merge: true });
@@ -317,14 +332,6 @@ function getJobWorkspace(jobId: string) {
   };
 }
 
-function buildR2Prefix(job: VideoJobDocument) {
-  if (job.target.kind === 'movie') {
-    return `movies/${job.target.movieId}/hls`;
-  }
-
-  return `series/${job.target.movieId}/season-${job.target.seasonNumber}/episode-${job.target.episodeNumber}/hls`;
-}
-
 async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoAssetMetadata) {
   const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(target.movieId);
   const movieSnapshot = await movieRef.get();
@@ -343,6 +350,48 @@ async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoA
         id: target.movieId,
         ...(movieSnapshot.data() || {}),
         ...asset,
+      });
+    }
+
+    return;
+  }
+
+  if (target.kind === 'part') {
+    const movieData = movieSnapshot.data() as { parts?: Array<Record<string, unknown>> };
+    const parts = Array.isArray(movieData.parts) ? movieData.parts : [];
+    const cacheUpdatedAt = isoNow();
+
+    const updatedParts = parts.map((part) =>
+      String(part.id || '') === target.partId
+        ? {
+            ...part,
+            ...asset,
+            updatedAt: cacheUpdatedAt,
+          }
+        : part
+    );
+    const primaryPart = updatedParts[0] as Record<string, unknown> | undefined;
+
+    await movieRef.set(
+      {
+        parts: updatedParts,
+        video_url: String(primaryPart?.video_url || ''),
+        sourceUrl: String(primaryPart?.sourceUrl || primaryPart?.video_url || ''),
+        sourceFileName: String(primaryPart?.sourceFileName || ''),
+        updatedAt: cacheUpdatedAt,
+      },
+      { merge: true }
+    );
+
+    if (shouldRefreshCatalogCache) {
+      await upsertMovieInCatalogCache({
+        id: target.movieId,
+        ...movieData,
+        parts: updatedParts,
+        video_url: String(primaryPart?.video_url || ''),
+        sourceUrl: String(primaryPart?.sourceUrl || primaryPart?.video_url || ''),
+        sourceFileName: String(primaryPart?.sourceFileName || ''),
+        updatedAt: cacheUpdatedAt,
       });
     }
 
@@ -388,7 +437,11 @@ async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoA
 
 function inferSourcePipeline(job: VideoJobDocument): SourcePipeline {
   if (job.sourcePipeline) {
-    return job.sourcePipeline;
+    return job.sourcePipeline === 'hls_pipeline'
+      ? job.sourceType === 'remote_link'
+        ? 'remote_mp4_ingest'
+        : 'direct_upload'
+      : job.sourcePipeline;
   }
 
   if (job.jobType === 'remote_mkv_to_mp4') {
@@ -399,7 +452,7 @@ function inferSourcePipeline(job: VideoJobDocument): SourcePipeline {
     return job.sourceType === 'remote_link' ? 'remote_mp4_ingest' : 'direct_upload';
   }
 
-  return 'hls_pipeline';
+  return job.sourceType === 'remote_link' ? 'remote_mp4_ingest' : 'direct_upload';
 }
 
 async function resolveLocalSource(job: VideoJobDocument) {
@@ -430,7 +483,6 @@ export async function processNextVideoJob() {
   const job = await claimNextQueuedJob();
 
   if (!job) {
-    console.log('[video-worker] no queued job claimed');
     return { processed: false };
   }
 
@@ -466,159 +518,72 @@ export async function processNextVideoJob() {
       sourceFileName: source.sourceFileName,
       sourceUrl: job.sourceUrl || '',
       fileSizeBytes: source.fileSizeBytes,
-      jobStatus: job.jobType === 'hls_transcode' || !job.jobType ? 'transcoding' : 'downloading',
+      jobStatus: 'packaging',
       processingProgress: 20,
       updatedAt: isoNow(),
     });
+    const directPipeline = inferSourcePipeline(job);
 
-    if ((job.jobType || 'hls_transcode') === 'hls_transcode') {
-      await updateJobState(job.id!, { status: 'transcoding', progress: 25 });
-      await appendJobLog(job.id!, 'Starting HLS transcoding.');
-      await touchWorkerHeartbeat(job.id!);
-      console.log('[video-worker] transcoding started', { jobId: job.id });
+    await updateJobState(job.id!, { status: 'packaging', progress: 40 });
+    await appendJobLog(
+      job.id!,
+      directPipeline === 'remote_mkv_to_mp4'
+        ? 'Converting source to MP4.'
+        : 'Preparing direct MP4 asset.'
+    );
+    await touchWorkerHeartbeat(job.id!);
 
-      const transcoded = await transcodeSourceToHls(localSourcePath, workspace.outputDirectory, VIDEO_JOB_TIMEOUT_MS);
-      console.log('[video-worker] transcoding finished', {
-        jobId: job.id,
-        renditions: transcoded.availableRenditions.map((rendition) => rendition.name),
-      });
+    const directPrepared = await prepareDirectMp4Source({
+      sourcePath: localSourcePath,
+      outputDirectory: workspace.outputDirectory,
+      timeoutMs: DIRECT_VIDEO_JOB_TIMEOUT_MS,
+    });
 
-      await updateJobState(job.id!, { status: 'uploading_hls', progress: 78 });
-      await appendJobLog(job.id!, 'Uploading HLS assets to R2.');
-      await touchWorkerHeartbeat(job.id!);
-      console.log('[video-worker] uploading HLS to R2', { jobId: job.id });
+    await updateJobState(job.id!, { status: 'uploading_source', progress: 78 });
+    await appendJobLog(job.id!, 'Uploading direct MP4 asset to R2.');
+    await touchWorkerHeartbeat(job.id!);
 
-      const uploadedFiles = await uploadDirectoryToR2(workspace.outputDirectory, buildR2Prefix(job), {
-        concurrency: 6,
-        onProgress: async ({ uploaded, total, key }) => {
-          const progress = Math.min(98, 78 + Math.round((uploaded / Math.max(total, 1)) * 20));
+    const uploadedMp4 = await uploadDirectMp4Asset({
+      localMp4Path: directPrepared.outputPath,
+      target: job.target,
+    });
 
-          await Promise.all([
-            updateJobState(job.id!, { status: 'uploading_hls', progress }),
-            patchMovieAsset(job.target, {
-              jobStatus: 'uploading_hls',
-              processingProgress: progress,
-              updatedAt: isoNow(),
-            }),
-            touchWorkerHeartbeat(job.id!),
-          ]);
+    const assetMetadata: VideoAssetMetadata = {
+      sourceType: job.sourceType,
+      sourcePipeline: directPipeline,
+      sourceFileName: path.basename(directPrepared.outputPath),
+      sourceUrl: job.sourceUrl || '',
+      video_url: uploadedMp4.publicUrl,
+      jobStatus: 'ready',
+      processingProgress: 100,
+      playbackType: 'mp4',
+      masterPlaylistUrl: '',
+      availableRenditions: [],
+      durationSeconds: directPrepared.durationSeconds,
+      videoResolution: directPrepared.videoResolution,
+      fileSizeBytes: directPrepared.fileSizeBytes,
+      processedAt: isoNow(),
+      updatedAt: isoNow(),
+    };
 
-          if (uploaded === 1 || uploaded === total || uploaded % 25 === 0) {
-            console.log('[video-worker] upload progress', {
-              jobId: job.id,
-              uploaded,
-              total,
-              latestKey: key,
-            });
-          }
-        },
-      });
-      const masterPlaylistUrl =
-        uploadedFiles.find((file) => file.key.endsWith('master.m3u8'))?.publicUrl || '';
+    await patchMovieAsset(job.target, assetMetadata);
 
-      const renditions = transcoded.availableRenditions.map((rendition) => ({
-        ...rendition,
-        playlistUrl:
-          uploadedFiles.find((file) => file.key.endsWith(`${rendition.name}/index.m3u8`))?.publicUrl || '',
-      }));
-
-      const assetMetadata: VideoAssetMetadata = {
-        sourceType: job.sourceType,
-        sourcePipeline: 'hls_pipeline',
-        sourceFileName: source.sourceFileName,
-        sourceUrl: job.sourceUrl || '',
-        jobStatus: 'ready',
-        processingProgress: 100,
-        playbackType: 'hls',
-        masterPlaylistUrl,
-        availableRenditions: renditions,
-        durationSeconds: transcoded.durationSeconds,
-        videoResolution: transcoded.videoResolution,
-        fileSizeBytes: source.fileSizeBytes,
-        processedAt: isoNow(),
-        updatedAt: isoNow(),
-      };
-
-      await patchMovieAsset(job.target, assetMetadata);
-      await updateJobState(job.id!, {
-        status: 'ready',
-        progress: 100,
-        processedAt: isoNow(),
-        output: {
-          playbackType: 'hls',
-          masterPlaylistUrl,
-          availableRenditions: renditions,
-          durationSeconds: transcoded.durationSeconds,
-          resolution: transcoded.videoResolution,
-          fileSizeBytes: source.fileSizeBytes,
-        },
-      });
-      await appendJobLog(job.id!, 'Job completed successfully.');
-      console.log('[video-worker] job completed', { jobId: job.id, masterPlaylistUrl });
-    } else {
-      const directPipeline = inferSourcePipeline(job);
-
-      await updateJobState(job.id!, { status: 'packaging', progress: 40 });
-      await appendJobLog(
-        job.id!,
-        directPipeline === 'remote_mkv_to_mp4'
-          ? 'Converting source to MP4.'
-          : 'Preparing direct MP4 asset.'
-      );
-      await touchWorkerHeartbeat(job.id!);
-
-      const directPrepared = await prepareDirectMp4Source({
-        sourcePath: localSourcePath,
-        outputDirectory: workspace.outputDirectory,
-        timeoutMs: DIRECT_VIDEO_JOB_TIMEOUT_MS,
-      });
-
-      await updateJobState(job.id!, { status: 'uploading_source', progress: 78 });
-      await appendJobLog(job.id!, 'Uploading direct MP4 asset to R2.');
-      await touchWorkerHeartbeat(job.id!);
-
-      const uploadedMp4 = await uploadDirectMp4Asset({
-        localMp4Path: directPrepared.outputPath,
-        target: job.target,
-      });
-
-      const assetMetadata: VideoAssetMetadata = {
-        sourceType: job.sourceType,
-        sourcePipeline: directPipeline,
-        sourceFileName: path.basename(directPrepared.outputPath),
-        sourceUrl: job.sourceUrl || '',
-        video_url: uploadedMp4.publicUrl,
-        jobStatus: 'ready',
-        processingProgress: 100,
+    await updateJobState(job.id!, {
+      status: 'ready',
+      progress: 100,
+      processedAt: isoNow(),
+      output: {
         playbackType: 'mp4',
-        masterPlaylistUrl: '',
-        availableRenditions: [],
         durationSeconds: directPrepared.durationSeconds,
-        videoResolution: directPrepared.videoResolution,
+        resolution: directPrepared.videoResolution,
         fileSizeBytes: directPrepared.fileSizeBytes,
-        processedAt: isoNow(),
-        updatedAt: isoNow(),
-      };
-
-      await patchMovieAsset(job.target, assetMetadata);
-
-      await updateJobState(job.id!, {
-        status: 'ready',
-        progress: 100,
-        processedAt: isoNow(),
-        output: {
-          playbackType: 'mp4',
-          durationSeconds: directPrepared.durationSeconds,
-          resolution: directPrepared.videoResolution,
-          fileSizeBytes: directPrepared.fileSizeBytes,
-        },
-      });
-      await appendJobLog(job.id!, 'Direct MP4 job completed successfully.');
-      console.log('[video-worker] direct job completed', {
-        jobId: job.id,
-        playbackUrl: uploadedMp4.publicUrl,
-      });
-    }
+      },
+    });
+    await appendJobLog(job.id!, 'Direct MP4 job completed successfully.');
+    console.log('[video-worker] direct job completed', {
+      jobId: job.id,
+      playbackUrl: uploadedMp4.publicUrl,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown processing error.';
     console.error('[video-worker] job failed', { jobId: job.id, message, error });

@@ -3,6 +3,46 @@ import { PencilLine, Plus, Search, Trash2 } from 'lucide-react';
 import type { Movie } from '@/types/movie';
 import { Card, TextInput } from '@/components/admin/controlCenterFields';
 
+function getJobTone(status?: Movie['jobStatus']) {
+  switch (status) {
+    case 'ready':
+      return 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
+    case 'failed':
+      return 'border border-red-500/25 bg-red-500/10 text-red-100';
+    case 'cancelled':
+      return 'border border-amber-500/25 bg-amber-500/10 text-amber-100';
+    case 'queued':
+    case 'validating':
+    case 'downloading':
+    case 'packaging':
+    case 'transcoding':
+    case 'uploading_source':
+      return 'border border-sky-500/25 bg-sky-500/10 text-sky-100';
+    default:
+      return 'border border-white/10 bg-white/5 text-white/65';
+  }
+}
+
+function getMovieProcessingLabel(movie: Movie) {
+  if (!movie.jobStatus) {
+    return 'Live';
+  }
+
+  if (movie.jobStatus === 'ready') {
+    return 'Ready';
+  }
+
+  if (movie.jobStatus === 'failed') {
+    return 'Failed';
+  }
+
+  if (movie.jobStatus === 'cancelled') {
+    return 'Cancelled';
+  }
+
+  return `${movie.jobStatus}${typeof movie.processingProgress === 'number' ? ` ${movie.processingProgress}%` : ''}`;
+}
+
 export function AdminMoviesTab({
   movies,
   search,
@@ -22,18 +62,26 @@ export function AdminMoviesTab({
         title="Upload Movie"
         description="Use the TMDb-assisted movie publisher to upload a direct MP4, confirm clean metadata, and publish without the old manual clutter."
         action={
-          <Link
-            href="/admin/movies/new"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10"
-          >
-            <Plus size={14} />
-            Upload Movie
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/admin/processing"
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10"
+            >
+              Processing Queue
+            </Link>
+            <Link
+              href="/admin/movies/new"
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10"
+            >
+              <Plus size={14} />
+              Upload Movie
+            </Link>
+          </div>
         }
       >
         <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/62">
-          New uploads now open in a dedicated publisher page so creating a movie feels focused,
-          clean, and separate from the existing catalog.
+          New uploads now open in a dedicated publisher page, and the processing queue now shows
+          when a movie is queued, working, failed, or fully ready for the app.
         </div>
       </Card>
 
@@ -60,10 +108,22 @@ export function AdminMoviesTab({
               >
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-white">{movie.title}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-bold text-white">{movie.title}</div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${getJobTone(
+                          movie.jobStatus
+                        )}`}
+                      >
+                        {getMovieProcessingLabel(movie)}
+                      </span>
+                    </div>
                     <div className="mt-2 text-xs leading-6 text-white/50">
                       {(movie.category || []).join(', ') || 'No categories'}
                     </div>
+                    {movie.errorMessage ? (
+                      <div className="mt-2 text-xs leading-6 text-red-200">{movie.errorMessage}</div>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { listVideoJobs } from '@/lib/server/videoJobs';
 
 export const runtime = 'nodejs';
@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const session = await getCurrentAuthSession();
 
-    if (!session || session.role !== 'admin') {
+    if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

@@ -111,6 +111,7 @@ export function AdminMovieCreateView() {
   const [errorMessage, setErrorMessage] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [uploadedMovieTitle, setUploadedMovieTitle] = useState('');
+  const [queuedForProcessing, setQueuedForProcessing] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -207,6 +208,7 @@ export function AdminMovieCreateView() {
     setStatusMessage('');
     setErrorMessage('');
     setUploadedMovieTitle('');
+    setQueuedForProcessing(false);
     setMovieFileInputKey((current) => current + 1);
     setPosterFileInputKey((current) => current + 1);
   };
@@ -354,9 +356,20 @@ export function AdminMovieCreateView() {
         throw new Error(result.payload.error || 'Failed to upload movie.');
       }
 
-      appendLogLine('[DONE] Movie upload completed successfully.');
-      setStatusMessage(`Uploaded "${title.trim()}".`);
+      const queuedNormalizationCount = Number(result.payload.queuedNormalizationCount || 0);
+
+      appendLogLine(
+        queuedNormalizationCount > 0
+          ? '[DONE] Movie uploaded and queued for compatibility processing.'
+          : '[DONE] Movie upload completed successfully.'
+      );
+      setStatusMessage(
+        queuedNormalizationCount > 0
+          ? `Uploaded "${title.trim()}". We are now processing it into an iPhone-safe MP4 before it goes live.`
+          : `Uploaded "${title.trim()}".`
+      );
       setUploadedMovieTitle(title.trim());
+      setQueuedForProcessing(queuedNormalizationCount > 0);
       setUploadStats(null);
       setShowSuccessModal(true);
     } catch (error) {
@@ -774,9 +787,13 @@ export function AdminMovieCreateView() {
               Upload Complete
             </h2>
             <p className="mt-3 text-sm leading-7 text-white/70">
-              {uploadedMovieTitle
-                ? `"${uploadedMovieTitle}" was uploaded successfully.`
-                : 'The movie was uploaded successfully.'}
+              {queuedForProcessing
+                ? uploadedMovieTitle
+                  ? `"${uploadedMovieTitle}" is uploaded and is now being processed into an iPhone-safe MP4.`
+                  : 'The movie is uploaded and is now being processed into an iPhone-safe MP4.'
+                : uploadedMovieTitle
+                  ? `"${uploadedMovieTitle}" was uploaded successfully.`
+                  : 'The movie was uploaded successfully.'}
             </p>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -797,6 +814,12 @@ export function AdminMovieCreateView() {
               >
                 Done / Close
               </button>
+              <Link
+                href="/admin/processing"
+                className="inline-flex flex-1 items-center justify-center rounded-full border border-[#D90429]/25 bg-[#D90429]/10 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-[#FFD7DF] transition-colors hover:bg-[#D90429]/15"
+              >
+                Open Processing Queue
+              </Link>
             </div>
           </div>
         </div>
