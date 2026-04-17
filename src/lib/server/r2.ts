@@ -233,12 +233,12 @@ export async function listMultipartR2UploadParts(options: {
   uploadId: string;
 }) {
   const parts: Array<{ partNumber: number; etag: string }> = [];
-  let nextPartNumberMarker: number | undefined;
+  let nextPartNumberMarker: string | undefined;
 
   while (true) {
     const response = await sendR2Command<{
       IsTruncated?: boolean;
-      NextPartNumberMarker?: number;
+      NextPartNumberMarker?: string;
       Parts?: Array<{ PartNumber?: number; ETag?: string }>;
     }>(
       new ListPartsCommand({
@@ -251,9 +251,11 @@ export async function listMultipartR2UploadParts(options: {
     );
 
     for (const part of response.Parts || []) {
-      if (typeof part.PartNumber === 'number' && part.ETag) {
+      const partNumber = Number(part.PartNumber);
+
+      if (Number.isFinite(partNumber) && part.ETag) {
         parts.push({
-          partNumber: part.PartNumber,
+          partNumber,
           etag: String(part.ETag).trim(),
         });
       }
