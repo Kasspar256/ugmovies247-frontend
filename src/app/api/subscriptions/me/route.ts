@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
 import { BILLING_OPERATOR } from '@/lib/billingIdentity';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
-import { getViewerEntitlement, listPaymentsForUser } from '@/lib/server/subscriptions';
+import {
+  getViewerEntitlement,
+  listPaymentsForUser,
+  resolveRecurringAgreementForUser,
+  summarizeRecurringAgreement,
+} from '@/lib/server/subscriptions';
 import { getPayFastGatewayConfig } from '@/lib/server/payfast';
 import { getConfiguredPawaPayProviders, getPawaPayProviderLabel } from '@/lib/server/pawapay';
 import type { UserPaymentHistoryEntry } from '@/types/subscriptions';
@@ -31,12 +36,13 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [entitlement, payments] = await Promise.all([
+  const [entitlement, payments, recurringAgreement] = await Promise.all([
     getViewerEntitlement(session.uid, {
       email: session.email,
       role: session.role,
     }),
     listPaymentsForUser(session.uid, 20),
+    resolveRecurringAgreementForUser(session.uid),
   ]);
 
   const paymentHistory: UserPaymentHistoryEntry[] = payments.map((payment) => ({
@@ -49,7 +55,11 @@ export async function GET() {
     daysLeft: payment.status === 'completed' ? getDaysLeft(payment.expiresAt) : null,
     paymentMethodLabel:
       payment.paymentProvider === 'payfast'
-        ? 'CARD / PAYFAST'
+        ? payment.paymentKind === 'recurring_renewal'
+          ? 'CARD RENEWAL'
+          : payment.paymentKind === 'recurring_enrollment'
+            ? 'CARD SUBSCRIPTION'
+            : 'CARD'
         : payment.paymentMethodProvider
           ? getPawaPayProviderLabel(payment.paymentMethodProvider)
           : payment.paymentProvider.toUpperCase(),
@@ -58,6 +68,8 @@ export async function GET() {
     providerStatus: payment.providerStatus,
     createdAt: payment.createdAt,
     billedBy: BILLING_OPERATOR,
+    isAutoRenewal: payment.isAutoRenewal === true,
+    paymentKind: payment.paymentKind || 'once_off',
   }));
 
   return NextResponse.json({
@@ -66,5 +78,6 @@ export async function GET() {
     cardGateway: getPayFastGatewayConfig(),
     entitlement,
     payments: paymentHistory,
+    recurringAgreement: summarizeRecurringAgreement(recurringAgreement),
   });
 }

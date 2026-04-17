@@ -19,6 +19,24 @@ export const VIDEO_MIN_FREE_DISK_BYTES = Number(
   process.env.VIDEO_MIN_FREE_DISK_BYTES || 8 * 1024 * 1024 * 1024
 );
 export const VIDEO_WORKER_POLL_MS = Number(process.env.VIDEO_WORKER_POLL_MS || 5000);
+export const SUBSCRIPTION_WORKER_POLL_MS = Number(
+  process.env.SUBSCRIPTION_WORKER_POLL_MS || 1000 * 60
+);
+export const SUBSCRIPTION_WORKER_BATCH_SIZE = Number(
+  process.env.SUBSCRIPTION_WORKER_BATCH_SIZE || 5
+);
+export const SUBSCRIPTION_RENEWAL_LEASE_MS = Number(
+  process.env.SUBSCRIPTION_RENEWAL_LEASE_MS || 1000 * 60 * 5
+);
+export const SUBSCRIPTION_RENEWAL_RETRY_MS = Number(
+  process.env.SUBSCRIPTION_RENEWAL_RETRY_MS || 1000 * 60 * 60 * 12
+);
+export const SUBSCRIPTION_RECONCILE_AFTER_MS = Number(
+  process.env.SUBSCRIPTION_RECONCILE_AFTER_MS || 1000 * 60 * 5
+);
+export const SUBSCRIPTION_RECONCILE_GIVE_UP_MS = Number(
+  process.env.SUBSCRIPTION_RECONCILE_GIVE_UP_MS || 1000 * 60 * 60 * 24
+);
 
 export function getPublicR2BaseUrl() {
   const explicitBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim();

@@ -10,9 +10,13 @@ import {
   Download,
   Heart,
   HelpCircle,
+  Loader2,
+  LogOut,
   PencilLine,
+  ReceiptText,
   Shield,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import {
   fetchAccountProfile,
   formatAccountDate,
@@ -21,6 +25,60 @@ import {
   getAccountInitials,
   type AccountProfile,
 } from '@/lib/accountProfile';
+import { logoutCurrentUser } from '@/lib/auth/client';
+
+function getTimeLeftLabel(profile: AccountProfile) {
+  if (profile.role === 'admin') {
+    return {
+      label: 'Admin',
+      className: 'border border-amber-500/25 bg-amber-500/10 text-amber-200',
+    };
+  }
+
+  if (!profile.subscription?.isActive) {
+    return {
+      label: 'Free',
+      className: 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+    };
+  }
+
+  const expiresAtMs = new Date(profile.subscription.expiresAt || '').getTime();
+
+  if (!Number.isFinite(expiresAtMs)) {
+    return {
+      label: 'Active',
+      className: 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+    };
+  }
+
+  const differenceMs = expiresAtMs - Date.now();
+
+  if (differenceMs <= 0) {
+    return {
+      label: 'Ending soon',
+      className: 'border border-amber-500/25 bg-amber-500/10 text-amber-100',
+    };
+  }
+
+  const hourMs = 1000 * 60 * 60;
+  const dayMs = hourMs * 24;
+
+  if (differenceMs < dayMs) {
+    const hoursLeft = Math.max(1, Math.ceil(differenceMs / hourMs));
+
+    return {
+      label: `${hoursLeft} ${hoursLeft === 1 ? 'hour' : 'hours'} left`,
+      className: 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+    };
+  }
+
+  const daysLeft = Math.max(1, Math.ceil(differenceMs / dayMs));
+
+  return {
+    label: `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left`,
+    className: 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+  };
+}
 
 function SummarySkeleton() {
   return (
@@ -55,6 +113,10 @@ function ProfileSummary({
 }) {
   const badge = getAccountBadge(profile);
   const accessLabel = getAccountAccessLabel(profile);
+  const accessDescription = profile.subscription?.isActive
+    ? 'Manage, extend, or switch your premium plan.'
+    : 'Upgrade or purchase a plan.';
+  const accessMeta = getTimeLeftLabel(profile);
 
   return (
     <section className="rounded-[28px] border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_22px_50px_rgba(0,0,0,0.35)]">
@@ -112,17 +174,27 @@ function ProfileSummary({
       </div>
 
       <Link
-        href="/profile/billing"
-        className="mt-4 flex items-center justify-between rounded-2xl border border-white/10 bg-[#161B26] px-4 py-4 transition-colors hover:border-[#D90429]/30 hover:bg-[#1A2232]"
+        href="/subscribe"
+        className="mt-4 block rounded-[24px] border border-[#D90429]/18 bg-[linear-gradient(135deg,rgba(217,4,41,0.16),rgba(22,27,38,0.92))] px-4 py-5 shadow-[0_18px_42px_rgba(0,0,0,0.22)] transition-colors hover:border-[#D90429]/38 hover:bg-[linear-gradient(135deg,rgba(217,4,41,0.2),rgba(26,34,50,0.96))]"
       >
-        <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.22em] text-white/45">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 text-[11px] font-black uppercase tracking-[0.22em] text-white/45">
             Current Access
           </div>
-          <div className="mt-1.5 text-base font-semibold text-white">{accessLabel}</div>
+          <span
+            className={`shrink-0 rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-[0.14em] ${accessMeta.className}`}
+          >
+            {accessMeta.label}
+          </span>
         </div>
-        <div className="flex items-center gap-2 text-[#D90429]">
-          <span className="text-xs font-black uppercase tracking-[0.22em]">Plans</span>
+
+        <div className="min-w-0">
+          <div className="mt-2.5 text-lg font-semibold text-white">{accessLabel}</div>
+          <div className="mt-2 text-sm leading-6 text-white/62">{accessDescription}</div>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 text-[#D90429]">
+          <span className="text-xs font-black uppercase tracking-[0.22em] text-[#FFB3C1]">Open</span>
           <ChevronRight size={16} />
         </div>
       </Link>
@@ -147,7 +219,7 @@ function NavigationGroup({
       <div className="px-3 pb-2 pt-1 text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
         {title}
       </div>
-      <div className="space-y-1">
+      <div className="space-y-[14px]">
         {items.map((item) => {
           const Icon = item.icon;
 
@@ -174,9 +246,12 @@ function NavigationGroup({
 }
 
 export default function ProfileHub() {
+  const router = useRouter();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -207,6 +282,19 @@ export default function ProfileHub() {
       mounted = false;
     };
   }, []);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setSignOutError('');
+
+    try {
+      await logoutCurrentUser();
+      router.replace('/login');
+    } catch (signOutError) {
+      setSignOutError(signOutError instanceof Error ? signOutError.message : 'Sign out failed.');
+      setSigningOut(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] pt-8 text-white md:px-8 md:pb-16 md:pt-[112px] lg:px-10">
@@ -258,10 +346,16 @@ export default function ProfileHub() {
                   description: 'See titles saved to your account history.',
                 },
                 {
-                  href: '/profile/billing',
+                  href: '/subscribe',
                   icon: CreditCard,
-                  label: 'Subscription & Plans',
-                  description: 'Review your access and choose a plan.',
+                  label: 'Premium Plans',
+                  description: 'Choose, extend, or switch your plan.',
+                },
+                {
+                  href: '/profile/payments',
+                  icon: ReceiptText,
+                  label: 'Payment History',
+                  description: 'See your recent premium payments clearly.',
                 },
                 {
                   href: '/notifications',
@@ -273,7 +367,7 @@ export default function ProfileHub() {
                   href: '/profile/security',
                   icon: Shield,
                   label: 'Security',
-                  description: 'Password help and sign-out controls.',
+                  description: 'Password help and account protection tools.',
                 },
               ]}
             />
@@ -289,6 +383,36 @@ export default function ProfileHub() {
                 },
               ]}
             />
+
+            <section className="rounded-[24px] border border-white/10 bg-[#11141C]/72 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                Session
+              </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="mt-4 flex w-full items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-4 text-left transition-colors hover:border-red-500/35 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <div>
+                  <div className="text-base font-semibold text-white">Sign out</div>
+                  <div className="mt-1.5 text-sm leading-6 text-white/54">
+                    End your current session on this device.
+                  </div>
+                </div>
+                {signingOut ? (
+                  <Loader2 size={18} className="animate-spin text-white/60" />
+                ) : (
+                  <LogOut size={18} className="text-red-200" />
+                )}
+              </button>
+
+              {signOutError ? (
+                <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                  {signOutError}
+                </div>
+              ) : null}
+            </section>
           </div>
         )}
       </div>

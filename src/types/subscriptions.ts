@@ -1,9 +1,20 @@
-export type SubscriptionPlanType = 'daily' | 'monthly';
+export type SubscriptionPlanType =
+  | 'daily'
+  | 'seven_days'
+  | 'fourteen_days'
+  | 'monthly'
+  | 'two_months'
+  | 'three_months'
+  | 'six_months'
+  | 'twelve_months';
 export type SubscriptionCurrency = 'UGX' | 'ZAR';
 export type SubscriptionStatus = 'inactive' | 'active' | 'expired' | 'cancelled';
 export type PaymentProvider = 'pawapay' | 'payfast';
 export type PaymentMethodProvider = string;
 export type CheckoutPaymentMethod = 'mobile_money' | 'card';
+export type CardCheckoutMode = 'once_off' | 'auto_renew';
+export type PaymentKind = 'once_off' | 'recurring_enrollment' | 'recurring_renewal';
+export type PaymentTriggerSource = 'user' | 'scheduler' | 'webhook';
 export type PaymentAttemptStatus =
   | 'created'
   | 'initiated'
@@ -13,6 +24,13 @@ export type PaymentAttemptStatus =
   | 'failed'
   | 'cancelled'
   | 'not_found'
+  | 'needs_attention';
+export type RecurringAgreementStatus =
+  | 'inactive'
+  | 'pending_setup'
+  | 'active'
+  | 'cancelled'
+  | 'payment_failed'
   | 'needs_attention';
 
 export type SubscriptionPlanDefinition = {
@@ -49,6 +67,9 @@ export type UserSubscriptionDocument = {
   startsAt: string;
   expiresAt: string;
   isActive: boolean;
+  recurringAgreementId: string;
+  autoRenewEnabled: boolean;
+  nextChargeAt: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -61,6 +82,7 @@ export type PaymentAttemptDocument = {
   amount: number;
   currency: SubscriptionCurrency;
   status: PaymentAttemptStatus;
+  paymentKind: PaymentKind;
   paymentProvider: PaymentProvider;
   paymentMethodProvider: PaymentMethodProvider;
   phoneNumber: string;
@@ -71,6 +93,10 @@ export type PaymentAttemptDocument = {
   providerResponse?: Record<string, unknown>;
   providerCallbackPayload?: Record<string, unknown>;
   clientReferenceId: string;
+  recurringAgreementId: string;
+  recurringTokenLast4: string;
+  isAutoRenewal: boolean;
+  triggerSource: PaymentTriggerSource;
   startsAt: string;
   expiresAt: string;
   isActive: boolean;
@@ -80,6 +106,49 @@ export type PaymentAttemptDocument = {
   updatedAt: string;
   lastCheckedAt: string;
   webhookReceivedAt: string;
+};
+
+export type RecurringAgreementDocument = {
+  id?: string;
+  userId: string;
+  planType: SubscriptionPlanType;
+  planName: string;
+  status: RecurringAgreementStatus;
+  paymentProvider: 'payfast';
+  amount: number;
+  currency: 'ZAR';
+  token: string;
+  tokenCapturedAt: string;
+  tokenSourcePaymentId: string;
+  autoRenewEnabled: boolean;
+  nextChargeAt: string;
+  lastChargeAt: string;
+  lastChargeStatus: string;
+  lastChargeAttemptAt: string;
+  lastPaymentId: string;
+  billingAnchorDay: number;
+  pendingPaymentId: string;
+  processingLockUntil: string;
+  cancelledAt: string;
+  failureReason: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RecurringAgreementSummary = {
+  status: RecurringAgreementStatus;
+  planType: SubscriptionPlanType | null;
+  planName: string;
+  amount: number;
+  currency: 'ZAR';
+  autoRenewEnabled: boolean;
+  nextChargeAt: string;
+  lastChargeAt: string;
+  lastChargeStatus: string;
+  lastPaymentId: string;
+  tokenAvailable: boolean;
+  pendingPaymentId: string;
+  failureReason: string;
 };
 
 export type SubscriptionEntitlement = {
@@ -102,6 +171,8 @@ export type CardPaymentGateway = {
   trustMessage: string;
   currency: 'ZAR';
   enabled: boolean;
+  supportsAutoRenew: boolean;
+  autoRenewError: string;
   planPrices: Partial<Record<SubscriptionPlanType, number>>;
 };
 
@@ -119,4 +190,6 @@ export type UserPaymentHistoryEntry = {
   providerStatus: string;
   createdAt: string;
   billedBy: string;
+  isAutoRenewal: boolean;
+  paymentKind: PaymentKind;
 };

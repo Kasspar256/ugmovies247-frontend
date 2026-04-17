@@ -4,6 +4,7 @@ import {
   CARD_PAYMENT_PROCESSOR,
   CARD_PAYMENT_TRUST_MESSAGE,
 } from '@/lib/billingIdentity';
+import { getPayFastRecurringConfigError } from '@/lib/server/payfastRecurring';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import type {
   CardPaymentGateway,
@@ -85,11 +86,6 @@ function parsePlanPricingFromJson(raw: string) {
 
 function getConfiguredPlanPrices() {
   const jsonPrices = parsePlanPricingFromJson(process.env.PAYFAST_PLAN_PRICES_ZAR || '');
-
-  if (Object.keys(jsonPrices).length) {
-    return jsonPrices;
-  }
-
   const individualPrices: Partial<Record<SubscriptionPlanType, number>> = {};
 
   for (const plan of SUBSCRIPTION_PLAN_LIST) {
@@ -101,7 +97,10 @@ function getConfiguredPlanPrices() {
     }
   }
 
-  return individualPrices;
+  return {
+    ...jsonPrices,
+    ...individualPrices,
+  };
 }
 
 function getPayFastAllowedSourceIps() {
@@ -197,6 +196,8 @@ export function getPayFastPlanPrice(planType: SubscriptionPlanType) {
 }
 
 export function getPayFastGatewayConfig(): CardPaymentGateway {
+  const autoRenewError = getPayFastRecurringConfigError();
+
   return {
     id: 'payfast',
     label: 'Card Payment',
@@ -205,12 +206,15 @@ export function getPayFastGatewayConfig(): CardPaymentGateway {
     trustMessage: CARD_PAYMENT_TRUST_MESSAGE,
     currency: 'ZAR',
     enabled: !getPayFastConfigError(),
+    supportsAutoRenew: !autoRenewError,
+    autoRenewError,
     planPrices: getConfiguredPlanPrices(),
   };
 }
 
 export function getPayFastConfigError() {
   const missing: string[] = [];
+  const configuredPrices = getConfiguredPlanPrices();
 
   if (!getTrimmedEnv('PAYFAST_MERCHANT_ID')) {
     missing.push('PAYFAST_MERCHANT_ID');
@@ -232,12 +236,8 @@ export function getPayFastConfigError() {
     missing.push('PAYFAST_CANCEL_URL or APP_BASE_URL');
   }
 
-  for (const plan of SUBSCRIPTION_PLAN_LIST) {
-    if (!getPayFastPlanPrice(plan.type)) {
-      missing.push(
-        `PAYFAST_PLAN_PRICES_ZAR.${plan.type} or PAYFAST_${plan.type.toUpperCase()}_AMOUNT_ZAR`
-      );
-    }
+  if (!Object.keys(configuredPrices).length) {
+    missing.push('PAYFAST_PLAN_PRICES_ZAR or PAYFAST_<PLAN>_AMOUNT_ZAR');
   }
 
   return missing.length ? `Missing PayFast configuration: ${missing.join(', ')}` : '';

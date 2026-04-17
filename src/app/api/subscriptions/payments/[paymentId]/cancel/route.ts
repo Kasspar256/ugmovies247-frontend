@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
-import { getPaymentAttempt, updatePaymentAttempt } from '@/lib/server/subscriptions';
+import {
+  getPaymentAttempt,
+  updatePaymentAttempt,
+  updateSubscriptionRecurringState,
+  upsertRecurringAgreementForUser,
+} from '@/lib/server/subscriptions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +41,24 @@ export async function POST(
       providerMessage: 'Card payment was cancelled before completion.',
       failureReason: 'Card payment was cancelled before completion.',
     });
+
+    if (payment.paymentKind === 'recurring_enrollment') {
+      await upsertRecurringAgreementForUser(payment.userId, {
+        status: 'cancelled',
+        autoRenewEnabled: false,
+        token: '',
+        tokenCapturedAt: '',
+        tokenSourcePaymentId: '',
+        pendingPaymentId: '',
+        processingLockUntil: '',
+        failureReason: 'Card auto-renew setup was cancelled before completion.',
+      });
+      await updateSubscriptionRecurringState(payment.userId, {
+        recurringAgreementId: payment.recurringAgreementId || payment.userId,
+        autoRenewEnabled: false,
+        nextChargeAt: '',
+      });
+    }
   }
 
   return NextResponse.json({

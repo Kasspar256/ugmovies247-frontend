@@ -1,18 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, LogOut, Mail, Shield } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Loader2, Mail, Shield } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { fetchAccountProfile, formatAccountDate, type AccountProfile } from '@/lib/accountProfile';
-import { logoutCurrentUser, sendResetPasswordEmail } from '@/lib/auth/client';
+import { sendResetPasswordEmail } from '@/lib/auth/client';
 
 export default function SecurityPage() {
-  const router = useRouter();
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -62,19 +59,6 @@ export default function SecurityPage() {
       setError(resetError instanceof Error ? resetError.message : 'Password reset could not be started.');
     } finally {
       setResetting(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    setError('');
-
-    try {
-      await logoutCurrentUser();
-      router.replace('/login');
-    } catch (signOutError) {
-      setError(signOutError instanceof Error ? signOutError.message : 'Sign out failed.');
-      setSigningOut(false);
     }
   };
 
@@ -137,34 +121,8 @@ export default function SecurityPage() {
                   </div>
                   {resetting ? <Loader2 size={18} className="animate-spin text-white/60" /> : <Mail size={18} className="text-[#D90429]" />}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={signingOut}
-                  className="flex w-full items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-4 text-left transition-colors hover:border-red-500/35 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  <div>
-                    <div className="text-base font-semibold text-white">Sign out</div>
-                    <div className="mt-1.5 text-sm leading-6 text-white/54">
-                      End your current session on this device.
-                    </div>
-                  </div>
-                  {signingOut ? <Loader2 size={18} className="animate-spin text-white/60" /> : <LogOut size={18} className="text-red-200" />}
-                </button>
               </div>
             </section>
-
-            <section className="rounded-[28px] border border-white/10 bg-[#11141C]/70 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
-              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
-                More Controls Later
-              </div>
-              <p className="mt-3 text-[15px] leading-7 text-white/62">
-                Sign out of all devices, device history, and session-by-session revocation will need
-                dedicated session tracking before they can be offered safely.
-              </p>
-            </section>
-
             {(message || error) && (
               <div
                 className={`rounded-2xl px-4 py-3 text-sm ${

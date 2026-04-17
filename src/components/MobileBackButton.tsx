@@ -9,6 +9,7 @@ type MobileBackButtonProps = {
   returnTo?: string | null;
   className?: string;
   iconSize?: number;
+  tone?: 'dark' | 'light';
 };
 
 function getSafeInternalPath(value?: string | null) {
@@ -28,6 +29,7 @@ export default function MobileBackButton({
   returnTo,
   className = '',
   iconSize = 20,
+  tone = 'dark',
 }: MobileBackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -49,12 +51,17 @@ export default function MobileBackButton({
     router.replace(destination);
   }, [pathname, router, safeFallbackHref, safeReturnTo]);
 
+  const toneClasses =
+    tone === 'light'
+      ? 'text-slate-800 hover:text-slate-950 bg-white/80 border border-slate-300/80 hover:bg-white'
+      : 'text-white hover:text-[#D90429] bg-[#1F2833]';
+
   return (
     <button
       type="button"
       onClick={handleBack}
       aria-label="Go back"
-      className={`text-white hover:text-[#D90429] transition-colors bg-[#1F2833] p-1.5 rounded-full flex items-center justify-center ${className}`.trim()}
+      className={`transition-colors p-1.5 rounded-full flex items-center justify-center ${toneClasses} ${className}`.trim()}
     >
       <ArrowLeft size={iconSize} />
     </button>

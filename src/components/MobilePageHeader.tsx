@@ -13,6 +13,7 @@ type MobilePageHeaderProps = {
   actionLabel?: string;
   actionIcon?: ReactNode;
   actionAriaLabel?: string;
+  tone?: 'dark' | 'light';
 };
 
 export default function MobilePageHeader({
@@ -24,22 +25,40 @@ export default function MobilePageHeader({
   actionLabel,
   actionIcon,
   actionAriaLabel,
+  tone = 'dark',
 }: MobilePageHeaderProps) {
+  const isLight = tone === 'light';
+
   return (
     <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[26px] border border-white/10 bg-[#1B2230]/62 px-3 py-2 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl">
+        <div
+          className={`flex min-w-0 flex-1 items-center gap-3 rounded-[26px] px-3 py-2 shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-xl ${
+            isLight
+              ? 'border border-slate-300/80 bg-[#ECF0F4]/92'
+              : 'border border-white/10 bg-[#1B2230]/62'
+          }`}
+        >
           <MobileBackButton
             fallbackHref={fallbackHref}
             returnTo={returnTo}
-            className="h-[38px] w-[38px] rounded-full border border-white/10 bg-white/5 p-0 text-white/92 hover:bg-white/10 hover:text-white"
+            tone={tone}
+            className="h-[38px] w-[38px] rounded-full p-0"
           />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-black uppercase tracking-[0.24em] text-white">
+            <h1
+              className={`truncate text-sm font-black uppercase tracking-[0.24em] ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}
+            >
               {title}
             </h1>
             {subtitle ? (
-              <p className="mt-0.5 truncate text-[10px] font-black uppercase tracking-[0.2em] text-white/55">
+              <p
+                className={`mt-0.5 truncate text-[10px] font-black uppercase tracking-[0.2em] ${
+                  isLight ? 'text-slate-500' : 'text-white/55'
+                }`}
+              >
                 {subtitle}
               </p>
             ) : null}
@@ -50,7 +69,11 @@ export default function MobilePageHeader({
           <Link
             href={actionHref}
             aria-label={actionAriaLabel || actionLabel || 'Open action'}
-            className={`flex flex-shrink-0 items-center justify-center rounded-[24px] border border-white/10 bg-[#1B2230]/62 text-white shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl transition-colors hover:bg-[#24344A]/75 hover:text-white ${
+            className={`flex flex-shrink-0 items-center justify-center rounded-[24px] shadow-[0_6px_18px_rgba(0,0,0,0.18)] backdrop-blur-xl transition-colors ${
+              isLight
+                ? 'border border-slate-300/80 bg-[#ECF0F4]/92 text-slate-900 hover:bg-white'
+                : 'border border-white/10 bg-[#1B2230]/62 text-white hover:bg-[#24344A]/75 hover:text-white'
+            } ${
               actionLabel ? 'min-w-[74px] px-3.5 py-3' : 'h-[46px] w-[46px]'
             }`}
           >
@@ -58,7 +81,11 @@ export default function MobilePageHeader({
               <span className={actionLabel ? 'mr-2' : ''}>{actionIcon}</span>
             ) : null}
             {actionLabel ? (
-              <span className="text-[10px] font-black uppercase tracking-[0.22em] text-white/92">
+              <span
+                className={`text-[10px] font-black uppercase tracking-[0.22em] ${
+                  isLight ? 'text-slate-900' : 'text-white/92'
+                }`}
+              >
                 {actionLabel}
               </span>
             ) : null}

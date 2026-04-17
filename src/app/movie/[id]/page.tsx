@@ -877,7 +877,6 @@ const currentMovieHref =
     ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
     : `/movie/${movie.id}`;
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
-const billingHref = `/profile/billing?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const hasPlaybackSource = Boolean(playbackVideoUrl);
 const shouldShowPlaybackError = !isPlaybackLocked && (!hasPlaybackSource || isVideoError);
 
@@ -936,11 +935,11 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           >
             Unlock Now
           </Link>
-          <Link
-            href={billingHref}
-            className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black uppercase tracking-[0.24em] text-white"
-          >
-            View Plans
+            <Link
+              href={subscribeHref}
+              className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-black uppercase tracking-[0.24em] text-white"
+            >
+              View Plans
           </Link>
         </div>
       </div>

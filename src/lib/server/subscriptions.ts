@@ -5,6 +5,11 @@ import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
 import type {
   PaymentAttemptDocument,
   PaymentAttemptStatus,
+  PaymentKind,
+  PaymentTriggerSource,
+  RecurringAgreementDocument,
+  RecurringAgreementSummary,
+  RecurringAgreementStatus,
   SubscriptionEntitlement,
   SubscriptionPlanDefinition,
   SubscriptionPlanType,
@@ -15,6 +20,7 @@ import type {
 const SUBSCRIPTIONS_COLLECTION = 'user_subscriptions';
 const PAYMENTS_COLLECTION = 'subscription_payments';
 const WEBHOOK_LOGS_COLLECTION = 'payment_webhook_logs';
+const RECURRING_AGREEMENTS_COLLECTION = 'subscription_recurring_agreements';
 
 function nowIso() {
   return new Date().toISOString();
@@ -56,6 +62,56 @@ function addDuration(startDate: Date, plan: SubscriptionPlanDefinition) {
 
   nextDate.setMonth(nextDate.getMonth() + plan.durationValue);
   return nextDate;
+}
+
+function blankRecurringAgreementSummary(): RecurringAgreementSummary {
+  return {
+    status: 'inactive',
+    planType: null,
+    planName: '',
+    amount: 0,
+    currency: 'ZAR',
+    autoRenewEnabled: false,
+    nextChargeAt: '',
+    lastChargeAt: '',
+    lastChargeStatus: '',
+    lastPaymentId: '',
+    tokenAvailable: false,
+    pendingPaymentId: '',
+    failureReason: '',
+  };
+}
+
+const STALE_RECURRING_SETUP_MS = 1000 * 60 * 60 * 2;
+
+function getRecurringAgreementDocId(userId: string) {
+  return userId;
+}
+
+function isIsoDateInFuture(value?: string) {
+  if (!value) {
+    return false;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && time > Date.now();
+}
+
+function last4FromToken(token?: string) {
+  if (!token) {
+    return '';
+  }
+
+  const trimmed = String(token).trim();
+  return trimmed.length >= 4 ? trimmed.slice(-4) : trimmed;
+}
+
+function isRetryableRecurringStatus(status: RecurringAgreementStatus | string | undefined) {
+  return status === 'active' || status === 'payment_failed';
+}
+
+function isRecurringSetupTerminalStatus(status?: PaymentAttemptStatus) {
+  return status === 'failed' || status === 'cancelled' || status === 'not_found';
 }
 
 export function getPlanDefinition(planType: string) {
@@ -181,14 +237,48 @@ export async function getViewerEntitlement(
   };
 }
 
-export async function createPaymentAttempt(input: Omit<PaymentAttemptDocument, 'createdAt' | 'updatedAt' | 'status' | 'startsAt' | 'expiresAt' | 'isActive' | 'activationAppliedAt' | 'failureReason' | 'providerTransactionId' | 'providerStatus' | 'providerMessage' | 'lastCheckedAt' | 'webhookReceivedAt'> & { id: string }) {
+export async function createPaymentAttempt(
+  input: Omit<
+    PaymentAttemptDocument,
+    | 'createdAt'
+    | 'updatedAt'
+    | 'status'
+    | 'paymentKind'
+    | 'startsAt'
+    | 'expiresAt'
+    | 'isActive'
+    | 'activationAppliedAt'
+    | 'failureReason'
+    | 'providerTransactionId'
+    | 'providerStatus'
+    | 'providerMessage'
+    | 'lastCheckedAt'
+    | 'webhookReceivedAt'
+    | 'recurringAgreementId'
+    | 'recurringTokenLast4'
+    | 'isAutoRenewal'
+    | 'triggerSource'
+  > & {
+    id: string;
+    paymentKind?: PaymentKind;
+    recurringAgreementId?: string;
+    recurringTokenLast4?: string;
+    isAutoRenewal?: boolean;
+    triggerSource?: PaymentTriggerSource;
+  }
+) {
   const timestamp = nowIso();
   const paymentDoc: PaymentAttemptDocument = {
     ...input,
     status: 'created',
+    paymentKind: input.paymentKind || 'once_off',
     providerTransactionId: '',
     providerStatus: '',
     providerMessage: '',
+    recurringAgreementId: input.recurringAgreementId || '',
+    recurringTokenLast4: input.recurringTokenLast4 || '',
+    isAutoRenewal: input.isAutoRenewal === true,
+    triggerSource: input.triggerSource || 'user',
     startsAt: '',
     expiresAt: '',
     isActive: false,
@@ -232,6 +322,463 @@ export async function logPaymentWebhook(payload: Record<string, unknown>) {
     payload,
     createdAt: nowIso(),
   });
+}
+
+export function summarizeRecurringAgreement(
+  agreement?: Partial<RecurringAgreementDocument> | null
+): RecurringAgreementSummary {
+  if (!agreement) {
+    return blankRecurringAgreementSummary();
+  }
+
+  return {
+    status: agreement.status || (agreement.autoRenewEnabled ? 'active' : 'inactive'),
+    planType: agreement.planType || null,
+    planName: agreement.planName || '',
+    amount: Number(agreement.amount || 0),
+    currency: 'ZAR',
+    autoRenewEnabled: agreement.autoRenewEnabled === true,
+    nextChargeAt: agreement.nextChargeAt || '',
+    lastChargeAt: agreement.lastChargeAt || '',
+    lastChargeStatus: agreement.lastChargeStatus || '',
+    lastPaymentId: agreement.lastPaymentId || '',
+    tokenAvailable: Boolean(agreement.token),
+    pendingPaymentId: agreement.pendingPaymentId || '',
+    failureReason: agreement.failureReason || '',
+  };
+}
+
+export async function getRecurringAgreementForUser(userId: string) {
+  try {
+    const snapshot = await adminDb
+      .collection(RECURRING_AGREEMENTS_COLLECTION)
+      .doc(getRecurringAgreementDocId(userId))
+      .get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return {
+      id: snapshot.id,
+      ...(snapshot.data() as RecurringAgreementDocument),
+    };
+  } catch (error) {
+    console.warn('[subscriptions] failed to read recurring agreement, using empty fallback', error);
+    return null;
+  }
+}
+
+export async function resolveRecurringAgreementForUser(userId: string) {
+  const agreement = await getRecurringAgreementForUser(userId);
+
+  if (!agreement || agreement.status !== 'pending_setup' || !agreement.pendingPaymentId) {
+    return agreement;
+  }
+
+  const payment = await getPaymentAttempt(agreement.pendingPaymentId).catch(() => null);
+  const paymentCreatedAtMs = payment?.createdAt ? new Date(payment.createdAt).getTime() : Number.NaN;
+  const hasExpiredInFlightSetup =
+    Boolean(payment) &&
+    !isRecurringSetupTerminalStatus(payment.status) &&
+    payment.status !== 'completed' &&
+    Number.isFinite(paymentCreatedAtMs) &&
+    Date.now() - paymentCreatedAtMs >= STALE_RECURRING_SETUP_MS;
+  const shouldClearPendingSetup =
+    !payment ||
+    isRecurringSetupTerminalStatus(payment?.status) ||
+    hasExpiredInFlightSetup;
+
+  if (!shouldClearPendingSetup) {
+    return agreement;
+  }
+
+  if (hasExpiredInFlightSetup && payment?.id) {
+    await updatePaymentAttempt(payment.id, {
+      status: 'cancelled',
+      providerStatus: 'ABANDONED',
+      providerMessage: 'Card auto-renew setup expired before completion.',
+      failureReason: 'Card auto-renew setup expired before completion.',
+    });
+  }
+
+  const clearedAgreement = await upsertRecurringAgreementForUser(userId, {
+    status: 'inactive',
+    autoRenewEnabled: false,
+    nextChargeAt: '',
+    pendingPaymentId: '',
+    processingLockUntil: '',
+    failureReason: '',
+    lastChargeStatus: '',
+    lastPaymentId: '',
+  });
+
+  await updateSubscriptionRecurringState(userId, {
+    recurringAgreementId: clearedAgreement?.id || getRecurringAgreementDocId(userId),
+    autoRenewEnabled: false,
+    nextChargeAt: '',
+  });
+
+  return clearedAgreement;
+}
+
+export async function upsertRecurringAgreementForUser(
+  userId: string,
+  state: Partial<RecurringAgreementDocument> & {
+    planType?: SubscriptionPlanType;
+    planName?: string;
+    amount?: number;
+  }
+) {
+  const timestamp = nowIso();
+  const ref = adminDb
+    .collection(RECURRING_AGREEMENTS_COLLECTION)
+    .doc(getRecurringAgreementDocId(userId));
+
+  const current = await getRecurringAgreementForUser(userId);
+
+  const nextDoc: Partial<RecurringAgreementDocument> = {
+    userId,
+    paymentProvider: 'payfast',
+    planType: state.planType || current?.planType || 'monthly',
+    planName: state.planName || current?.planName || '',
+    amount: Number(state.amount ?? current?.amount ?? 0),
+    currency: 'ZAR',
+    status: state.status || current?.status || 'inactive',
+    token: typeof state.token === 'string' ? state.token : current?.token || '',
+    tokenCapturedAt:
+      typeof state.tokenCapturedAt === 'string' ? state.tokenCapturedAt : current?.tokenCapturedAt || '',
+    tokenSourcePaymentId:
+      typeof state.tokenSourcePaymentId === 'string'
+        ? state.tokenSourcePaymentId
+        : current?.tokenSourcePaymentId || '',
+    autoRenewEnabled:
+      typeof state.autoRenewEnabled === 'boolean'
+        ? state.autoRenewEnabled
+        : current?.autoRenewEnabled === true,
+    nextChargeAt:
+      typeof state.nextChargeAt === 'string' ? state.nextChargeAt : current?.nextChargeAt || '',
+    lastChargeAt:
+      typeof state.lastChargeAt === 'string' ? state.lastChargeAt : current?.lastChargeAt || '',
+    lastChargeStatus:
+      typeof state.lastChargeStatus === 'string'
+        ? state.lastChargeStatus
+        : current?.lastChargeStatus || '',
+    lastChargeAttemptAt:
+      typeof state.lastChargeAttemptAt === 'string'
+        ? state.lastChargeAttemptAt
+        : current?.lastChargeAttemptAt || '',
+    lastPaymentId:
+      typeof state.lastPaymentId === 'string' ? state.lastPaymentId : current?.lastPaymentId || '',
+    billingAnchorDay:
+      typeof state.billingAnchorDay === 'number'
+        ? state.billingAnchorDay
+        : current?.billingAnchorDay || 0,
+    pendingPaymentId:
+      typeof state.pendingPaymentId === 'string'
+        ? state.pendingPaymentId
+        : current?.pendingPaymentId || '',
+    processingLockUntil:
+      typeof state.processingLockUntil === 'string'
+        ? state.processingLockUntil
+        : current?.processingLockUntil || '',
+    cancelledAt:
+      typeof state.cancelledAt === 'string' ? state.cancelledAt : current?.cancelledAt || '',
+    failureReason:
+      typeof state.failureReason === 'string' ? state.failureReason : current?.failureReason || '',
+    createdAt: current?.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+
+  await ref.set(nextDoc, { merge: true });
+  return getRecurringAgreementForUser(userId);
+}
+
+export async function updateSubscriptionRecurringState(
+  userId: string,
+  state: {
+    recurringAgreementId?: string;
+    autoRenewEnabled?: boolean;
+    nextChargeAt?: string;
+  }
+) {
+  const timestamp = nowIso();
+  const currentSubscription = await getCurrentSubscription(userId);
+
+  const patch = {
+    recurringAgreementId:
+      typeof state.recurringAgreementId === 'string'
+        ? state.recurringAgreementId
+        : currentSubscription?.recurringAgreementId || '',
+    autoRenewEnabled:
+      typeof state.autoRenewEnabled === 'boolean'
+        ? state.autoRenewEnabled
+        : currentSubscription?.autoRenewEnabled === true,
+    nextChargeAt:
+      typeof state.nextChargeAt === 'string' ? state.nextChargeAt : currentSubscription?.nextChargeAt || '',
+    updatedAt: timestamp,
+  };
+
+  await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).set(patch, { merge: true });
+
+  const merged = currentSubscription
+    ? {
+        ...currentSubscription,
+        ...patch,
+      }
+    : null;
+
+  await syncUserSubscriptionSnapshot(userId, merged || undefined);
+}
+
+export async function listDueRecurringAgreements(limit = 10) {
+  try {
+    const snapshot = await adminDb
+      .collection(RECURRING_AGREEMENTS_COLLECTION)
+      .where('nextChargeAt', '<=', nowIso())
+      .orderBy('nextChargeAt', 'asc')
+      .limit(limit)
+      .get();
+
+    return snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as RecurringAgreementDocument),
+      }))
+      .filter(
+        (agreement) =>
+          agreement.paymentProvider === 'payfast' &&
+          agreement.autoRenewEnabled === true &&
+          isRetryableRecurringStatus(agreement.status) &&
+          !agreement.pendingPaymentId &&
+          isIsoDateInFuture(agreement.processingLockUntil) === false
+      );
+  } catch (error) {
+    console.warn('[subscriptions] failed to list due recurring agreements', error);
+    return [];
+  }
+}
+
+export async function claimRecurringAgreementProcessing(userId: string, leaseMs: number) {
+  const ref = adminDb
+    .collection(RECURRING_AGREEMENTS_COLLECTION)
+    .doc(getRecurringAgreementDocId(userId));
+  const timestamp = nowIso();
+  const leaseUntil = new Date(Date.now() + leaseMs).toISOString();
+
+  return adminDb.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    const agreement = snapshot.data() as RecurringAgreementDocument;
+    const nextChargeTime = new Date(agreement.nextChargeAt || '').getTime();
+
+    if (
+      agreement.autoRenewEnabled !== true ||
+      !isRetryableRecurringStatus(agreement.status) ||
+      !agreement.nextChargeAt ||
+      !Number.isFinite(nextChargeTime) ||
+      nextChargeTime > Date.now()
+    ) {
+      return null;
+    }
+
+    if (agreement.processingLockUntil && new Date(agreement.processingLockUntil).getTime() > Date.now()) {
+      return null;
+    }
+
+    transaction.set(
+      ref,
+      {
+        processingLockUntil: leaseUntil,
+        lastChargeAttemptAt: timestamp,
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
+
+    return {
+      id: snapshot.id,
+      ...agreement,
+      processingLockUntil: leaseUntil,
+      lastChargeAttemptAt: timestamp,
+    };
+  });
+}
+
+export async function updateRecurringAgreementAfterSuccessfulPayment(options: {
+  userId: string;
+  paymentId: string;
+  planType: SubscriptionPlanType;
+  planName: string;
+  amount: number;
+  token?: string;
+  sourcePaymentId?: string;
+  nextChargeAt: string;
+  lastChargeStatus: string;
+}) {
+  const current = await getRecurringAgreementForUser(options.userId);
+  const billingAnchorDate = options.nextChargeAt ? new Date(options.nextChargeAt) : new Date();
+
+  const updated = await upsertRecurringAgreementForUser(options.userId, {
+    planType: options.planType,
+    planName: options.planName,
+    amount: options.amount,
+    status: 'active',
+    autoRenewEnabled: true,
+    token: typeof options.token === 'string' && options.token ? options.token : current?.token || '',
+    tokenCapturedAt:
+      typeof options.token === 'string' && options.token
+        ? nowIso()
+        : current?.tokenCapturedAt || '',
+    tokenSourcePaymentId:
+      typeof options.token === 'string' && options.token
+        ? options.sourcePaymentId || options.paymentId
+        : current?.tokenSourcePaymentId || '',
+    nextChargeAt: options.nextChargeAt,
+    lastChargeAt: nowIso(),
+    lastChargeStatus: options.lastChargeStatus,
+    lastPaymentId: options.paymentId,
+    pendingPaymentId: '',
+    processingLockUntil: '',
+    cancelledAt: '',
+    failureReason: '',
+    billingAnchorDay: billingAnchorDate.getUTCDate(),
+  });
+
+  await updateSubscriptionRecurringState(options.userId, {
+    recurringAgreementId: updated?.id || getRecurringAgreementDocId(options.userId),
+    autoRenewEnabled: true,
+    nextChargeAt: options.nextChargeAt,
+  });
+
+  return updated;
+}
+
+export async function updateRecurringAgreementAfterFailedPayment(options: {
+  userId: string;
+  paymentId: string;
+  nextChargeAt: string;
+  status: RecurringAgreementStatus;
+  failureReason: string;
+}) {
+  const updated = await upsertRecurringAgreementForUser(options.userId, {
+    status: options.status,
+    autoRenewEnabled: true,
+    lastChargeStatus: options.status,
+    lastPaymentId: options.paymentId,
+    pendingPaymentId: '',
+    processingLockUntil: '',
+    failureReason: options.failureReason,
+    nextChargeAt: options.nextChargeAt,
+  });
+
+  await updateSubscriptionRecurringState(options.userId, {
+    recurringAgreementId: updated?.id || getRecurringAgreementDocId(options.userId),
+    autoRenewEnabled: true,
+    nextChargeAt: options.nextChargeAt,
+  });
+
+  return updated;
+}
+
+export async function markRecurringAgreementChargeScheduled(options: {
+  userId: string;
+  paymentId: string;
+  planType: SubscriptionPlanType;
+  planName: string;
+  amount: number;
+}) {
+  return upsertRecurringAgreementForUser(options.userId, {
+    planType: options.planType,
+    planName: options.planName,
+    amount: options.amount,
+    status: 'active',
+    autoRenewEnabled: true,
+    lastChargeAttemptAt: nowIso(),
+    pendingPaymentId: options.paymentId,
+    processingLockUntil: '',
+    failureReason: '',
+  });
+}
+
+export async function releaseRecurringAgreementProcessing(userId: string) {
+  await upsertRecurringAgreementForUser(userId, {
+    processingLockUntil: '',
+  });
+}
+
+export async function cancelRecurringAgreementForUser(userId: string) {
+  const cancelledAt = nowIso();
+  const updated = await upsertRecurringAgreementForUser(userId, {
+    status: 'cancelled',
+    autoRenewEnabled: false,
+    token: '',
+    tokenCapturedAt: '',
+    tokenSourcePaymentId: '',
+    nextChargeAt: '',
+    pendingPaymentId: '',
+    processingLockUntil: '',
+    cancelledAt,
+  });
+
+  await updateSubscriptionRecurringState(userId, {
+    recurringAgreementId: updated?.id || getRecurringAgreementDocId(userId),
+    autoRenewEnabled: false,
+    nextChargeAt: '',
+  });
+
+  return updated;
+}
+
+export async function listPendingRecurringRenewalPayments(limit = 10, olderThanIso = nowIso()) {
+  try {
+    let docs: Array<{ id: string; data: () => unknown }> | null = null;
+
+    try {
+      const snapshot = await adminDb
+        .collection(PAYMENTS_COLLECTION)
+        .where('paymentKind', '==', 'recurring_renewal')
+        .where('status', 'in', ['submitted', 'pending', 'needs_attention'])
+        .limit(limit)
+        .get();
+
+      docs = snapshot.docs;
+    } catch (queryError) {
+      console.warn(
+        '[subscriptions] pending recurring renewal query fell back to local filtering',
+        queryError
+      );
+
+      const snapshot = await adminDb
+        .collection(PAYMENTS_COLLECTION)
+        .where('paymentKind', '==', 'recurring_renewal')
+        .limit(limit * 10)
+        .get();
+
+      docs = snapshot.docs;
+    }
+
+    return (docs || [])
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as PaymentAttemptDocument),
+      }))
+      .filter(
+        (payment) =>
+          ['submitted', 'pending', 'needs_attention'].includes(payment.status) &&
+          !payment.activationAppliedAt &&
+          (payment.createdAt || '') <= olderThanIso
+      )
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, limit);
+  } catch (error) {
+    console.warn('[subscriptions] failed to list pending recurring renewals', error);
+    return [];
+  }
 }
 
 export async function listPaymentsForAdmin(limit = 50) {
@@ -388,6 +935,9 @@ export async function applySuccessfulSubscriptionPayment(options: {
       startsAt: newStartsAt,
       expiresAt,
       isActive: true,
+      recurringAgreementId: payment.recurringAgreementId || currentSubscription?.recurringAgreementId || '',
+      autoRenewEnabled: currentSubscription?.autoRenewEnabled === true,
+      nextChargeAt: currentSubscription?.nextChargeAt || '',
       createdAt: currentSubscription?.createdAt || timestamp,
       updatedAt: timestamp,
     };

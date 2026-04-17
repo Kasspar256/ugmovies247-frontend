@@ -101,6 +101,10 @@ export function getPawaPayProviderLabel(provider: string) {
 
 export function getConfiguredPawaPayProviders(): PaymentMethodProviderOption[] {
   const raw = process.env.PAWAPAY_ALLOWED_PROVIDERS || '';
+  const priority: Record<string, number> = {
+    AIRTEL_OAPI_UGA: 0,
+    MTN_MOMO_UGA: 1,
+  };
 
   return raw
     .split(',')
@@ -110,7 +114,17 @@ export function getConfiguredPawaPayProviders(): PaymentMethodProviderOption[] {
       id: provider,
       label: getPawaPayProviderLabel(provider),
       country: provider.endsWith('_UGA') ? 'UGA' : '',
-    }));
+    }))
+    .sort((left, right) => {
+      const leftPriority = priority[left.id] ?? 99;
+      const rightPriority = priority[right.id] ?? 99;
+
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+
+      return left.label.localeCompare(right.label);
+    });
 }
 
 export function getPawaPayConfigError() {
