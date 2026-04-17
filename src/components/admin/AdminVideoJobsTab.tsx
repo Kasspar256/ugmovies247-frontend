@@ -341,10 +341,10 @@ export function AdminVideoJobsTab() {
         }
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatTile title="Active / Queued" value={jobCounts.active} />
-          <StatTile title="Ready" value={jobCounts.ready} />
-          <StatTile title="Failed" value={jobCounts.failed} />
-          <StatTile title="Cancelled" value={jobCounts.cancelled} />
+          <StatTile title="Active / Queued" value={jobCounts.active} icon={<Loader2 size={16} />} />
+          <StatTile title="Ready" value={jobCounts.ready} icon={<CheckCircle2 size={16} />} />
+          <StatTile title="Failed" value={jobCounts.failed} icon={<RotateCcw size={16} />} />
+          <StatTile title="Cancelled" value={jobCounts.cancelled} icon={<SquareX size={16} />} />
         </div>
 
         <div className="mt-5 rounded-[24px] border border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(23,9,13,0.9),rgba(17,20,28,0.96))] p-4">
