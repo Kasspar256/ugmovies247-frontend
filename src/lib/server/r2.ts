@@ -506,12 +506,23 @@ export async function uploadFileToR2(options: {
         });
 
         uploadedBytes += expectedLength;
-        await options.onProgress?.({
-          uploadedBytes,
-          totalBytes: stats.size,
-          progressPercent: Math.max(0, Math.min(100, Math.round((uploadedBytes / stats.size) * 100))),
-          uploadedParts: partNumber,
-          totalParts,
+        void Promise.resolve(
+          options.onProgress?.({
+            uploadedBytes,
+            totalBytes: stats.size,
+            progressPercent: Math.max(
+              0,
+              Math.min(100, Math.round((uploadedBytes / stats.size) * 100))
+            ),
+            uploadedParts: partNumber,
+            totalParts,
+          })
+        ).catch((error) => {
+          console.warn('[r2] upload progress callback failed', {
+            key: options.key,
+            partNumber,
+            error: error instanceof Error ? error.message : String(error || ''),
+          });
         });
       }
 
@@ -548,12 +559,20 @@ export async function uploadFileToR2(options: {
     `put:${options.key}`
   );
 
-  await options.onProgress?.({
-    uploadedBytes: stats.size,
-    totalBytes: stats.size,
-    progressPercent: 100,
-    uploadedParts: 1,
-    totalParts: 1,
+  void Promise.resolve(
+    options.onProgress?.({
+      uploadedBytes: stats.size,
+      totalBytes: stats.size,
+      progressPercent: 100,
+      uploadedParts: 1,
+      totalParts: 1,
+    })
+  ).catch((error) => {
+    console.warn('[r2] upload progress callback failed', {
+      key: options.key,
+      partNumber: 1,
+      error: error instanceof Error ? error.message : String(error || ''),
+    });
   });
 
   return {

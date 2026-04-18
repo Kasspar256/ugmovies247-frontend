@@ -82,9 +82,48 @@ function isTransientJobError(error: unknown) {
   );
 }
 
+function isQuotaLikeControlPlaneError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /resource_exhausted|quota exceeded|deadline exceeded|timed out|ramp up limit/i.test(
+    message
+  );
+}
+
 function isCancellationError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '');
   return /cancelled by admin/i.test(message);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withControlPlaneRetry<T>(
+  label: string,
+  operation: () => Promise<T>,
+  options?: { maxAttempts?: number; baseDelayMs?: number }
+) {
+  const maxAttempts = Math.max(1, options?.maxAttempts || 6);
+  const baseDelayMs = Math.max(1000, options?.baseDelayMs || 5000);
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (!isQuotaLikeControlPlaneError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+
+      const delayMs = Math.min(30000, baseDelayMs * 2 ** (attempt - 1));
+      console.warn(`[video-jobs] ${label} hit Firestore control-plane throttling. Retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt}/${maxAttempts}).`, error);
+      await wait(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || `${label} failed.`));
 }
 
 function getJobWorkspace(jobId: string) {
@@ -970,13 +1009,16 @@ export async function processNextVideoJob() {
       errorMessage: '',
     };
 
-    await patchMovieAsset(job.target, assetMetadata);
-    await updateJobState(job.id!, {
-      status: 'ready',
-      progress: 100,
-      errorMessage: '',
-      processedAt: isoNow(),
-      timeoutAt: '',
+    await withControlPlaneRetry(`patch ready asset for job ${job.id}`, () =>
+      patchMovieAsset(job.target, assetMetadata)
+    );
+    await withControlPlaneRetry(`mark job ${job.id} ready`, () =>
+      updateJobState(job.id!, {
+        status: 'ready',
+        progress: 100,
+        errorMessage: '',
+        processedAt: isoNow(),
+        timeoutAt: '',
       uploadedBytes: preparedMp4.fileSizeBytes,
       uploadTotalBytes: preparedMp4.fileSizeBytes,
       uploadProgressPercent: 100,
@@ -988,8 +1030,11 @@ export async function processNextVideoJob() {
         r2ObjectKey: uploadedMp4.key,
         playbackUrl: uploadedMp4.publicUrl,
       },
-    });
-    await appendJobLog(job.id!, 'Movie import completed and is ready for playback from R2.');
+      })
+    );
+    await withControlPlaneRetry(`append completion log for job ${job.id}`, () =>
+      appendJobLog(job.id!, 'Movie import completed and is ready for playback from R2.')
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown processing error.';
 
