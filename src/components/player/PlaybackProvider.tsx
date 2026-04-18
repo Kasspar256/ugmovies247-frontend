@@ -16,6 +16,7 @@ import {
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  Cast,
   Expand,
   Loader2,
   Pause,
@@ -24,6 +25,18 @@ import {
   SkipForward,
   X,
 } from 'lucide-react';
+import {
+  bindCastVideoElement,
+  getCastStateSnapshot,
+  primeCastSupport,
+  seekCastBy,
+  startCasting,
+  stopCasting,
+  subscribeToCastState,
+  syncCastingMedia,
+  toggleCastPlayback,
+  type CastStateSnapshot,
+} from '@/lib/cast';
 
 export type PlaybackPhase =
   | 'idle'
@@ -39,6 +52,8 @@ export type PlaybackSource = {
   movieId: string;
   sourceUrl: string;
   fallbackUrl?: string;
+  castUrl?: string;
+  playbackType?: 'mp4' | 'hls';
   poster?: string;
   title: string;
   description?: string;
@@ -125,6 +140,8 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
     current.movieId === next.movieId &&
     current.sourceUrl === next.sourceUrl &&
     (current.fallbackUrl || '') === (next.fallbackUrl || '') &&
+    (current.castUrl || '') === (next.castUrl || '') &&
+    (current.playbackType || 'mp4') === (next.playbackType || 'mp4') &&
     current.poster === next.poster &&
     current.title === next.title &&
     current.description === next.description &&
@@ -219,6 +236,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const fatalErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const castFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
   const lastAssignedSourceRef = useRef('');
@@ -234,7 +252,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [desktopSeekFeedback, setDesktopSeekFeedback] = useState('');
+  const [castFeedbackMessage, setCastFeedbackMessage] = useState('');
+  const [castSnapshot, setCastSnapshot] = useState<CastStateSnapshot>(() => getCastStateSnapshot());
   const playbackPhaseRef = useRef<PlaybackPhase>('idle');
+  const castSnapshotRef = useRef<CastStateSnapshot>(getCastStateSnapshot());
 
   const setPlaybackPhaseSafe = useCallback((nextPhase: PlaybackPhase) => {
     playbackPhaseRef.current = nextPhase;
@@ -248,12 +269,36 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearFatalError = useCallback(() => {
+    clearFatalErrorTimer();
+    setFatalErrorMessage('');
+  }, [clearFatalErrorTimer]);
+
   const clearSeekFeedbackTimer = useCallback(() => {
     if (feedbackTimerRef.current) {
       clearTimeout(feedbackTimerRef.current);
       feedbackTimerRef.current = null;
     }
   }, []);
+
+  const clearCastFeedbackTimer = useCallback(() => {
+    if (castFeedbackTimerRef.current) {
+      clearTimeout(castFeedbackTimerRef.current);
+      castFeedbackTimerRef.current = null;
+    }
+  }, []);
+
+  const showCastFeedback = useCallback(
+    (message: string) => {
+      clearCastFeedbackTimer();
+      setCastFeedbackMessage(message);
+
+      castFeedbackTimerRef.current = setTimeout(() => {
+        setCastFeedbackMessage('');
+      }, 3200);
+    },
+    [clearCastFeedbackTimer]
+  );
 
   const setVideoElement = useCallback((node: HTMLVideoElement | null) => {
     videoRef.current = node;
@@ -262,6 +307,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (node) {
       node.setAttribute('playsinline', 'true');
       node.setAttribute('webkit-playsinline', 'true');
+      node.setAttribute('x-webkit-airplay', 'allow');
     }
   }, []);
 
@@ -333,10 +379,62 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     };
   }, [videoElementState]);
 
-  const clearFatalError = useCallback(() => {
-    clearFatalErrorTimer();
-    setFatalErrorMessage('');
-  }, [clearFatalErrorTimer]);
+  useEffect(() => {
+    void primeCastSupport().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    return bindCastVideoElement(videoElementState);
+  }, [videoElementState]);
+
+  useEffect(() => {
+    return subscribeToCastState((nextSnapshot) => {
+      const priorSnapshot = castSnapshotRef.current;
+      const wasGoogleCasting =
+        priorSnapshot.transport === 'google-cast' && priorSnapshot.connected;
+      const isGoogleCasting =
+        nextSnapshot.transport === 'google-cast' && nextSnapshot.connected;
+
+      castSnapshotRef.current = nextSnapshot;
+      setCastSnapshot(nextSnapshot);
+
+      if (isGoogleCasting) {
+        clearFatalError();
+        setCurrentTime(nextSnapshot.currentTime || 0);
+        setDuration(nextSnapshot.duration || 0);
+        setPlaybackPhaseSafe(nextSnapshot.isPaused ? 'paused' : 'playing');
+
+        if (videoRef.current && !videoRef.current.paused) {
+          videoRef.current.pause();
+        }
+
+        return;
+      }
+
+      if (wasGoogleCasting && !isGoogleCasting) {
+        const videoElement = videoRef.current;
+
+        if (videoElement && activeSource?.sourceUrl) {
+          if (Number.isFinite(priorSnapshot.currentTime) && priorSnapshot.currentTime > 0) {
+            try {
+              videoElement.currentTime = priorSnapshot.currentTime;
+              setCurrentTime(priorSnapshot.currentTime);
+            } catch {
+              setCurrentTime(priorSnapshot.currentTime);
+            }
+          }
+
+          if (!priorSnapshot.isPaused) {
+            void videoElement.play().catch(() => {
+              setPlaybackPhaseSafe('paused');
+            });
+          } else {
+            setPlaybackPhaseSafe('paused');
+          }
+        }
+      }
+    });
+  }, [activeSource?.sourceUrl, clearFatalError, setPlaybackPhaseSafe]);
 
   const setPlaybackSource = useCallback((nextSource: PlaybackSource | null) => {
     setActiveSourceState((currentSource) =>
@@ -435,14 +533,53 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [activeSource?.sessionKey, activeSource?.sourceUrl, clearFatalError, setPlaybackPhaseSafe]);
 
   useEffect(() => {
+    if (
+      !activeSource ||
+      castSnapshot.transport !== 'google-cast' ||
+      !castSnapshot.connected
+    ) {
+      return;
+    }
+
+    const localVideoCurrentTime = videoRef.current?.currentTime;
+    const nextCastStartTime =
+      typeof localVideoCurrentTime === 'number' && Number.isFinite(localVideoCurrentTime)
+        ? localVideoCurrentTime
+        : castSnapshotRef.current.currentTime || 0;
+
+    void syncCastingMedia({
+      videoElement: videoRef.current,
+      playbackUrl: activeSource.castUrl || activeSource.sourceUrl,
+      title: activeSource.title,
+      poster: activeSource.poster,
+      playbackType: activeSource.playbackType,
+      currentTime: nextCastStartTime,
+      autoplay:
+        playbackPhaseRef.current === 'playing' || playbackPhaseRef.current === 'buffering',
+    }).catch((error) => {
+      console.error('[player] cast sync failed', error);
+      showCastFeedback(
+        error instanceof Error ? error.message : 'We could not update the cast device.'
+      );
+    });
+  }, [
+    activeSource,
+    castSnapshot.connected,
+    castSnapshot.transport,
+    showCastFeedback,
+  ]);
+
+  useEffect(() => {
     return () => {
       clearFatalErrorTimer();
       clearSeekFeedbackTimer();
+      clearCastFeedbackTimer();
     };
-  }, [clearFatalErrorTimer, clearSeekFeedbackTimer]);
+  }, [clearCastFeedbackTimer, clearFatalErrorTimer, clearSeekFeedbackTimer]);
 
   const tryEnterFullscreen = useCallback(async () => {
     const videoElement = videoRef.current as IOSVideoElement | null;
+    const shellElement = shellRef.current;
 
     if (!videoElement) {
       return;
@@ -468,15 +605,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (typeof videoElement.webkitEnterFullscreen === 'function') {
+    if (isIOSDevice && typeof videoElement.webkitEnterFullscreen === 'function') {
       videoElement.webkitEnterFullscreen();
+      return;
+    }
+
+    if (shellElement && typeof shellElement.requestFullscreen === 'function') {
+      await shellElement.requestFullscreen();
       return;
     }
 
     if (typeof videoElement.requestFullscreen === 'function') {
       await videoElement.requestFullscreen();
     }
-  }, []);
+  }, [isIOSDevice]);
 
   const openWatchView = useCallback(() => {
     if (!activeSource?.watchHref) {
@@ -487,6 +629,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [activeSource?.watchHref, router]);
 
   const togglePlayPause = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      clearFatalError();
+      void toggleCastPlayback().catch((error) => {
+        showCastFeedback(
+          error instanceof Error ? error.message : 'We could not control the cast device.'
+        );
+      });
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     if (!videoElement) {
@@ -502,10 +654,28 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     videoElement.pause();
-  }, [clearFatalError, setPlaybackPhaseSafe]);
+  }, [clearFatalError, setPlaybackPhaseSafe, showCastFeedback]);
 
   const seekBy = useCallback(
     (seconds: number) => {
+      if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+        void seekCastBy(seconds).catch((error) => {
+          showCastFeedback(
+            error instanceof Error ? error.message : 'We could not seek on the cast device.'
+          );
+        });
+
+        if (isDesktop && seconds !== 0) {
+          clearSeekFeedbackTimer();
+          setDesktopSeekFeedback(`${seconds > 0 ? '+' : ''}${seconds}s`);
+          feedbackTimerRef.current = setTimeout(() => {
+            setDesktopSeekFeedback('');
+          }, 720);
+        }
+
+        return;
+      }
+
       const videoElement = videoRef.current;
 
       if (!videoElement || !Number.isFinite(videoElement.currentTime)) {
@@ -528,7 +698,73 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }, 720);
       }
     },
-    [clearSeekFeedbackTimer, isDesktop]
+    [clearSeekFeedbackTimer, isDesktop, showCastFeedback]
+  );
+
+  const isGoogleCasting =
+    castSnapshot.transport === 'google-cast' && castSnapshot.connected;
+  const isAirPlayCasting =
+    castSnapshot.transport === 'airplay' && castSnapshot.connected;
+  const isCasting = isGoogleCasting || isAirPlayCasting;
+  const castButtonAriaLabel = isGoogleCasting
+    ? 'Disconnect Chromecast'
+    : isAirPlayCasting
+      ? 'Open AirPlay picker'
+      : 'Cast video';
+
+  const handleCastButtonClick = useCallback(
+    async (event: MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+
+      if (!activeSource?.sourceUrl && !activeSource?.castUrl) {
+        showCastFeedback('This movie is not ready for casting yet.');
+        return;
+      }
+
+      try {
+        const localVideoCurrentTime = videoRef.current?.currentTime;
+        const nextCastStartTime =
+          typeof localVideoCurrentTime === 'number' && Number.isFinite(localVideoCurrentTime)
+            ? localVideoCurrentTime
+            : currentTime;
+
+        if (castSnapshotRef.current.connected) {
+          const message = await stopCasting();
+          showCastFeedback(message);
+          return;
+        }
+
+        const message = await startCasting({
+          videoElement: videoRef.current,
+          playbackUrl: activeSource.castUrl || activeSource.sourceUrl,
+          title: activeSource.title,
+          poster: activeSource.poster,
+          playbackType: activeSource.playbackType,
+          currentTime: nextCastStartTime,
+          autoplay:
+            playbackPhaseRef.current === 'playing' ||
+            playbackPhaseRef.current === 'buffering',
+        });
+
+        if (
+          castSnapshotRef.current.transport === 'google-cast' &&
+          castSnapshotRef.current.connected &&
+          videoRef.current &&
+          !videoRef.current.paused
+        ) {
+          videoRef.current.pause();
+        }
+
+        showCastFeedback(message);
+      } catch (error) {
+        showCastFeedback(
+          error instanceof Error
+            ? error.message
+            : 'We could not start casting right now.'
+        );
+      }
+    },
+    [activeSource, currentTime, showCastFeedback]
   );
 
   const hasInlineHost = Boolean(inlineHost);
@@ -579,11 +815,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       };
 
   const handleLoadStart = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     clearFatalError();
     setPlaybackPhaseSafe('loading');
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handleLoadedMetadata = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     if (!videoElement) {
@@ -595,6 +839,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleCanPlay = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     clearFatalError();
@@ -617,11 +865,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handlePlaying = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     clearFatalError();
     setPlaybackPhaseSafe('playing');
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handlePause = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     if (!videoElement || videoElement.ended) {
@@ -632,10 +888,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [setPlaybackPhaseSafe]);
 
   const handleEnded = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     setPlaybackPhaseSafe('ended');
   }, [setPlaybackPhaseSafe]);
 
   const handleWaiting = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     if (!videoElement || videoElement.ended) {
@@ -647,6 +911,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handleTimeUpdate = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current;
 
     if (!videoElement) {
@@ -666,6 +934,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handleVideoError = useCallback(() => {
+    if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
+      return;
+    }
+
     const videoElement = videoRef.current as IOSVideoElement | null;
     const fallbackUrl = activeSource?.fallbackUrl?.trim() || '';
 
@@ -813,7 +1085,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
             {isInlineMode && !showNativeControls ? (
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-black/35">
-                <div className="pointer-events-auto absolute right-3 top-3 md:right-4 md:top-4">
+                <div className="pointer-events-auto absolute right-3 top-3 flex items-center gap-2 md:right-4 md:top-4">
+                  <PlayerShellButton
+                    ariaLabel={castButtonAriaLabel}
+                    onClick={handleCastButtonClick}
+                    className={
+                      isCasting ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                    }
+                  >
+                    <Cast size={18} />
+                  </PlayerShellButton>
                   <PlayerShellButton
                     ariaLabel={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                     onClick={(event) => {
@@ -865,7 +1146,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
             ) : null}
 
             {showNativeControls ? (
-              <div className="absolute right-3 top-3 z-10">
+              <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+                <PlayerShellButton
+                  ariaLabel={castButtonAriaLabel}
+                  onClick={handleCastButtonClick}
+                  className={`h-10 w-10 bg-black/55 ${
+                    isCasting ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                  }`}
+                >
+                  <Cast size={16} />
+                </PlayerShellButton>
                 <PlayerShellButton
                   ariaLabel={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                   onClick={(event) => {
@@ -889,6 +1179,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                 />
 
                 <div className="pointer-events-auto absolute right-3 top-3 flex items-center gap-2">
+                  <PlayerShellButton
+                    ariaLabel={castButtonAriaLabel}
+                    onClick={handleCastButtonClick}
+                    className={`h-10 w-10 ${
+                      isCasting ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                    }`}
+                  >
+                    <Cast size={16} />
+                  </PlayerShellButton>
                   <PlayerShellButton
                     ariaLabel="Return to full player"
                     onClick={handleOpenWatchView}
@@ -931,6 +1230,23 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                     </PlayerShellButton>
                   </div>
                 </div>
+              </div>
+            ) : null}
+
+            {isCasting ? (
+              <div className="pointer-events-none absolute left-3 top-3 flex max-w-[70%] items-center gap-2 rounded-full border border-white/10 bg-black/58 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/84 backdrop-blur-xl md:left-4 md:top-4 md:text-[11px]">
+                <Cast size={14} className="text-[#FFD7DF]" />
+                <span className="truncate">
+                  {isGoogleCasting
+                    ? `Casting to ${castSnapshot.deviceName || 'Chromecast'}`
+                    : 'AirPlay Active'}
+                </span>
+              </div>
+            ) : null}
+
+            {castFeedbackMessage ? (
+              <div className="pointer-events-none absolute left-1/2 top-4 z-20 w-[min(92%,420px)] -translate-x-1/2 rounded-full border border-white/10 bg-black/64 px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/86 backdrop-blur-xl md:text-[11px]">
+                {castFeedbackMessage}
               </div>
             ) : null}
 

@@ -13,6 +13,7 @@ import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
 import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
+import { startCasting } from '@/lib/cast';
 
 type SessionUser = {
   role: 'user' | 'admin';
@@ -232,8 +233,12 @@ export default function Home() {
   const heroPlaybackUrl =
     heroMovie?.video_url ||
     heroMovie?.sourceUrl ||
-    heroMovie?.masterPlaylistUrl ||
     '';
+  const heroCastUrl =
+    heroMovie?.masterPlaylistUrl ||
+    heroPlaybackUrl;
+  const heroPlaybackType =
+    heroMovie?.masterPlaylistUrl && heroMovie?.playbackType === 'hls' ? 'hls' : 'mp4';
   const heroRuntimeLabel = formatRuntimeLabel(heroMovie);
   const unreadLatestUploadCount = countUnreadLatestUploads(movies);
 
@@ -250,76 +255,34 @@ export default function Home() {
       return;
     }
 
-    if (!videoElement || !heroPlaybackUrl) {
+    if (!videoElement || !heroCastUrl) {
       setHeaderActionMessage('Casting is available when the featured movie has a playable source.');
       return;
     }
 
-    const castVideo = videoElement as HTMLVideoElement & {
-      remote?: {
-        prompt?: () => Promise<void>;
-        watchAvailability?: (callback: (available: boolean) => void) => Promise<number>;
-      };
-      webkitShowPlaybackTargetPicker?: () => void;
-      webkitCurrentPlaybackTargetIsWireless?: boolean;
-    };
-
     try {
-      if (videoElement.src !== heroPlaybackUrl) {
+      if (videoElement.src !== heroPlaybackUrl && heroPlaybackUrl) {
         videoElement.src = heroPlaybackUrl;
         videoElement.load();
       }
 
-      if (castVideo.remote && typeof castVideo.remote.prompt === 'function') {
-        if (typeof castVideo.remote.watchAvailability === 'function') {
-          const isAvailable = await new Promise<boolean>((resolve) => {
-            let settled = false;
-
-            castVideo.remote!.watchAvailability!((available: boolean) => {
-              if (!settled) {
-                settled = true;
-                resolve(available);
-              }
-            }).catch(() => {
-              if (!settled) {
-                settled = true;
-                resolve(true);
-              }
-            });
-
-            window.setTimeout(() => {
-              if (!settled) {
-                settled = true;
-                resolve(true);
-              }
-            }, 1200);
-          });
-
-          if (!isAvailable) {
-            setHeaderActionMessage('No cast devices were found on this network right now.');
-            return;
-          }
-        }
-
-        await castVideo.remote.prompt();
-        setHeaderActionMessage(`Casting picker opened for ${heroMovie.title}.`);
-        return;
-      }
-
-      if (typeof castVideo.webkitShowPlaybackTargetPicker === 'function') {
-        castVideo.webkitShowPlaybackTargetPicker();
-        setHeaderActionMessage(
-          castVideo.webkitCurrentPlaybackTargetIsWireless
-            ? `Casting ${heroMovie.title} to your connected device.`
-            : 'AirPlay device picker opened.'
-        );
-        return;
-      }
-
-      setHeaderActionMessage('Casting is not available in this browser. Open the movie page to cast from the player.');
+      const message = await startCasting({
+        videoElement,
+        playbackUrl: heroCastUrl,
+        title: heroMovie.title,
+        poster: heroMovie.poster,
+        playbackType: heroPlaybackType,
+        currentTime: 0,
+        autoplay: true,
+      });
+      setHeaderActionMessage(message);
     } catch (error) {
       console.error('[home] cast failed', error);
-      setHeaderActionMessage('We could not start casting. Check that your cast device is ready on the same network.');
+      setHeaderActionMessage(
+        error instanceof Error
+          ? error.message
+          : 'We could not start casting. Check that your cast device is ready on the same network.'
+      );
     }
   };
 
@@ -393,7 +356,7 @@ export default function Home() {
           className="hidden"
           playsInline
           preload="metadata"
-          crossOrigin="anonymous"
+          x-webkit-airplay="allow"
         />
       </header>
 

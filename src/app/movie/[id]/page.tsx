@@ -398,7 +398,13 @@ const selectedPart =
   movie?.contentType !== 'series' && movie?.parts?.length
     ? movie.parts[selectedPartIndex]
     : undefined;
-const playbackType = 'mp4';
+const seriesPlaybackType =
+  activeEpisode?.playbackType === 'hls' && activeEpisode?.masterPlaylistUrl ? 'hls' : 'mp4';
+const moviePlaybackType =
+  (selectedPart?.playbackType === 'hls' && selectedPart?.masterPlaylistUrl) ||
+  (movie?.playbackType === 'hls' && movie?.masterPlaylistUrl)
+    ? 'hls'
+    : 'mp4';
 const seriesPlaybackVideoUrl = activeEpisode?.video_url || activeEpisode?.sourceUrl || '';
 const seriesPlaybackFallbackUrl =
   activeEpisode?.sourceUrl && activeEpisode.sourceUrl !== seriesPlaybackVideoUrl
@@ -420,6 +426,14 @@ const playbackFallbackUrl =
   movie?.contentType === 'series'
     ? seriesPlaybackFallbackUrl
     : moviePlaybackFallbackUrl;
+const playbackType =
+  movie?.contentType === 'series'
+    ? seriesPlaybackType
+    : moviePlaybackType;
+const castPlaybackUrl =
+  movie?.contentType === 'series'
+    ? activeEpisode?.masterPlaylistUrl || seriesPlaybackVideoUrl
+    : selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || moviePlaybackVideoUrl;
 const playbackPoster =
   selectedPart?.poster ||
   selectedPart?.thumbnail ||
@@ -511,23 +525,27 @@ useLayoutEffect(() => {
     movieId: movie.movieId || movie.id,
     sourceUrl: playbackVideoUrl,
     fallbackUrl: playbackFallbackUrl || '',
+    castUrl: castPlaybackUrl || playbackVideoUrl,
+    playbackType,
     poster: playbackPoster,
     title: playbackTitle || movie.title || movie.name || 'UG Movies 247',
     description: playbackDescription,
     watchHref: currentMovieHref,
   });
-}, [
-  currentMovieHref,
-  isPlaybackLocked,
-  movie,
-  playbackDescription,
-  playbackFallbackUrl,
-  playbackPoster,
-  playbackSessionKey,
-  playbackTitle,
-  playbackVideoUrl,
-  setPlaybackSource,
-]);
+  }, [
+    castPlaybackUrl,
+    currentMovieHref,
+    isPlaybackLocked,
+    movie,
+    playbackDescription,
+    playbackFallbackUrl,
+    playbackPoster,
+    playbackSessionKey,
+    playbackTitle,
+    playbackType,
+    playbackVideoUrl,
+    setPlaybackSource,
+  ]);
 
 const handleDownload = async () => {
   if (!movie) {
@@ -703,7 +721,7 @@ const handleCast = async () => {
     return;
   }
 
-  if (!playbackVideoUrl) {
+  if (!(castPlaybackUrl || playbackVideoUrl)) {
     setActionMessage('This movie is not ready for casting yet.');
     return;
   }
@@ -713,7 +731,7 @@ const handleCast = async () => {
   try {
     const message = await startCasting({
       videoElement,
-      playbackUrl: playbackVideoUrl,
+      playbackUrl: castPlaybackUrl || playbackVideoUrl,
       title: playbackTitle || movie?.title || movie?.name || 'UG Movies 247',
       poster: playbackPoster,
       playbackType,
