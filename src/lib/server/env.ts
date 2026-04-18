@@ -28,6 +28,12 @@ export const VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER = Number(
   process.env.VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER || 2.5
 );
 export const VIDEO_WORKER_POLL_MS = Number(process.env.VIDEO_WORKER_POLL_MS || 5000);
+export const VIDEO_WORKER_QUOTA_BACKOFF_BASE_MS = Number(
+  process.env.VIDEO_WORKER_QUOTA_BACKOFF_BASE_MS || 1000 * 30
+);
+export const VIDEO_WORKER_QUOTA_BACKOFF_MAX_MS = Number(
+  process.env.VIDEO_WORKER_QUOTA_BACKOFF_MAX_MS || 1000 * 60 * 5
+);
 export const VIDEO_JOB_AUTO_RETRY_LIMIT = Number(
   process.env.VIDEO_JOB_AUTO_RETRY_LIMIT || 2
 );

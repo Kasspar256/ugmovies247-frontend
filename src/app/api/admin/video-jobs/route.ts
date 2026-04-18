@@ -27,7 +27,7 @@ export async function GET() {
       );
     }
 
-    const jobs = await readCachedVideoJobs(() => listVideoJobs(100));
+    const jobs = await readCachedVideoJobs(() => listVideoJobs(40), 1000 * 60);
     return NextResponse.json({ jobs });
   } catch (error) {
     console.error('[video-jobs] list failed', error);

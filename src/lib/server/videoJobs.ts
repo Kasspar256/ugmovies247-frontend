@@ -41,6 +41,9 @@ import {
 } from './firestoreNamespaces';
 
 const CLAIMING_STALE_MS = 30 * 1000;
+const DOWNLOAD_PROGRESS_PERCENT_WRITE_STEP = 5;
+const DOWNLOAD_PROGRESS_FALLBACK_BYTES_WRITE_STEP = 100 * 1024 * 1024;
+const DOWNLOAD_PROGRESS_WRITE_INTERVAL_MS = 1000 * 15;
 const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
   'downloading',
   'inspecting',
@@ -715,16 +718,32 @@ export async function processNextVideoJob() {
 
     let lastDownloadProgress = 10;
     let lastDownloadUpdateAt = 0;
+    let lastRecordedDownloadPercent = 0;
+    let lastRecordedDownloadedBytes = 0;
     const handleDownloadProgress = async (progress: RemoteDownloadProgress) => {
       const now = Date.now();
       const nextProgress =
         typeof progress.progressPercent === 'number'
           ? Math.max(10, Math.min(34, 10 + Math.round(progress.progressPercent * 0.24)))
           : lastDownloadProgress;
+      const numericDownloadPercent =
+        typeof progress.progressPercent === 'number' && Number.isFinite(progress.progressPercent)
+          ? Math.max(0, Math.min(100, Math.round(progress.progressPercent)))
+          : null;
+      const percentAdvancedEnough =
+        numericDownloadPercent !== null &&
+        (numericDownloadPercent >=
+          lastRecordedDownloadPercent + DOWNLOAD_PROGRESS_PERCENT_WRITE_STEP ||
+          numericDownloadPercent === 100);
+      const bytesAdvancedEnough =
+        numericDownloadPercent === null &&
+        progress.downloadedBytes >=
+          lastRecordedDownloadedBytes + DOWNLOAD_PROGRESS_FALLBACK_BYTES_WRITE_STEP;
       const shouldWrite =
         nextProgress > lastDownloadProgress ||
-        now - lastDownloadUpdateAt >= 5000 ||
-        progress.progressPercent === 100;
+        percentAdvancedEnough ||
+        bytesAdvancedEnough ||
+        now - lastDownloadUpdateAt >= DOWNLOAD_PROGRESS_WRITE_INTERVAL_MS;
 
       if (!shouldWrite) {
         return;
@@ -732,14 +751,17 @@ export async function processNextVideoJob() {
 
       lastDownloadProgress = Math.max(lastDownloadProgress, nextProgress);
       lastDownloadUpdateAt = now;
+      lastRecordedDownloadedBytes = progress.downloadedBytes;
+      if (numericDownloadPercent !== null) {
+        lastRecordedDownloadPercent = numericDownloadPercent;
+      }
 
       await updateJobState(job.id!, {
         status: 'downloading',
         progress: lastDownloadProgress,
         downloadedBytes: progress.downloadedBytes,
         downloadTotalBytes: progress.totalBytes || 0,
-        downloadProgressPercent:
-          typeof progress.progressPercent === 'number' ? progress.progressPercent : null,
+        downloadProgressPercent: numericDownloadPercent,
       });
     };
 

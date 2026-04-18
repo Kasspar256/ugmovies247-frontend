@@ -131,7 +131,7 @@ export function AdminVideoJobsTab() {
     try {
       const payload = await fetchAdminJson<VideoJobsResponse>('/api/admin/video-jobs', {
         force: showSpinner,
-        ttlMs: 1000 * 30,
+        ttlMs: 1000 * 60,
       });
       setJobs(payload.jobs || []);
       setJobErrorMessage('');
@@ -198,7 +198,7 @@ export function AdminVideoJobsTab() {
       if (active && document.visibilityState === 'visible') {
         void loadJobs(false);
       }
-    }, 30000);
+    }, 60000);
 
     return () => {
       active = false;
