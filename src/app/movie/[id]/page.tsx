@@ -1,6 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
@@ -13,6 +12,10 @@ import { Bookmark, Cast, Heart, Share2 } from 'lucide-react';
 import { fetchPublicMovies } from '@/lib/publicMovies';
 import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
+import {
+  PersistentPlaybackHost,
+  usePlayback,
+} from '@/components/player/PlaybackProvider';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -56,10 +59,10 @@ function mergeEpisodePlaybackCandidate(
     overview: incoming.overview || existing?.overview || '',
     video_url: incoming.video_url || existing?.video_url || '',
     sourceUrl: incoming.sourceUrl || existing?.sourceUrl || '',
-    masterPlaylistUrl: incoming.masterPlaylistUrl || existing?.masterPlaylistUrl || '',
+    masterPlaylistUrl: '',
     poster: incoming.poster || existing?.poster || '',
     thumbnail: incoming.thumbnail || existing?.thumbnail || '',
-    playbackType: incoming.playbackType || existing?.playbackType,
+    playbackType: 'mp4',
     isLocked: incoming.isLocked ?? existing?.isLocked,
   };
 }
@@ -67,7 +70,6 @@ function mergeEpisodePlaybackCandidate(
 export default function MoviePlayerPage({ params }: { params: { id: string } }) {
 const [movie, setMovie] = useState<Movie | null>(null);
 const [loading, setLoading] = useState(true);
-const [isVideoError, setIsVideoError] = useState(false);
 const [isDownloading, setIsDownloading] = useState(false);
 const [isSavingToList, setIsSavingToList] = useState(false);
 const [isLiking, setIsLiking] = useState(false);
@@ -75,17 +77,16 @@ const [isSavedToDownloads, setIsSavedToDownloads] = useState(false);
 const [isSavedToWatchlist, setIsSavedToWatchlist] = useState(false);
 const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
-const [movieSource, setMovieSource] = useState<'movies' | 'downloads'>('movies');
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>([]);
 const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number | null>(null);
 const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
 const [selectedPartIndex, setSelectedPartIndex] = useState(0);
-const videoRef = useRef<HTMLVideoElement | null>(null);
 const router = useRouter();
 const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
+const { setPlaybackSource, videoElement } = usePlayback();
 
 useEffect(() => {
 const fetchMovie = async () => {
@@ -128,7 +129,6 @@ if (matchedMovie) {
 const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(matchedMovie);
 setMovie(resolvedMovie);
 setSeriesSourceEntries(sourceEntries);
-setMovieSource('movies');
 return;
 }
 
@@ -139,7 +139,6 @@ const normalizedDownloadMovie = normalizeMovie(downloadRecord.movieId, downloadR
 const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(normalizedDownloadMovie);
 setMovie(resolvedMovie);
 setSeriesSourceEntries(sourceEntries);
-setMovieSource('downloads');
 setIsSavedToDownloads(true);
 return;
 }
@@ -261,13 +260,23 @@ fetchRelatedMovies();
 }, [movie]);
 
 useEffect(() => {
-  if (movie?.parts?.length) {
+  if (!movie?.parts?.length) {
     setSelectedPartIndex(0);
     return;
   }
 
-  setSelectedPartIndex(0);
-}, [movie?.id, movie?.parts]);
+  const requestedPartNumber = Number(new URLSearchParams(searchQueryString).get('part'));
+  const orderedParts = [...movie.parts].sort((left, right) => left.order - right.order);
+  const matchedIndex = orderedParts.findIndex((part, partIndex) => {
+    if (requestedPartNumber === part.order) {
+      return true;
+    }
+
+    return requestedPartNumber === partIndex + 1;
+  });
+
+  setSelectedPartIndex(matchedIndex >= 0 ? matchedIndex : 0);
+}, [movie?.id, movie?.parts, searchQueryString]);
 
 useEffect(() => {
   if (movie?.contentType === 'series' && movie.seasons?.length) {
@@ -389,72 +398,28 @@ const selectedPart =
   movie?.contentType !== 'series' && movie?.parts?.length
     ? movie.parts[selectedPartIndex]
     : undefined;
-const seriesPlaybackType =
-  activeEpisode?.playbackType ||
-  (activeEpisode?.masterPlaylistUrl ? 'hls' : undefined) ||
-  (activeEpisode?.video_url || activeEpisode?.sourceUrl ? 'mp4' : undefined);
-const moviePlaybackType =
-  selectedPart?.playbackType ||
-  movie?.playbackType ||
-  (selectedPart?.masterPlaylistUrl ? 'hls' : undefined) ||
-  (movie?.masterPlaylistUrl ? 'hls' : undefined) ||
-  (selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl ? 'mp4' : undefined);
-const playbackType =
-  movie?.contentType === 'series'
-    ? seriesPlaybackType || 'mp4'
-    : moviePlaybackType || 'mp4';
-const seriesPlaybackVideoUrl =
-  playbackType === 'hls'
-    ? (
-        activeEpisode?.masterPlaylistUrl ||
-        activeEpisode?.video_url ||
-        activeEpisode?.sourceUrl ||
-        ''
-      )
-    : (
-        activeEpisode?.video_url ||
-        activeEpisode?.sourceUrl ||
-        activeEpisode?.masterPlaylistUrl ||
-        ''
-      );
+const playbackType = 'mp4';
+const seriesPlaybackVideoUrl = activeEpisode?.video_url || activeEpisode?.sourceUrl || '';
+const seriesPlaybackFallbackUrl =
+  activeEpisode?.sourceUrl && activeEpisode.sourceUrl !== seriesPlaybackVideoUrl
+    ? activeEpisode.sourceUrl
+    : '';
 const moviePlaybackVideoUrl =
-  playbackType === 'hls'
-    ? (
-        selectedPart?.masterPlaylistUrl ||
-        selectedPart?.video_url ||
-        selectedPart?.sourceUrl ||
-        movie?.masterPlaylistUrl ||
-        movie?.video_url ||
-        movie?.sourceUrl ||
-        ''
-      )
-    : (
-        selectedPart?.video_url ||
-        selectedPart?.sourceUrl ||
-        movie?.video_url ||
-        movie?.sourceUrl ||
-        selectedPart?.masterPlaylistUrl ||
-        movie?.masterPlaylistUrl ||
-        ''
-      );
+  selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl || '';
+const moviePlaybackFallbackUrl =
+  selectedPart?.sourceUrl && selectedPart.sourceUrl !== moviePlaybackVideoUrl
+    ? selectedPart.sourceUrl
+    : movie?.sourceUrl && movie.sourceUrl !== moviePlaybackVideoUrl
+      ? movie.sourceUrl
+      : '';
 const playbackVideoUrl =
   movie?.contentType === 'series'
     ? seriesPlaybackVideoUrl
     : moviePlaybackVideoUrl;
 const playbackFallbackUrl =
   movie?.contentType === 'series'
-    ? (
-        activeEpisode?.video_url ||
-        activeEpisode?.sourceUrl ||
-        ''
-      )
-    : (
-        selectedPart?.video_url ||
-        selectedPart?.sourceUrl ||
-        movie?.video_url ||
-        movie?.sourceUrl ||
-        ''
-      );
+    ? seriesPlaybackFallbackUrl
+    : moviePlaybackFallbackUrl;
 const playbackPoster =
   selectedPart?.poster ||
   selectedPart?.thumbnail ||
@@ -489,6 +454,16 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 
   return normalizedTitle;
 };
+const syncPartSelection = (partIndex: number) => {
+  setSelectedPartIndex(partIndex);
+
+  const nextParams = new URLSearchParams(searchQueryString);
+  nextParams.set('part', String(partIndex + 1));
+
+  if (nextParams.toString() !== searchQueryString) {
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  }
+};
 const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
   setSelectedSeasonNumber(seasonNumber);
   setSelectedEpisodeNumber(episodeNumber);
@@ -496,6 +471,7 @@ const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
   const nextParams = new URLSearchParams(searchQueryString);
   nextParams.set('season', String(seasonNumber));
   nextParams.set('episode', String(episodeNumber));
+  nextParams.delete('part');
 
   if (nextParams.toString() !== searchQueryString) {
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
@@ -512,164 +488,46 @@ const playbackSessionKey = activeEpisode
     ? `part-${selectedPartIndex}-${playbackVideoUrl || 'no-source'}`
     : `${movie?.id || 'movie'}-${playbackVideoUrl || 'no-source'}`;
 
-useEffect(() => {
-  setIsVideoError(false);
+const currentMovieHref = movie
+  ? movie.contentType === 'series' && selectedSeason && selectedEpisode
+    ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
+    : movie.parts && movie.parts.length > 0
+      ? `/movie/${movie.id}?part=${selectedPartIndex + 1}`
+      : `/movie/${movie.id}`
+  : '/';
 
-  const videoElement = videoRef.current;
-
-  if (!videoElement) {
+useLayoutEffect(() => {
+  if (!movie) {
     return;
   }
 
-  if (!playbackVideoUrl) {
-    videoElement.pause();
-    videoElement.removeAttribute('src');
-    videoElement.load();
+  if (isPlaybackLocked || !playbackVideoUrl) {
+    setPlaybackSource(null);
     return;
   }
 
-  videoElement.pause();
-  videoElement.removeAttribute('src');
-  videoElement.load();
-
-  if (playbackType === 'hls' && playbackVideoUrl.endsWith('.m3u8')) {
-    if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
-      videoElement.src = playbackVideoUrl;
-      videoElement.load();
-      return;
-    }
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        console.error('[movie-page] hls error', {
-          playbackVideoUrl,
-          type: data.type,
-          details: data.details,
-          fatal: data.fatal,
-        });
-
-        if (data.fatal) {
-          hls.destroy();
-
-          if (playbackFallbackUrl && playbackFallbackUrl !== playbackVideoUrl) {
-            videoElement.src = playbackFallbackUrl;
-            videoElement.load();
-            return;
-          }
-
-          setIsVideoError(true);
-        }
-      });
-      hls.loadSource(playbackVideoUrl);
-      hls.attachMedia(videoElement);
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-        console.log('[movie-page] hls manifest parsed', {
-          playbackVideoUrl,
-          levels: data.levels?.length || 0,
-        });
-      });
-
-      return () => {
-        hls.destroy();
-      };
-    }
-
-    if (playbackFallbackUrl && playbackFallbackUrl !== playbackVideoUrl) {
-      videoElement.src = playbackFallbackUrl;
-      videoElement.load();
-      return;
-    }
-  }
-
-  videoElement.src = playbackVideoUrl;
-  videoElement.load();
-
-  return () => {
-    videoElement.pause();
-    videoElement.removeAttribute('src');
-    videoElement.load();
-  };
-}, [playbackSessionKey, playbackType, playbackVideoUrl, playbackFallbackUrl]);
-
-useEffect(() => {
-  if (!playbackVideoUrl) {
-    console.error('[movie-page] no playback URL found', {
-      movieId: movie?.id,
-      movieMasterPlaylistUrl: movie?.masterPlaylistUrl,
-      movieVideoUrl: movie?.video_url,
-      movieSourceUrl: movie?.sourceUrl,
-      partVideoUrl: selectedPart?.video_url,
-      partSourceUrl: selectedPart?.sourceUrl,
-      episodeMasterPlaylistUrl: activeEpisode?.masterPlaylistUrl,
-      episodeVideoUrl: activeEpisode?.video_url,
-      episodeSourceUrl: activeEpisode?.sourceUrl,
-    });
-    return;
-  }
-
-  console.log('[movie-page] resolved playback source', {
-    movieId: movie?.id,
-    playbackType,
-    playbackVideoUrl,
+  setPlaybackSource({
+    sessionKey: playbackSessionKey,
+    movieId: movie.movieId || movie.id,
+    sourceUrl: playbackVideoUrl,
+    fallbackUrl: playbackFallbackUrl || '',
+    poster: playbackPoster,
+    title: playbackTitle || movie.title || movie.name || 'UG Movies 247',
+    description: playbackDescription,
+    watchHref: currentMovieHref,
   });
 }, [
-  movie?.id,
-  movie?.masterPlaylistUrl,
-  movie?.video_url,
-  movie?.sourceUrl,
-  selectedPart?.video_url,
-  selectedPart?.sourceUrl,
-  activeEpisode?.masterPlaylistUrl,
-  activeEpisode?.video_url,
-  activeEpisode?.sourceUrl,
-  playbackType,
+  currentMovieHref,
+  isPlaybackLocked,
+  movie,
+  playbackDescription,
+  playbackFallbackUrl,
+  playbackPoster,
+  playbackSessionKey,
+  playbackTitle,
   playbackVideoUrl,
+  setPlaybackSource,
 ]);
-
-useEffect(() => {
-  if (movie?.contentType !== 'series' || !selectedSeason || !activeEpisode) {
-    return;
-  }
-
-  console.log('[movie-page] active series episode', {
-    movieId: movie.id,
-    seasonNumber: selectedSeason.seasonNumber,
-    episodeNumber: activeEpisode.episodeNumber,
-    title: activeEpisode.title,
-    description: activeEpisode.description,
-    overview: activeEpisode.overview,
-    playbackVideoUrl,
-  });
-}, [
-  movie?.contentType,
-  movie?.id,
-  selectedSeason?.seasonNumber,
-  activeEpisode?.episodeNumber,
-  activeEpisode?.title,
-  activeEpisode?.description,
-  activeEpisode?.overview,
-  playbackVideoUrl,
-]);
-
-const handleVideoError = () => {
-const videoElement = videoRef.current;
-
-console.error(`HTML5 Player crashed attempting to load: ${playbackVideoUrl}`);
-
-if (
-  videoElement &&
-  playbackFallbackUrl &&
-  playbackFallbackUrl !== playbackVideoUrl &&
-  videoElement.currentSrc !== playbackFallbackUrl
-) {
-  videoElement.src = playbackFallbackUrl;
-  videoElement.load();
-  return;
-}
-
-setIsVideoError(true);
-};
 
 const handleDownload = async () => {
   if (!movie) {
@@ -814,6 +672,8 @@ const handleShare = async () => {
   const shareTarget =
     movie.contentType === 'series' && selectedSeason && selectedEpisode
       ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
+      : movie.parts && movie.parts.length > 0
+        ? `/movie/${movie.id}?part=${selectedPartIndex + 1}`
       : `/movie/${movie.movieId || movie.id}`;
   const shareUrl = `${window.location.origin}${shareTarget}`;
   const shareData = {
@@ -852,7 +712,7 @@ const handleCast = async () => {
 
   try {
     const message = await startCasting({
-      videoElement: videoRef.current,
+      videoElement,
       playbackUrl: playbackVideoUrl,
       title: playbackTitle || movie?.title || movie?.name || 'UG Movies 247',
       poster: playbackPoster,
@@ -872,13 +732,8 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 404 PAYLOAD NOT FOUND </main>
 );
 
-const currentMovieHref =
-  movie.contentType === 'series' && selectedSeason && selectedEpisode
-    ? `/movie/${movie.id}?season=${selectedSeason.seasonNumber}&episode=${selectedEpisode.episodeNumber}`
-    : `/movie/${movie.id}`;
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const hasPlaybackSource = Boolean(playbackVideoUrl);
-const shouldShowPlaybackError = !isPlaybackLocked && (!hasPlaybackSource || isVideoError);
 
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
 
@@ -944,33 +799,21 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         </div>
       </div>
     ) : (
-      <>
-        <video
-          ref={videoRef}
-          key={playbackSessionKey}
-          poster={playbackPoster}
-          controls
-          preload="metadata"
-          playsInline
-          crossOrigin="anonymous"
-          className={`w-full h-full object-contain ${shouldShowPlaybackError ? 'opacity-20' : ''}`}
-          onLoadedData={() => setIsVideoError(false)}
-          onError={handleVideoError}
-        />
-        {shouldShowPlaybackError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/58 px-6 text-center">
-            <div className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-[#FFB3C1]">
-              Playback Error
-            </div>
-            <p className="mt-4 text-sm font-bold uppercase tracking-[0.18em] text-white md:text-base">
-              {hasPlaybackSource ? 'Video failed to load' : 'This episode has no playable source yet'}
-            </p>
-            <p className="mt-3 max-w-lg text-xs leading-6 text-white/70 md:text-sm">
-              Pick another episode or try this one again. Switching to a working episode will reset the player cleanly.
-            </p>
+      hasPlaybackSource ? (
+        <PersistentPlaybackHost active className="h-full w-full" />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/58 px-6 text-center">
+          <div className="rounded-full border border-white/12 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/78">
+            Video Unavailable
           </div>
-        )}
-      </>
+          <p className="mt-4 text-sm font-bold uppercase tracking-[0.18em] text-white md:text-base">
+            This episode has no playable source yet
+          </p>
+          <p className="mt-3 max-w-lg text-xs leading-6 text-white/70 md:text-sm">
+            Try another episode or come back shortly after processing finishes.
+          </p>
+        </div>
+      )
     )}
   </div>
 
@@ -1075,7 +918,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             .map((part, partIndex) => (
               <button
                 key={`${movie.id}-part-${part.id}`}
-                onClick={() => setSelectedPartIndex(partIndex)}
+                onClick={() => syncPartSelection(partIndex)}
                 className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap border transition-colors ${
                   selectedPartIndex === partIndex
                     ? 'bg-[#D90429] border-[#D90429] text-white'

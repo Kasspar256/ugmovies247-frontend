@@ -3,6 +3,7 @@ import AuthGate from '@/components/AuthGate';
 import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import { PlaybackProvider } from '@/components/player/PlaybackProvider';
 
 export const metadata = {
   title: 'UgMovies247 | Premium VJ Translated Movies',
@@ -26,15 +27,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="min-h-screen overflow-x-hidden bg-[#0B0C10] text-white antialiased">
-        <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
-          <AuthGate>
-            <AppChrome>{children}</AppChrome>
-          </AuthGate>
-          <EnvironmentBadge />
-        </main>
-        <MobileBottomNav />
+        <PlaybackProvider>
+          <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
+            <AuthGate>
+              <AppChrome>{children}</AppChrome>
+            </AuthGate>
+            <EnvironmentBadge />
+          </main>
+          <MobileBottomNav />
+        </PlaybackProvider>
       </body>
     </html>
   );
 }
-

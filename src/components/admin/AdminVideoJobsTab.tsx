@@ -54,6 +54,26 @@ function formatTimestamp(value?: string) {
   return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleString();
 }
 
+function formatBytes(value?: number) {
+  const numericValue = Number(value || 0);
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unitIndex = 0;
+  let size = numericValue;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = unitIndex === 0 ? 0 : size >= 100 ? 0 : size >= 10 ? 1 : 2;
+  return `${size.toFixed(digits)} ${units[unitIndex]}`;
+}
+
 function getStatusTone(status?: VideoJobStatus) {
   switch (status) {
     case 'ready':
@@ -529,6 +549,16 @@ export function AdminVideoJobsTab() {
                 key={job.id}
                 className="rounded-[24px] border border-white/10 bg-black/20 px-4 py-4"
               >
+                {(() => {
+                  const pipelineProgress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+                  const hasDownloadStats = job.status === 'downloading' && Number(job.downloadedBytes || 0) > 0;
+                  const downloadPercent =
+                    typeof job.downloadProgressPercent === 'number' &&
+                    Number.isFinite(job.downloadProgressPercent)
+                      ? Math.max(0, Math.min(100, Number(job.downloadProgressPercent)))
+                      : null;
+
+                  return (
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -556,17 +586,30 @@ export function AdminVideoJobsTab() {
                             ? 'bg-red-500'
                             : job.status === 'ready'
                               ? 'bg-emerald-500'
-                              : 'bg-[#D90429]'
+                            : 'bg-[#D90429]'
                         }`}
                         style={{
-                          width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%`,
+                          width: `${pipelineProgress}%`,
                         }}
                       />
                     </div>
 
                     <div className="mt-2 text-xs leading-6 text-white/55">
-                      Progress: {Math.max(0, Math.min(100, Number(job.progress || 0)))}%
+                      {hasDownloadStats
+                        ? `Pipeline stage: ${pipelineProgress}%`
+                        : `Progress: ${pipelineProgress}%`}
                     </div>
+
+                    {hasDownloadStats ? (
+                      <div className="text-xs leading-6 text-white/55">
+                        Source download:{' '}
+                        {downloadPercent !== null ? `${downloadPercent}%` : 'In progress'}
+                        {' '}| Downloaded {formatBytes(job.downloadedBytes)}
+                        {Number(job.downloadTotalBytes || 0) > 0
+                          ? ` of ${formatBytes(job.downloadTotalBytes)}`
+                          : ''}
+                      </div>
+                    ) : null}
 
                     <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
                       {['queued', 'downloading', 'inspecting', 'processing', 'uploading', 'ready', 'failed'].map(
@@ -630,6 +673,8 @@ export function AdminVideoJobsTab() {
                     ) : null}
                   </div>
                 </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

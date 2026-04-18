@@ -36,6 +36,12 @@ export type DirectMp4ImportValidation = {
   warningMessage?: string;
 };
 
+export type RemoteDownloadProgress = {
+  downloadedBytes: number;
+  totalBytes: number | null;
+  progressPercent: number | null;
+};
+
 function getHttpModule(url: URL) {
   return url.protocol === 'https:' ? https : http;
 }
@@ -83,6 +89,14 @@ function decodePathnameFileName(url: URL) {
 
 function looksLikeDirectMp4Url(url: URL) {
   return decodeURIComponent(url.pathname || '').toLowerCase().endsWith('.mp4');
+}
+
+function looksLikeMp4FileSignature(sample: Buffer | null | undefined) {
+  if (!sample || sample.length < 12) {
+    return false;
+  }
+
+  return sample.subarray(4, 8).toString('ascii').toLowerCase() === 'ftyp';
 }
 
 function normalizeFormatName(value: string) {
@@ -216,19 +230,41 @@ async function assertSafeRemoteUrlTarget(url: URL) {
 function validateDirectMp4Headers(
   remoteUrl: URL,
   headers: IncomingHttpHeaders,
-  maxFileSizeBytes: number
+  maxFileSizeBytes: number,
+  sampleBytes?: Buffer | null,
+  options?: { allowAmbiguousBinaryHeaders?: boolean }
 ) {
   const contentType = getLowerCaseHeaderValue(headers, 'content-type');
   const contentLength = parseContentLength(headers);
   const isOctetStream = contentType.includes('application/octet-stream');
   const isVideoMp4 = contentType.includes('video/mp4');
+  const isApplicationMp4 = contentType.includes('application/mp4');
+  const isQuicktime = contentType.includes('video/quicktime');
   const isPathMp4 = looksLikeDirectMp4Url(remoteUrl);
+  const sampleLooksLikeMp4 = looksLikeMp4FileSignature(sampleBytes);
+  const clearlyUnsupportedContentType =
+    contentType.includes('text/') ||
+    contentType.includes('application/json') ||
+    contentType.includes('application/xml') ||
+    contentType.includes('text/html') ||
+    contentType.includes('image/');
 
-  if (
-    (!contentType && !isPathMp4) ||
-    (contentType && !isVideoMp4 && !isOctetStream) ||
-    (isOctetStream && !isPathMp4)
-  ) {
+  if (clearlyUnsupportedContentType) {
+    throw new Error('Only direct MP4 source links are supported.');
+  }
+
+  if (!isVideoMp4 && !isApplicationMp4 && !isQuicktime && !isPathMp4 && !sampleLooksLikeMp4) {
+    if ((!contentType || isOctetStream) && options?.allowAmbiguousBinaryHeaders) {
+      return {
+        contentType,
+        contentLength,
+      };
+    }
+
+    if (!contentType || isOctetStream) {
+      throw new Error('Only direct MP4 source links are supported.');
+    }
+
     throw new Error('Only direct MP4 source links are supported.');
   }
 
@@ -333,16 +369,35 @@ async function withSafeRemoteResponse<T>(
   });
 }
 
+async function readResponseSample(response: IncomingMessage, maxBytes: number) {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of response) {
+    const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    chunks.push(bufferChunk);
+    totalBytes += bufferChunk.length;
+
+    if (totalBytes >= maxBytes) {
+      break;
+    }
+  }
+
+  return Buffer.concat(chunks).subarray(0, maxBytes);
+}
+
 function buildDirectMp4ValidationResult(
   finalUrl: string,
   headers: IncomingHttpHeaders,
-  maxFileSizeBytes: number
+  maxFileSizeBytes: number,
+  sampleBytes?: Buffer | null
 ): DirectMp4ImportValidation {
   const parsedUrl = new URL(finalUrl);
   const { contentType, contentLength } = validateDirectMp4Headers(
     parsedUrl,
     headers,
-    maxFileSizeBytes
+    maxFileSizeBytes,
+    sampleBytes
   );
 
   return {
@@ -398,15 +453,20 @@ export async function validateDirectMp4ImportSource(
       return withSafeRemoteResponse(
         parsedUrl.toString(),
         {
-          method: 'GET',
-          headers: {
-            Range: 'bytes=0-0',
-          },
-          timeoutMs: DIRECT_URL_IMPORT_PROBE_TIMEOUT_MS,
+        method: 'GET',
+        headers: {
+            Range: 'bytes=0-4095',
         },
+        timeoutMs: DIRECT_URL_IMPORT_PROBE_TIMEOUT_MS,
+      },
         async ({ response, finalUrl }) => {
-          response.resume();
-          return buildDirectMp4ValidationResult(finalUrl, response.headers, maxFileSizeBytes);
+          const sampleBytes = await readResponseSample(response, 4096);
+          return buildDirectMp4ValidationResult(
+            finalUrl,
+            response.headers,
+            maxFileSizeBytes,
+            sampleBytes
+          );
         }
       );
     }
@@ -418,7 +478,10 @@ export async function validateDirectMp4ImportSource(
 async function downloadToFile(
   remoteUrl: string,
   targetPath: string,
-  options?: { maxFileSizeBytes?: number }
+  options?: {
+    maxFileSizeBytes?: number;
+    onProgress?: (progress: RemoteDownloadProgress) => void | Promise<void>;
+  }
 ): Promise<void> {
   const maxFileSizeBytes = options?.maxFileSizeBytes || DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES;
 
@@ -430,15 +493,54 @@ async function downloadToFile(
     },
     async ({ response, finalUrl }) => {
       const parsedUrl = new URL(finalUrl);
-      validateDirectMp4Headers(parsedUrl, response.headers, maxFileSizeBytes);
+      validateDirectMp4Headers(parsedUrl, response.headers, maxFileSizeBytes, null, {
+        allowAmbiguousBinaryHeaders: true,
+      });
 
       const writeStream = createWriteStream(targetPath);
       let downloadedBytes = 0;
+      const totalBytes = parseContentLength(response.headers);
+      let lastReportedPercent = -1;
+      let lastReportedBytes = 0;
+      let lastReportedAt = 0;
       const overallTimeout = setTimeout(() => {
         response.destroy(
           new Error(`Remote source download exceeded ${REMOTE_DOWNLOAD_TIMEOUT_MS} ms.`)
         );
       }, REMOTE_DOWNLOAD_TIMEOUT_MS);
+
+      const reportProgress = (force = false) => {
+        if (!options?.onProgress) {
+          return;
+        }
+
+        const now = Date.now();
+        const progressPercent =
+          totalBytes && totalBytes > 0
+            ? Math.max(0, Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)))
+            : null;
+
+        const hasMeaningfulByteAdvance = downloadedBytes - lastReportedBytes >= 5 * 1024 * 1024;
+        const hasMeaningfulPercentAdvance =
+          progressPercent !== null && progressPercent >= lastReportedPercent + 1;
+        const hasWaitedLongEnough = now - lastReportedAt >= 5000;
+
+        if (!force && !hasMeaningfulByteAdvance && !hasMeaningfulPercentAdvance && !hasWaitedLongEnough) {
+          return;
+        }
+
+        lastReportedPercent = progressPercent ?? lastReportedPercent;
+        lastReportedBytes = downloadedBytes;
+        lastReportedAt = now;
+
+        void Promise.resolve(
+          options.onProgress({
+            downloadedBytes,
+            totalBytes,
+            progressPercent,
+          })
+        ).catch(() => undefined);
+      };
 
       response.on('data', (chunk: Buffer) => {
         downloadedBytes += chunk.length;
@@ -452,6 +554,8 @@ async function downloadToFile(
             )
           );
         }
+
+        reportProgress(false);
       });
 
       response.setTimeout(REMOTE_DOWNLOAD_INACTIVITY_TIMEOUT_MS, () => {
@@ -464,6 +568,7 @@ async function downloadToFile(
 
       try {
         await pipeline(response, writeStream);
+        reportProgress(true);
       } finally {
         clearTimeout(overallTimeout);
       }
@@ -474,7 +579,10 @@ async function downloadToFile(
 export async function downloadRemoteSource(
   remoteUrl: string,
   targetPath: string,
-  options?: { maxFileSizeBytes?: number }
+  options?: {
+    maxFileSizeBytes?: number;
+    onProgress?: (progress: RemoteDownloadProgress) => void | Promise<void>;
+  }
 ) {
   await ensureParentDir(targetPath);
   const r2ObjectKey = getR2ObjectKeyFromPublicUrl(remoteUrl);

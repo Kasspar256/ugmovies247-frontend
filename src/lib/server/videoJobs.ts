@@ -22,7 +22,11 @@ import {
   VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER,
   VIDEO_SOURCE_DIR,
 } from './env';
-import { downloadRemoteSource, isSupportedInputMp4Format } from './downloadSource';
+import {
+  downloadRemoteSource,
+  isSupportedInputMp4Format,
+  type RemoteDownloadProgress,
+} from './downloadSource';
 import { getFreeDiskSpace } from './system';
 import {
   inspectDirectVideoSource,
@@ -156,6 +160,9 @@ export async function createVideoJob(
     queueOrder: Date.now(),
     status: 'queued',
     progress: 0,
+    downloadedBytes: 0,
+    downloadTotalBytes: 0,
+    downloadProgressPercent: null,
     createdAt: now,
     updatedAt: now,
     retryCount: 0,
@@ -171,6 +178,9 @@ export async function retryVideoJob(jobId: string) {
     {
       status: 'queued',
       progress: 0,
+      downloadedBytes: 0,
+      downloadTotalBytes: 0,
+      downloadProgressPercent: null,
       queueOrder: Date.now(),
       errorMessage: '',
       startedAt: '',
@@ -189,6 +199,9 @@ export async function cancelVideoJob(jobId: string) {
     {
       status: 'failed',
       progress: 0,
+      downloadedBytes: 0,
+      downloadTotalBytes: 0,
+      downloadProgressPercent: null,
       errorMessage: ADMIN_CANCELLED_MESSAGE,
       timeoutAt: '',
       updatedAt: isoNow(),
@@ -568,7 +581,10 @@ async function updateLinkedAssetStage(
   await patchMovieAsset(job.target, assetMetadata);
 }
 
-async function resolveLocalSource(job: VideoJobDocument) {
+async function resolveLocalSource(
+  job: VideoJobDocument,
+  options?: { onProgress?: (progress: RemoteDownloadProgress) => void | Promise<void> }
+) {
   const { sourceDirectory } = getJobWorkspace(job.id!);
   await fs.mkdir(sourceDirectory, { recursive: true });
 
@@ -585,6 +601,7 @@ async function resolveLocalSource(job: VideoJobDocument) {
     return downloadRemoteSource(job.sourceUrl || '', targetPath, {
       maxFileSizeBytes:
         job.sourceType === 'direct_url' ? DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES : undefined,
+      onProgress: options?.onProgress,
     });
   }
 
@@ -614,11 +631,20 @@ async function ensureDiskSafetyBeforeProcessing(sourceFileSizeBytes: number) {
 }
 
 async function inspectImportedMp4(localSourcePath: string) {
-  const inspection = await inspectDirectVideoSource(localSourcePath);
+  let inspection;
+
+  try {
+    inspection = await inspectDirectVideoSource(localSourcePath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown media inspection failure.';
+    throw new Error(
+      `The downloaded file could not be parsed as a valid MP4 on the VPS. ${message}`
+    );
+  }
 
   if (!isSupportedInputMp4Format(inspection.formatName || '')) {
     throw new Error(
-      'The downloaded source was not a usable MP4 container. Only direct MP4 links are supported right now.'
+      `The downloaded source was not a usable MP4 container. Detected format: ${inspection.formatName || 'unknown'}. Only direct MP4 links are supported right now.`
     );
   }
 
@@ -674,18 +700,67 @@ export async function processNextVideoJob() {
 
   try {
     await touchWorkerHeartbeat(job.id!);
+    await updateJobState(job.id!, {
+      status: 'downloading',
+      progress: 10,
+      downloadedBytes: 0,
+      downloadTotalBytes: 0,
+      downloadProgressPercent: null,
+    });
     await updateLinkedAssetStage(job, 'downloading', 10, {
       video_url: '',
       processedAt: '',
       errorMessage: '',
     });
 
-    const source = await resolveLocalSource(job);
+    let lastDownloadProgress = 10;
+    let lastDownloadUpdateAt = 0;
+    const handleDownloadProgress = async (progress: RemoteDownloadProgress) => {
+      const now = Date.now();
+      const nextProgress =
+        typeof progress.progressPercent === 'number'
+          ? Math.max(10, Math.min(34, 10 + Math.round(progress.progressPercent * 0.24)))
+          : lastDownloadProgress;
+      const shouldWrite =
+        nextProgress > lastDownloadProgress ||
+        now - lastDownloadUpdateAt >= 5000 ||
+        progress.progressPercent === 100;
+
+      if (!shouldWrite) {
+        return;
+      }
+
+      lastDownloadProgress = Math.max(lastDownloadProgress, nextProgress);
+      lastDownloadUpdateAt = now;
+
+      await updateJobState(job.id!, {
+        status: 'downloading',
+        progress: lastDownloadProgress,
+        downloadedBytes: progress.downloadedBytes,
+        downloadTotalBytes: progress.totalBytes || 0,
+        downloadProgressPercent:
+          typeof progress.progressPercent === 'number' ? progress.progressPercent : null,
+      });
+    };
+
+    const source = await resolveLocalSource(job, {
+      onProgress: handleDownloadProgress,
+    });
     await throwIfJobWasCancelled(job.id!);
     await touchWorkerHeartbeat(job.id!);
+    await appendJobLog(
+      job.id!,
+      `Source download completed (${Math.round(source.fileSizeBytes / (1024 * 1024))} MB).`
+    );
 
     await ensureDiskSafetyBeforeProcessing(source.fileSizeBytes);
-    await updateJobState(job.id!, { status: 'inspecting', progress: 35 });
+    await updateJobState(job.id!, {
+      status: 'inspecting',
+      progress: 35,
+      downloadedBytes: source.fileSizeBytes,
+      downloadTotalBytes: source.fileSizeBytes,
+      downloadProgressPercent: 100,
+    });
     await updateLinkedAssetStage(job, 'inspecting', 35, {
       sourceFileName: source.sourceFileName,
       fileSizeBytes: source.fileSizeBytes,
@@ -696,6 +771,10 @@ export async function processNextVideoJob() {
     const sourceInspection = await inspectImportedMp4(source.path);
     await throwIfJobWasCancelled(job.id!);
     await touchWorkerHeartbeat(job.id!);
+    await appendJobLog(
+      job.id!,
+      `Detected source format ${sourceInspection.formatName || 'unknown'} with video codec ${sourceInspection.codecName || 'unknown'}${sourceInspection.audioCodecName ? ` and audio codec ${sourceInspection.audioCodecName}` : ''}.`
+    );
 
     await updateJobState(job.id!, { status: 'processing', progress: 60 });
     await updateLinkedAssetStage(job, 'processing', 60, {
