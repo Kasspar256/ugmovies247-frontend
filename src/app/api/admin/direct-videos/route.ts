@@ -11,7 +11,7 @@ import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { createVideoJob } from '@/lib/server/videoJobs';
 import type { SourcePipeline } from '@/types/videoJobs';
-import type { Season } from '@/types/movie';
+import type { MovieDocument, Season } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,7 +69,7 @@ function normalizeImportedSourceFileName(fileName: string, fallback: string) {
   return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
 }
 
-function normalizeDirectMetadata(input?: AdminMovieMetadata) {
+function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
   const categories = input?.category || [];
   const isTrendingTikTok =
     Boolean(input?.isTrendingTikTok) ||
