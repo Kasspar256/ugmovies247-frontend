@@ -34,6 +34,7 @@ import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import {
   AdminTab,
   CategoryDraft,
+  DraftVideoSource,
   MovieDraft,
   SeriesDraft,
   createEmptyMovieDraft,
@@ -545,7 +546,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
   };
 
   const resolveVideoSource = async (
-    source: { mode: 'url' | 'file'; url: string; file: File | null },
+    source: DraftVideoSource,
     onProgress?: (progress: number) => void,
     onDiagnostic?: (message: string) => void,
     stage: 'final' | 'library' | 'staging' = 'final'
