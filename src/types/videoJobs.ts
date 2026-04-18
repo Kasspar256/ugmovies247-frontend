@@ -2,23 +2,25 @@ export type PlaybackType = 'mp4' | 'hls';
 export type SourcePipeline =
   | 'hls_pipeline'
   | 'direct_upload'
+  | 'direct_url_import'
   | 'remote_mkv_to_mp4'
   | 'remote_mp4_ingest';
 
 export type VideoJobStatus =
   | 'queued'
-  | 'validating'
   | 'downloading'
-  | 'uploading_source'
-  | 'transcoding'
-  | 'packaging'
-  | 'uploading_hls'
+  | 'inspecting'
+  | 'processing'
+  | 'uploading'
   | 'ready'
-  | 'failed'
-  | 'cancelled';
+  | 'failed';
 
-export type SourceType = 'upload' | 'remote_link' | 'direct_upload';
-export type VideoJobType = 'hls_transcode' | 'direct_mp4_upload' | 'remote_mkv_to_mp4';
+export type SourceType = 'upload' | 'remote_link' | 'direct_upload' | 'direct_url';
+export type VideoJobType =
+  | 'hls_transcode'
+  | 'direct_mp4_upload'
+  | 'direct_url_import'
+  | 'remote_mkv_to_mp4';
 
 export type VideoRendition = {
   name: '360p' | '480p' | '720p' | '1080p';
@@ -90,6 +92,7 @@ export type VideoJobDocument = {
   processedAt?: string;
   retryCount?: number;
   timeoutAt?: string;
+  workerHeartbeatAt?: string;
   output?: {
     playbackType?: PlaybackType;
     masterPlaylistUrl?: string;
@@ -100,5 +103,7 @@ export type VideoJobDocument = {
       height: number;
     } | null;
     fileSizeBytes?: number;
+    r2ObjectKey?: string;
+    playbackUrl?: string;
   };
 };

@@ -878,7 +878,7 @@ type ManagedLibraryAssetDocument = {
   url?: string;
   key?: string;
   contentType?: string;
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+  sourceType?: 'upload' | 'remote_link' | 'direct_upload' | 'direct_url';
   fileSizeBytes?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -975,7 +975,7 @@ export async function registerLibraryAssetForAdmin(input: {
   key?: string;
   fileSizeBytes?: number;
   contentType?: string;
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+  sourceType?: 'upload' | 'remote_link' | 'direct_upload' | 'direct_url';
 }) {
   const url = input.url.trim();
   const fileName = input.fileName.trim();

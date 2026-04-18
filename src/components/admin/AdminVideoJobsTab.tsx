@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Loader2, RefreshCw, RotateCcw, SquareX } from 'lucide-react';
+import { CheckCircle2, Loader2, RefreshCw, RotateCcw, SquareX, UploadCloud } from 'lucide-react';
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import type { VideoJobDocument, VideoJobStatus } from '@/types/videoJobs';
 import { Card, StatTile, TextInput } from '@/components/admin/controlCenterFields';
@@ -60,8 +60,6 @@ function getStatusTone(status?: VideoJobStatus) {
       return 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
     case 'failed':
       return 'border border-red-500/25 bg-red-500/10 text-red-100';
-    case 'cancelled':
-      return 'border border-amber-500/25 bg-amber-500/10 text-amber-100';
     default:
       return 'border border-sky-500/20 bg-sky-500/10 text-sky-100';
   }
@@ -82,11 +80,10 @@ function getTargetLabel(job: VideoJobDocument) {
 function isCancelable(status?: VideoJobStatus) {
   return (
     status === 'queued' ||
-    status === 'validating' ||
     status === 'downloading' ||
-    status === 'packaging' ||
-    status === 'transcoding' ||
-    status === 'uploading_source'
+    status === 'inspecting' ||
+    status === 'processing' ||
+    status === 'uploading'
   );
 }
 
@@ -196,15 +193,13 @@ export function AdminVideoJobsTab() {
           counts.ready += 1;
         } else if (job.status === 'failed') {
           counts.failed += 1;
-        } else if (job.status === 'cancelled') {
-          counts.cancelled += 1;
         } else {
           counts.active += 1;
         }
 
         return counts;
       },
-      { active: 0, ready: 0, failed: 0, cancelled: 0 }
+      { active: 0, ready: 0, failed: 0 }
     );
   }, [jobs]);
 
@@ -282,7 +277,7 @@ export function AdminVideoJobsTab() {
         throw new Error(payload.error || 'Failed to cancel the job.');
       }
 
-      setStatusMessage('The job was cancelled.');
+      setStatusMessage('The job was stopped and marked as failed.');
       await loadJobs(false);
     } catch (error) {
       setJobErrorMessage(error instanceof Error ? error.message : 'Failed to cancel the job.');
@@ -361,7 +356,7 @@ export function AdminVideoJobsTab() {
 
       <Card
         title="Processing Queue"
-        description="Monitor queued, active, failed, and ready MP4 processing jobs without opening the terminal."
+        description="Monitor queued, downloading, inspecting, processing, uploading, failed, and ready MP4 import jobs without opening the terminal."
         action={
           <button
             type="button"
@@ -377,7 +372,11 @@ export function AdminVideoJobsTab() {
           <StatTile title="Active / Queued" value={jobCounts.active} icon={<Loader2 size={16} />} />
           <StatTile title="Ready" value={jobCounts.ready} icon={<CheckCircle2 size={16} />} />
           <StatTile title="Failed" value={jobCounts.failed} icon={<RotateCcw size={16} />} />
-          <StatTile title="Cancelled" value={jobCounts.cancelled} icon={<SquareX size={16} />} />
+          <StatTile
+            title="Uploading"
+            value={jobs.filter((job) => job.status === 'uploading').length}
+            icon={<UploadCloud size={16} />}
+          />
         </div>
 
         <div className="mt-5 rounded-[24px] border border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(23,9,13,0.9),rgba(17,20,28,0.96))] p-4">
@@ -569,6 +568,23 @@ export function AdminVideoJobsTab() {
                       Progress: {Math.max(0, Math.min(100, Number(job.progress || 0)))}%
                     </div>
 
+                    <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                      {['queued', 'downloading', 'inspecting', 'processing', 'uploading', 'ready', 'failed'].map(
+                        (stage) => (
+                          <span
+                            key={stage}
+                            className={`rounded-full border px-2 py-1 ${
+                              job.status === stage
+                                ? 'border-[#D90429]/30 bg-[#D90429]/12 text-[#FFD7DF]'
+                                : 'border-white/10 bg-white/5 text-white/40'
+                            }`}
+                          >
+                            {stage}
+                          </span>
+                        )
+                      )}
+                    </div>
+
                     {job.errorMessage ? (
                       <div className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3 text-xs leading-6 text-red-100">
                         {job.errorMessage}
@@ -590,7 +606,7 @@ export function AdminVideoJobsTab() {
                       <CheckCircle2 size={13} />
                       Open App
                     </Link>
-                    {job.status === 'failed' || job.status === 'cancelled' ? (
+                    {job.status === 'failed' ? (
                       <button
                         type="button"
                         onClick={() => job.id && handleRetry(job.id)}

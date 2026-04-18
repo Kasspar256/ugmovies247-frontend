@@ -1,38 +1,28 @@
 import type { Episode, MovieDocument, MoviePart } from '@/types/movie';
-import type { VideoJobTarget } from '@/types/videoJobs';
+import type {
+  SourcePipeline,
+  SourceType,
+  VideoJobStatus,
+  VideoJobTarget,
+  VideoRendition,
+} from '@/types/videoJobs';
 import { createVideoJob } from '@/lib/server/videoJobs';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 type DirectUploadAsset = {
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
-  sourcePipeline?: 'hls_pipeline' | 'direct_upload' | 'remote_mkv_to_mp4' | 'remote_mp4_ingest';
+  sourceType?: SourceType;
+  sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
   sourceUrl?: string;
   video_url?: string;
-  jobStatus?:
-    | 'queued'
-    | 'validating'
-    | 'downloading'
-    | 'uploading_source'
-    | 'transcoding'
-    | 'packaging'
-    | 'uploading_hls'
-    | 'ready'
-    | 'failed'
-    | 'cancelled';
+  jobStatus?: VideoJobStatus;
   processingProgress?: number;
   errorMessage?: string;
   playbackType?: 'mp4' | 'hls';
   masterPlaylistUrl?: string;
-  availableRenditions?: Array<{
-    name: '360p' | '480p' | '720p' | '1080p';
-    width: number;
-    height: number;
-    bitrateKbps: number;
-    playlistUrl?: string;
-  }>;
+  availableRenditions?: VideoRendition[];
   processedAt?: string;
   updatedAt?: string;
 };
@@ -73,12 +63,10 @@ function normalizeDirectUploadSourceType(value: DirectUploadAsset['sourceType'])
 function isInFlightJobStatus(status: DirectUploadAsset['jobStatus']) {
   return (
     status === 'queued' ||
-    status === 'validating' ||
     status === 'downloading' ||
-    status === 'uploading_source' ||
-    status === 'transcoding' ||
-    status === 'packaging' ||
-    status === 'uploading_hls'
+    status === 'inspecting' ||
+    status === 'processing' ||
+    status === 'uploading'
   );
 }
 
@@ -396,4 +384,3 @@ export async function queueLegacyDirectUploadRepairs(options?: {
     affectedMovieIds,
   };
 }
-

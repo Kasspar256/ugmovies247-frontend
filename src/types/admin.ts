@@ -95,7 +95,7 @@ export type AdminLibraryAsset = {
   fileName: string;
   url: string;
   contentType: string;
-  sourceType: 'upload' | 'remote_link' | 'direct_upload';
+  sourceType: 'upload' | 'remote_link' | 'direct_upload' | 'direct_url';
   fileSizeBytes: number;
   createdAt: string;
   updatedAt: string;

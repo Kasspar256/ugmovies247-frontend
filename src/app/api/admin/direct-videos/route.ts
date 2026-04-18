@@ -3,7 +3,13 @@ import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { extractMovieData } from '@/lib/movieUtils';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
+import {
+  prepareMovieDocumentForDirectUploadProcessing,
+  queuePreparedDirectUploadJobs,
+} from '@/lib/server/adminVideoProcessing';
+import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { createVideoJob } from '@/lib/server/videoJobs';
 import type { SourcePipeline } from '@/types/videoJobs';
 import type { Season } from '@/types/movie';
 
@@ -50,53 +56,17 @@ function inferRemoteSourcePipeline(_remoteUrl: string): SourcePipeline {
 }
 
 async function validateRemoteVideoUrl(remoteUrl: string) {
-  let parsedUrl: URL;
+  await validateDirectMp4ImportSource(remoteUrl);
+}
 
-  try {
-    parsedUrl = new URL(remoteUrl);
-  } catch {
-    throw new Error(`Invalid video URL: ${remoteUrl}`);
+function normalizeImportedSourceFileName(fileName: string, fallback: string) {
+  const normalized = String(fileName || '').trim();
+
+  if (!normalized) {
+    return fallback;
   }
 
-  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-    throw new Error(`Unsupported video URL protocol: ${remoteUrl}`);
-  }
-
-  const normalizedUrl = remoteUrl.toLowerCase();
-
-  if (normalizedUrl.endsWith('.mkv') || normalizedUrl.includes('.mkv?')) {
-    throw new Error('MKV links are no longer supported in the admin. Use an MP4 link instead.');
-  }
-
-  let response = await fetch(remoteUrl, { method: 'HEAD' }).catch(() => null);
-
-  if (!response || !response.ok) {
-    response = await fetch(remoteUrl, {
-      method: 'GET',
-      headers: {
-        Range: 'bytes=0-0',
-      },
-    }).catch(() => null);
-  }
-
-  if (!response || !response.ok) {
-    throw new Error(`Video source is not reachable: ${remoteUrl}`);
-  }
-
-  const contentType = (response.headers.get('content-type') || '').toLowerCase();
-
-  if (contentType.includes('matroska')) {
-    throw new Error('MKV links are no longer supported in the admin. Use an MP4 link instead.');
-  }
-
-  if (
-    contentType &&
-    !contentType.startsWith('video/') &&
-    !contentType.includes('octet-stream') &&
-    !normalizedUrl.endsWith('.mp4')
-  ) {
-    throw new Error(`Video URL does not appear to be a direct MP4 source: ${remoteUrl}`);
-  }
+  return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
 }
 
 function normalizeDirectMetadata(input?: AdminMovieMetadata) {
@@ -134,32 +104,51 @@ function normalizeDirectMetadata(input?: AdminMovieMetadata) {
   };
 }
 
-async function createDirectMovieDocument(options: {
+async function queueDirectMovieImport(options: {
   metadata: AdminMovieMetadata;
-  playbackUrl: string;
-  sourceFileName?: string;
-  sourceType: 'direct_upload' | 'remote_link';
-  sourcePipeline: SourcePipeline;
-  sourceUrl?: string;
+  sourceUrl: string;
+  sourceFileName: string;
+  fileSizeBytes?: number | null;
 }) {
   const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
   const moviePayload = {
     movieId: movieRef.id,
     ...normalizeDirectMetadata(options.metadata),
-    sourceType: options.sourceType,
-    sourcePipeline: options.sourcePipeline,
-    sourceFileName: options.sourceFileName || '',
-    sourceUrl: options.sourceUrl || options.playbackUrl,
-    video_url: options.playbackUrl,
-    processedAt: timestamp,
+    sourceType: 'direct_url' as const,
+    sourcePipeline: 'direct_url_import' as const,
+    sourceFileName: options.sourceFileName,
+    sourceUrl: options.sourceUrl,
+    video_url: '',
+    processedAt: '',
+    fileSizeBytes: Number(options.fileSizeBytes || 0),
+    jobStatus: 'queued' as const,
+    processingProgress: 0,
+    errorMessage: '',
     updatedAt: timestamp,
   };
 
   await movieRef.set(moviePayload);
   await upsertMovieInCatalogCache({ id: movieRef.id, ...moviePayload });
 
-  return movieRef.id;
+  const jobId = await createVideoJob({
+    jobType: 'direct_url_import',
+    sourcePipeline: 'direct_url_import',
+    title: moviePayload.title,
+    contentType: 'movie',
+    sourceType: 'direct_url',
+    sourceFileName: options.sourceFileName,
+    sourceUrl: options.sourceUrl,
+    target: {
+      kind: 'movie',
+      movieId: movieRef.id,
+    },
+  });
+
+  return {
+    movieId: movieRef.id,
+    jobId,
+  };
 }
 
 async function createDirectSeriesDocument(options: {
@@ -248,30 +237,46 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing direct playback URL.' }, { status: 400 });
       }
 
-      const movieId = await createDirectMovieDocument({
-        metadata,
-        playbackUrl,
-        sourceFileName,
-        sourceType: 'direct_upload',
-        sourcePipeline: 'direct_upload',
-        sourceUrl,
-      });
+      const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
+      const timestamp = isoNow();
+      const rawMoviePayload = {
+        movieId: movieRef.id,
+        ...normalizeDirectMetadata(metadata),
+        sourceType: 'direct_upload' as const,
+        sourcePipeline: 'direct_upload' as const,
+        sourceFileName: sourceFileName || playbackUrl.split('/').pop() || '',
+        sourceUrl: sourceUrl || playbackUrl,
+        video_url: playbackUrl,
+        processedAt: timestamp,
+        updatedAt: timestamp,
+      };
+      const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(
+        rawMoviePayload,
+        movieRef.id
+      );
 
-      return NextResponse.json({ success: true, movieId });
+      await movieRef.set(preparedMovie.movie);
+      await upsertMovieInCatalogCache({ id: movieRef.id, ...preparedMovie.movie });
+      await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+
+      return NextResponse.json({
+        success: true,
+        movieId: movieRef.id,
+        queuedNormalizationCount: preparedMovie.queuedJobs.length,
+      });
     }
 
-    if (mode === 'existing_link') {
+    if (mode === 'import_link' || mode === 'existing_link') {
       const metadata = body.metadata || {};
-      const playbackUrl = String(body.playbackUrl || '').trim();
-      const extracted = extractMovieData(playbackUrl.split('/').pop() || playbackUrl);
+      const sourceUrl = String(body.playbackUrl || body.sourceUrl || '').trim();
 
-      if (!playbackUrl) {
-        return NextResponse.json({ error: 'Missing existing MP4 link.' }, { status: 400 });
+      if (!sourceUrl) {
+        return NextResponse.json({ error: 'Missing direct MP4 source link.' }, { status: 400 });
       }
 
-      await validateRemoteVideoUrl(playbackUrl);
-
-      const movieId = await createDirectMovieDocument({
+      const validation = await validateDirectMp4ImportSource(sourceUrl);
+      const extracted = extractMovieData(validation.sourceFileName || sourceUrl);
+      const queuedImport = await queueDirectMovieImport({
         metadata: {
           ...metadata,
           title: metadata.title || extracted.title || 'Untitled movie',
@@ -279,14 +284,22 @@ export async function POST(request: Request) {
           vj: metadata.vj || extracted.vj || 'Unknown',
           contentType: 'movie',
         },
-        playbackUrl,
-        sourceFileName: playbackUrl.split('/').pop() || '',
-        sourceType: 'remote_link',
-        sourcePipeline: 'remote_mp4_ingest',
-        sourceUrl: playbackUrl,
+        sourceUrl: validation.finalUrl,
+        sourceFileName: normalizeImportedSourceFileName(
+          validation.sourceFileName,
+          `${Date.now()}.mp4`
+        ),
+        fileSizeBytes: validation.contentLength,
       });
 
-      return NextResponse.json({ success: true, movieId });
+      return NextResponse.json({
+        success: true,
+        movieId: queuedImport.movieId,
+        jobId: queuedImport.jobId,
+        queuedNormalizationCount: 1,
+        status: 'queued',
+        warningMessage: validation.warningMessage || '',
+      });
     }
 
     if (mode === 'series_links') {

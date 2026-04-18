@@ -65,7 +65,7 @@ type ResolvedVideoSource = {
   sourceUrl: string;
   sourceFileName: string;
   fileSizeBytes: number;
-  sourceType: 'direct_upload' | 'remote_link';
+  sourceType: 'direct_upload' | 'remote_link' | 'direct_url';
 };
 
 const EMPTY_ADMIN_REVENUE: AdminControlCenterPayload['revenue'] = {
@@ -574,7 +574,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       sourceUrl: url,
       sourceFileName: url.split('/').pop() || '',
       fileSizeBytes: 0,
-      sourceType: 'remote_link' as const,
+      sourceType: source.sourceType === 'direct_url' ? 'direct_url' : ('remote_link' as const),
     };
   };
 

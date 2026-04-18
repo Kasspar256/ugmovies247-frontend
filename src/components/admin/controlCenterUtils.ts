@@ -16,6 +16,7 @@ export type DraftVideoSource = {
   mode: 'url' | 'file';
   url: string;
   file: File | null;
+  sourceType?: Movie['sourceType'];
 };
 
 export type DraftMoviePart = {
@@ -147,6 +148,7 @@ export function createEmptyVideoSource(): DraftVideoSource {
     mode: 'url',
     url: '',
     file: null,
+    sourceType: 'remote_link',
   };
 }
 
@@ -230,6 +232,11 @@ export function createEmptySeriesDraft(): SeriesDraft {
 }
 
 export function movieToDraft(movie: Movie): MovieDraft {
+  const rootDraftUrl =
+    movie.sourceType === 'direct_url' && !movie.video_url
+      ? ''
+      : movie.video_url || movie.sourceUrl || '';
+
   return {
     title: movie.title || '',
     description: movie.description || movie.overview || '',
@@ -244,14 +251,27 @@ export function movieToDraft(movie: Movie): MovieDraft {
     accessTier: movie.accessTier === 'free' ? 'free' : 'premium',
     isTrendingTikTok: Boolean(movie.is_trending_tiktok),
     categories: movie.category || [],
-    source: { mode: 'url', url: movie.video_url || movie.sourceUrl || '', file: null },
+    source: {
+      mode: 'url',
+      url: rootDraftUrl,
+      file: null,
+      sourceType: movie.sourceType,
+    },
     parts: (movie.parts || []).map((part, index) => ({
       id: part.id,
       label: part.label || `Part ${String.fromCharCode(65 + index)}`,
       order: part.order || index + 1,
       title: part.title || '',
       description: part.description || '',
-      source: { mode: 'url', url: part.video_url || part.sourceUrl || '', file: null },
+      source: {
+        mode: 'url',
+        url:
+          part.sourceType === 'direct_url' && !part.video_url
+            ? ''
+            : part.video_url || part.sourceUrl || '',
+        file: null,
+        sourceType: part.sourceType,
+      },
     })),
   };
 }
@@ -291,7 +311,15 @@ export function seriesToDraft(movie: Movie): SeriesDraft {
           posterFile: null,
           thumbnail: episode.thumbnail || '',
           thumbnailFile: null,
-          source: { mode: 'url', url: episode.video_url || episode.sourceUrl || '', file: null },
+          source: {
+            mode: 'url',
+            url:
+              episode.sourceType === 'direct_url' && !episode.video_url
+                ? ''
+                : episode.video_url || episode.sourceUrl || '',
+            file: null,
+            sourceType: episode.sourceType,
+          },
         })),
       })) || [],
   };

@@ -2,20 +2,33 @@ import fs from 'fs/promises';
 import path from 'path';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
-import type { SourcePipeline, VideoAssetMetadata, VideoJobDocument, VideoJobStatus } from '@/types/videoJobs';
+import type {
+  SourcePipeline,
+  VideoAssetMetadata,
+  VideoJobDocument,
+  VideoJobStatus,
+} from '@/types/videoJobs';
 import { ensureVideoWorkspace, removeDirectorySafe } from './fsUtils';
 import {
+  DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES,
+  DIRECT_VIDEO_JOB_TIMEOUT_MS,
+  VIDEO_JOB_AUTO_RETRY_LIMIT,
   VIDEO_JOB_LOCK_ID,
-  VIDEO_MIN_FREE_DISK_BYTES,
+  VIDEO_JOB_RETRY_BASE_DELAY_MS,
   VIDEO_JOB_STALE_MS,
   VIDEO_JOB_TIMEOUT_MS,
-  DIRECT_VIDEO_JOB_TIMEOUT_MS,
+  VIDEO_MIN_FREE_DISK_BYTES,
   VIDEO_OUTPUT_DIR,
+  VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER,
   VIDEO_SOURCE_DIR,
 } from './env';
-import { downloadRemoteSource } from './downloadSource';
+import { downloadRemoteSource, isSupportedInputMp4Format } from './downloadSource';
 import { getFreeDiskSpace } from './system';
-import { prepareDirectMp4Source, uploadDirectMp4Asset } from './directVideoProcessor';
+import {
+  inspectDirectVideoSource,
+  prepareDirectMp4Source,
+  uploadDirectMp4Asset,
+} from './directVideoProcessor';
 import { upsertMovieInCatalogCache } from './movieCatalogCache';
 import {
   MOVIES_COLLECTION,
@@ -25,14 +38,13 @@ import {
 
 const CLAIMING_STALE_MS = 30 * 1000;
 const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
-  'validating',
   'downloading',
-  'transcoding',
-  'packaging',
-  'uploading_source',
-  'uploading_hls',
+  'inspecting',
+  'processing',
+  'uploading',
 ];
-const TERMINAL_JOB_STATUSES: VideoJobStatus[] = ['ready', 'failed', 'cancelled'];
+const TERMINAL_JOB_STATUSES: VideoJobStatus[] = ['ready', 'failed'];
+const ADMIN_CANCELLED_MESSAGE = 'Cancelled by admin.';
 
 function isoNow() {
   return new Date().toISOString();
@@ -44,6 +56,51 @@ function getRuntimeDoc() {
 
 function getJobDoc(jobId: string) {
   return adminDb.collection(VIDEO_JOBS_COLLECTION).doc(jobId);
+}
+
+function getRetryDelayMs(currentRetryCount: number) {
+  return VIDEO_JOB_RETRY_BASE_DELAY_MS * Math.max(1, 2 ** currentRetryCount);
+}
+
+function isTransientJobError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+
+  return /timed out|timeout|stalled|temporar|temporarily|econnreset|etimedout|eai_again|fetch failed|socket hang up|503|502|504|429|connection reset|network/i.test(
+    message
+  );
+}
+
+function isCancellationError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /cancelled by admin/i.test(message);
+}
+
+function getJobWorkspace(jobId: string) {
+  return {
+    sourceDirectory: path.join(VIDEO_SOURCE_DIR, jobId),
+    outputDirectory: path.join(VIDEO_OUTPUT_DIR, jobId),
+  };
+}
+
+async function readJob(jobId: string) {
+  const snapshot = await getJobDoc(jobId).get();
+
+  if (!snapshot.exists) {
+    throw new Error(`Video job ${jobId} no longer exists.`);
+  }
+
+  return {
+    id: snapshot.id,
+    ...(snapshot.data() as VideoJobDocument),
+  };
+}
+
+async function throwIfJobWasCancelled(jobId: string) {
+  const job = await readJob(jobId);
+
+  if (job.status === 'failed' && job.errorMessage === ADMIN_CANCELLED_MESSAGE) {
+    throw new Error(ADMIN_CANCELLED_MESSAGE);
+  }
 }
 
 export async function listVideoJobs(limit = 50) {
@@ -60,6 +117,7 @@ export async function appendJobLog(jobId: string, message: string) {
   await getJobDoc(jobId).set(
     {
       updatedAt: isoNow(),
+      workerHeartbeatAt: isoNow(),
       logs: FieldValue.arrayUnion(`[${isoNow()}] ${message}`),
     },
     { merge: true }
@@ -74,13 +132,17 @@ export async function updateJobState(
     {
       ...state,
       updatedAt: isoNow(),
+      workerHeartbeatAt: isoNow(),
     },
     { merge: true }
   );
 }
 
 export async function createVideoJob(
-  job: Omit<VideoJobDocument, 'id' | 'queueOrder' | 'createdAt' | 'updatedAt' | 'status' | 'progress'>,
+  job: Omit<
+    VideoJobDocument,
+    'id' | 'queueOrder' | 'createdAt' | 'updatedAt' | 'status' | 'progress'
+  >,
   options?: { id?: string }
 ) {
   await ensureVideoWorkspace();
@@ -97,6 +159,7 @@ export async function createVideoJob(
     createdAt: now,
     updatedAt: now,
     retryCount: 0,
+    workerHeartbeatAt: '',
     logs: [`[${now}] Job queued.`],
   });
 
@@ -108,10 +171,14 @@ export async function retryVideoJob(jobId: string) {
     {
       status: 'queued',
       progress: 0,
+      queueOrder: Date.now(),
       errorMessage: '',
+      startedAt: '',
+      timeoutAt: '',
+      workerHeartbeatAt: '',
       updatedAt: isoNow(),
       retryCount: FieldValue.increment(1),
-      logs: FieldValue.arrayUnion(`[${isoNow()}] Job retried.`),
+      logs: FieldValue.arrayUnion(`[${isoNow()}] Job retried manually.`),
     },
     { merge: true }
   );
@@ -120,9 +187,13 @@ export async function retryVideoJob(jobId: string) {
 export async function cancelVideoJob(jobId: string) {
   await getJobDoc(jobId).set(
     {
-      status: 'cancelled',
+      status: 'failed',
+      progress: 0,
+      errorMessage: ADMIN_CANCELLED_MESSAGE,
+      timeoutAt: '',
       updatedAt: isoNow(),
-      logs: FieldValue.arrayUnion(`[${isoNow()}] Job cancelled.`),
+      workerHeartbeatAt: '',
+      logs: FieldValue.arrayUnion(`[${isoNow()}] Cancel requested by admin.`),
     },
     { merge: true }
   );
@@ -183,13 +254,15 @@ async function recoverStaleInFlightJobs() {
   const staleDocs = snapshot.docs.filter((doc) => {
     const data = doc.data() as VideoJobDocument;
     const timeoutAt = data.timeoutAt ? new Date(data.timeoutAt).getTime() : 0;
+    const heartbeatAt = data.workerHeartbeatAt ? new Date(data.workerHeartbeatAt).getTime() : 0;
     const updatedAt = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
 
     if (timeoutAt && timeoutAt <= now) {
       return true;
     }
 
-    return !updatedAt || now - updatedAt >= VIDEO_JOB_STALE_MS;
+    const lastTouch = Math.max(heartbeatAt || 0, updatedAt || 0);
+    return !lastTouch || now - lastTouch >= VIDEO_JOB_STALE_MS;
   });
 
   if (!staleDocs.length) {
@@ -207,8 +280,12 @@ async function recoverStaleInFlightJobs() {
           errorMessage: '',
           startedAt: '',
           timeoutAt: '',
+          workerHeartbeatAt: '',
           updatedAt: timestamp,
-          logs: FieldValue.arrayUnion(`[${timestamp}] Worker recovered a stale in-flight job and re-queued it.`),
+          queueOrder: Date.now(),
+          logs: FieldValue.arrayUnion(
+            `[${timestamp}] Worker recovered a stale in-flight job and re-queued it.`
+          ),
         },
         { merge: true }
       )
@@ -249,6 +326,10 @@ async function recoverOldestInFlightJob() {
       status: 'queued',
       progress: 0,
       errorMessage: '',
+      startedAt: '',
+      timeoutAt: '',
+      workerHeartbeatAt: '',
+      queueOrder: Date.now(),
       updatedAt: timestamp,
       logs: FieldValue.arrayUnion(
         `[${timestamp}] Worker reclaimed an in-flight job that was left without active progress.`
@@ -275,7 +356,12 @@ async function claimNextQueuedJob() {
     .limit(25)
     .get();
 
-  if (snapshot.empty) {
+  const availableJobs = snapshot.docs
+    .map((doc) => ({ id: doc.id, ...(doc.data() as VideoJobDocument) }))
+    .filter((job) => Number(job.queueOrder || 0) <= Date.now())
+    .sort((first, second) => Number(first.queueOrder || 0) - Number(second.queueOrder || 0));
+
+  if (!availableJobs.length) {
     const recovered = await recoverOldestInFlightJob();
 
     if (recovered) {
@@ -287,21 +373,18 @@ async function claimNextQueuedJob() {
     return null;
   }
 
-  const nextJob = snapshot.docs.sort((first, second) => {
-    const firstOrder = Number(first.data().queueOrder || 0);
-    const secondOrder = Number(second.data().queueOrder || 0);
-    return firstOrder - secondOrder;
-  })[0];
+  const nextJob = availableJobs[0];
   const now = isoNow();
 
   await Promise.all([
-    nextJob.ref.set(
+    getJobDoc(nextJob.id!).set(
       {
-        status: 'validating',
-        progress: 5,
+        status: 'downloading',
+        progress: 8,
         startedAt: now,
         timeoutAt: new Date(Date.now() + VIDEO_JOB_TIMEOUT_MS).toISOString(),
         updatedAt: now,
+        workerHeartbeatAt: now,
         logs: FieldValue.arrayUnion(`[${now}] Job claimed by worker.`),
       },
       { merge: true }
@@ -315,21 +398,16 @@ async function claimNextQueuedJob() {
     ),
   ]);
 
-  return {
-    id: nextJob.id,
-    ...(nextJob.data() as VideoJobDocument),
-  };
+  return nextJob;
 }
 
 async function touchWorkerHeartbeat(jobId: string) {
-  await getRuntimeDoc().set({ activeJobId: jobId, heartbeatAt: isoNow() }, { merge: true });
-}
+  const now = isoNow();
 
-function getJobWorkspace(jobId: string) {
-  return {
-    sourceDirectory: path.join(VIDEO_SOURCE_DIR, jobId),
-    outputDirectory: path.join(VIDEO_OUTPUT_DIR, jobId),
-  };
+  await Promise.all([
+    getRuntimeDoc().set({ activeJobId: jobId, heartbeatAt: now }, { merge: true }),
+    getJobDoc(jobId).set({ workerHeartbeatAt: now, updatedAt: now }, { merge: true }),
+  ]);
 }
 
 async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoAssetMetadata) {
@@ -438,9 +516,11 @@ async function patchMovieAsset(target: VideoJobDocument['target'], asset: VideoA
 function inferSourcePipeline(job: VideoJobDocument): SourcePipeline {
   if (job.sourcePipeline) {
     return job.sourcePipeline === 'hls_pipeline'
-      ? job.sourceType === 'remote_link'
-        ? 'remote_mp4_ingest'
-        : 'direct_upload'
+      ? job.sourceType === 'direct_url'
+        ? 'direct_url_import'
+        : job.sourceType === 'remote_link'
+          ? 'remote_mp4_ingest'
+          : 'direct_upload'
       : job.sourcePipeline;
   }
 
@@ -448,23 +528,64 @@ function inferSourcePipeline(job: VideoJobDocument): SourcePipeline {
     return 'remote_mkv_to_mp4';
   }
 
-  if (job.jobType === 'direct_mp4_upload') {
-    return job.sourceType === 'remote_link' ? 'remote_mp4_ingest' : 'direct_upload';
+  if (job.jobType === 'direct_url_import') {
+    return 'direct_url_import';
   }
 
-  return job.sourceType === 'remote_link' ? 'remote_mp4_ingest' : 'direct_upload';
+  if (job.jobType === 'direct_mp4_upload') {
+    return job.sourceType === 'direct_url'
+      ? 'direct_url_import'
+      : job.sourceType === 'remote_link'
+        ? 'remote_mp4_ingest'
+        : 'direct_upload';
+  }
+
+  return job.sourceType === 'direct_url'
+    ? 'direct_url_import'
+    : job.sourceType === 'remote_link'
+      ? 'remote_mp4_ingest'
+      : 'direct_upload';
+}
+
+async function updateLinkedAssetStage(
+  job: VideoJobDocument,
+  status: VideoJobStatus,
+  progress: number,
+  metadata?: Partial<VideoAssetMetadata>
+) {
+  const assetMetadata: VideoAssetMetadata = {
+    sourceType: job.sourceType,
+    sourcePipeline: inferSourcePipeline(job),
+    sourceFileName: job.sourceFileName || '',
+    sourceUrl: job.sourceUrl || '',
+    jobStatus: status,
+    processingProgress: progress,
+    errorMessage: status === 'failed' ? metadata?.errorMessage || '' : '',
+    updatedAt: isoNow(),
+    ...metadata,
+  };
+
+  await patchMovieAsset(job.target, assetMetadata);
 }
 
 async function resolveLocalSource(job: VideoJobDocument) {
   const { sourceDirectory } = getJobWorkspace(job.id!);
   await fs.mkdir(sourceDirectory, { recursive: true });
 
-  if (job.sourceUrl && (job.sourceType === 'remote_link' || job.sourceType === 'direct_upload')) {
-    await updateJobState(job.id!, { status: 'downloading', progress: 12 });
-    await appendJobLog(job.id!, 'Downloading remote source.');
+  if (
+    job.sourceUrl &&
+    (job.sourceType === 'remote_link' ||
+      job.sourceType === 'direct_upload' ||
+      job.sourceType === 'direct_url')
+  ) {
+    await appendJobLog(job.id!, 'Downloading source file to the VPS workspace.');
     const sourceFileName = job.sourceFileName || `${job.id}.mp4`;
     const targetPath = path.join(sourceDirectory, sourceFileName);
-    return downloadRemoteSource(job.sourceUrl || '', targetPath);
+
+    return downloadRemoteSource(job.sourceUrl || '', targetPath, {
+      maxFileSizeBytes:
+        job.sourceType === 'direct_url' ? DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES : undefined,
+    });
   }
 
   if (!job.localSourcePath) {
@@ -479,6 +600,69 @@ async function resolveLocalSource(job: VideoJobDocument) {
   };
 }
 
+async function ensureDiskSafetyBeforeProcessing(sourceFileSizeBytes: number) {
+  const freeDiskSpace = await getFreeDiskSpace(process.cwd());
+  const requiredBytes =
+    VIDEO_MIN_FREE_DISK_BYTES +
+    Math.ceil(sourceFileSizeBytes * Math.max(1, VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER));
+
+  if (freeDiskSpace < requiredBytes) {
+    throw new Error(
+      'Not enough free disk space is available to safely process this movie right now.'
+    );
+  }
+}
+
+async function inspectImportedMp4(localSourcePath: string) {
+  const inspection = await inspectDirectVideoSource(localSourcePath);
+
+  if (!isSupportedInputMp4Format(inspection.formatName || '')) {
+    throw new Error(
+      'The downloaded source was not a usable MP4 container. Only direct MP4 links are supported right now.'
+    );
+  }
+
+  return inspection;
+}
+
+async function scheduleJobRetry(job: VideoJobDocument, message: string) {
+  const currentRetryCount = Number(job.retryCount || 0);
+
+  if (currentRetryCount >= VIDEO_JOB_AUTO_RETRY_LIMIT) {
+    return false;
+  }
+
+  const nextRetryCount = currentRetryCount + 1;
+  const delayMs = getRetryDelayMs(currentRetryCount);
+  const retryAt = Date.now() + delayMs;
+  const timestamp = isoNow();
+  const retryMessage = `Transient failure. Retry ${nextRetryCount}/${VIDEO_JOB_AUTO_RETRY_LIMIT} scheduled in ${Math.round(
+    delayMs / 1000
+  )} seconds.`;
+
+  await getJobDoc(job.id!).set(
+    {
+      status: 'queued',
+      progress: 0,
+      queueOrder: retryAt,
+      retryCount: nextRetryCount,
+      errorMessage: retryMessage,
+      timeoutAt: '',
+      workerHeartbeatAt: '',
+      updatedAt: timestamp,
+      logs: FieldValue.arrayUnion(`[${timestamp}] ${retryMessage} Original error: ${message}`),
+    },
+    { merge: true }
+  );
+  await updateLinkedAssetStage(job, 'queued', 0, {
+    errorMessage: retryMessage,
+    video_url: '',
+    processedAt: '',
+  }).catch(() => undefined);
+
+  return true;
+}
+
 export async function processNextVideoJob() {
   const job = await claimNextQueuedJob();
 
@@ -486,72 +670,76 @@ export async function processNextVideoJob() {
     return { processed: false };
   }
 
-  console.log('[video-worker] claimed job', {
-    jobId: job.id,
-    title: job.title,
-    sourceType: job.sourceType,
-    target: job.target,
-  });
-
   const workspace = getJobWorkspace(job.id!);
-  let localSourcePath = '';
 
   try {
-    const freeDiskSpace = await getFreeDiskSpace(process.cwd());
-
-    if (freeDiskSpace < VIDEO_MIN_FREE_DISK_BYTES) {
-      throw new Error('Not enough disk space available to start processing this job.');
-    }
-
     await touchWorkerHeartbeat(job.id!);
+    await updateLinkedAssetStage(job, 'downloading', 10, {
+      video_url: '',
+      processedAt: '',
+      errorMessage: '',
+    });
+
     const source = await resolveLocalSource(job);
-    localSourcePath = source.path;
-    console.log('[video-worker] source ready', {
-      jobId: job.id,
-      localSourcePath,
-      fileSizeBytes: source.fileSizeBytes,
-    });
+    await throwIfJobWasCancelled(job.id!);
+    await touchWorkerHeartbeat(job.id!);
 
-    await patchMovieAsset(job.target, {
-      sourceType: job.sourceType,
-      sourcePipeline: inferSourcePipeline(job),
+    await ensureDiskSafetyBeforeProcessing(source.fileSizeBytes);
+    await updateJobState(job.id!, { status: 'inspecting', progress: 35 });
+    await updateLinkedAssetStage(job, 'inspecting', 35, {
       sourceFileName: source.sourceFileName,
-      sourceUrl: job.sourceUrl || '',
       fileSizeBytes: source.fileSizeBytes,
-      jobStatus: 'packaging',
-      processingProgress: 20,
-      updatedAt: isoNow(),
+      errorMessage: '',
     });
-    const directPipeline = inferSourcePipeline(job);
+    await appendJobLog(job.id!, 'Inspecting the downloaded MP4 source.');
 
-    await updateJobState(job.id!, { status: 'packaging', progress: 40 });
+    const sourceInspection = await inspectImportedMp4(source.path);
+    await throwIfJobWasCancelled(job.id!);
+    await touchWorkerHeartbeat(job.id!);
+
+    await updateJobState(job.id!, { status: 'processing', progress: 60 });
+    await updateLinkedAssetStage(job, 'processing', 60, {
+      sourceFileName: source.sourceFileName,
+      fileSizeBytes: sourceInspection.fileSizeBytes || source.fileSizeBytes,
+      durationSeconds: sourceInspection.durationSeconds,
+      videoResolution: sourceInspection.videoResolution,
+      errorMessage: '',
+    });
     await appendJobLog(
       job.id!,
-      directPipeline === 'remote_mkv_to_mp4'
-        ? 'Converting source to MP4.'
-        : 'Preparing direct MP4 asset.'
+      sourceInspection.isSafariCompatibleMp4
+        ? 'Applying light MP4 normalization for streaming playback.'
+        : 'Processing the MP4 for wider browser and mobile compatibility.'
     );
-    await touchWorkerHeartbeat(job.id!);
 
-    const directPrepared = await prepareDirectMp4Source({
-      sourcePath: localSourcePath,
+    const preparedMp4 = await prepareDirectMp4Source({
+      sourcePath: source.path,
       outputDirectory: workspace.outputDirectory,
       timeoutMs: DIRECT_VIDEO_JOB_TIMEOUT_MS,
     });
-
-    await updateJobState(job.id!, { status: 'uploading_source', progress: 78 });
-    await appendJobLog(job.id!, 'Uploading direct MP4 asset to R2.');
+    await throwIfJobWasCancelled(job.id!);
     await touchWorkerHeartbeat(job.id!);
 
+    await updateJobState(job.id!, { status: 'uploading', progress: 85 });
+    await updateLinkedAssetStage(job, 'uploading', 85, {
+      sourceFileName: path.basename(preparedMp4.outputPath),
+      fileSizeBytes: preparedMp4.fileSizeBytes,
+      durationSeconds: preparedMp4.durationSeconds,
+      videoResolution: preparedMp4.videoResolution,
+      errorMessage: '',
+    });
+    await appendJobLog(job.id!, 'Uploading the final MP4 to Cloudflare R2.');
+
     const uploadedMp4 = await uploadDirectMp4Asset({
-      localMp4Path: directPrepared.outputPath,
+      localMp4Path: preparedMp4.outputPath,
       target: job.target,
     });
+    await throwIfJobWasCancelled(job.id!);
 
     const assetMetadata: VideoAssetMetadata = {
       sourceType: job.sourceType,
-      sourcePipeline: directPipeline,
-      sourceFileName: path.basename(directPrepared.outputPath),
+      sourcePipeline: inferSourcePipeline(job),
+      sourceFileName: path.basename(preparedMp4.outputPath),
       sourceUrl: job.sourceUrl || '',
       video_url: uploadedMp4.publicUrl,
       jobStatus: 'ready',
@@ -559,38 +747,45 @@ export async function processNextVideoJob() {
       playbackType: 'mp4',
       masterPlaylistUrl: '',
       availableRenditions: [],
-      durationSeconds: directPrepared.durationSeconds,
-      videoResolution: directPrepared.videoResolution,
-      fileSizeBytes: directPrepared.fileSizeBytes,
+      durationSeconds: preparedMp4.durationSeconds,
+      videoResolution: preparedMp4.videoResolution,
+      fileSizeBytes: preparedMp4.fileSizeBytes,
       processedAt: isoNow(),
       updatedAt: isoNow(),
+      errorMessage: '',
     };
 
     await patchMovieAsset(job.target, assetMetadata);
-
     await updateJobState(job.id!, {
       status: 'ready',
       progress: 100,
+      errorMessage: '',
       processedAt: isoNow(),
+      timeoutAt: '',
       output: {
         playbackType: 'mp4',
-        durationSeconds: directPrepared.durationSeconds,
-        resolution: directPrepared.videoResolution,
-        fileSizeBytes: directPrepared.fileSizeBytes,
+        durationSeconds: preparedMp4.durationSeconds,
+        resolution: preparedMp4.videoResolution,
+        fileSizeBytes: preparedMp4.fileSizeBytes,
+        r2ObjectKey: uploadedMp4.key,
+        playbackUrl: uploadedMp4.publicUrl,
       },
     });
-    await appendJobLog(job.id!, 'Direct MP4 job completed successfully.');
-    console.log('[video-worker] direct job completed', {
-      jobId: job.id,
-      playbackUrl: uploadedMp4.publicUrl,
-    });
+    await appendJobLog(job.id!, 'Movie import completed and is ready for playback from R2.');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown processing error.';
-    console.error('[video-worker] job failed', { jobId: job.id, message, error });
-    await updateJobState(job.id!, { status: 'failed', progress: 0, errorMessage: message });
-    await patchMovieAsset(job.target, {
-      jobStatus: 'failed',
-      processingProgress: 0,
+
+    if (!isCancellationError(error) && isTransientJobError(error) && (await scheduleJobRetry(job, message))) {
+      return { processed: true, jobId: job.id, retried: true };
+    }
+
+    await updateJobState(job.id!, {
+      status: 'failed',
+      progress: 0,
+      errorMessage: message,
+      timeoutAt: '',
+    });
+    await updateLinkedAssetStage(job, 'failed', 0, {
       errorMessage: message,
       updatedAt: isoNow(),
     }).catch(() => undefined);
@@ -598,7 +793,6 @@ export async function processNextVideoJob() {
   } finally {
     await removeDirectorySafe(workspace.outputDirectory);
     await removeDirectorySafe(workspace.sourceDirectory);
-
     await releaseWorkerLease();
   }
 

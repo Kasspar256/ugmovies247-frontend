@@ -9,14 +9,11 @@ function getJobTone(status?: Movie['jobStatus']) {
       return 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
     case 'failed':
       return 'border border-red-500/25 bg-red-500/10 text-red-100';
-    case 'cancelled':
-      return 'border border-amber-500/25 bg-amber-500/10 text-amber-100';
     case 'queued':
-    case 'validating':
     case 'downloading':
-    case 'packaging':
-    case 'transcoding':
-    case 'uploading_source':
+    case 'inspecting':
+    case 'processing':
+    case 'uploading':
       return 'border border-sky-500/25 bg-sky-500/10 text-sky-100';
     default:
       return 'border border-white/10 bg-white/5 text-white/65';
@@ -34,10 +31,6 @@ function getMovieProcessingLabel(movie: Movie) {
 
   if (movie.jobStatus === 'failed') {
     return 'Failed';
-  }
-
-  if (movie.jobStatus === 'cancelled') {
-    return 'Cancelled';
   }
 
   return `${movie.jobStatus}${typeof movie.processingProgress === 'number' ? ` ${movie.processingProgress}%` : ''}`;
@@ -60,7 +53,7 @@ export function AdminMoviesTab({
     <div className="space-y-6">
       <Card
         title="Upload Movie"
-        description="Use the TMDb-assisted movie publisher to upload a direct MP4, confirm clean metadata, and publish without the old manual clutter."
+        description="Use the TMDb-assisted movie publisher to upload a direct MP4 or queue a direct MP4 link import through the VPS."
         action={
           <div className="flex flex-wrap gap-2">
             <Link
@@ -80,8 +73,8 @@ export function AdminMoviesTab({
         }
       >
         <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm leading-7 text-white/62">
-          New uploads now open in a dedicated publisher page, and the processing queue now shows
-          when a movie is queued, working, failed, or fully ready for the app.
+          New movies now open in a dedicated publisher page. Direct link imports stay queued until
+          the VPS downloads, processes, uploads them to R2, and marks them ready.
         </div>
       </Card>
 

@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       key?: string;
       fileSizeBytes?: number;
       contentType?: string;
-      sourceType?: 'upload' | 'remote_link' | 'direct_upload';
+      sourceType?: 'upload' | 'remote_link' | 'direct_upload' | 'direct_url';
     };
 
     const asset = await registerLibraryAssetForAdmin({

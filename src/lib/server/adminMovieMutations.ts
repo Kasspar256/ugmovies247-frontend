@@ -6,14 +6,28 @@ function nowIso() {
 }
 
 function normalizeSourceType(value: unknown) {
-  return value === 'upload' || value === 'remote_link' || value === 'direct_upload'
+  return value === 'upload' ||
+    value === 'remote_link' ||
+    value === 'direct_upload' ||
+    value === 'direct_url'
     ? value
     : 'remote_link';
 }
 
-function normalizeSourcePipeline(value: unknown, sourceType: 'upload' | 'remote_link' | 'direct_upload') {
-  if (value === 'direct_upload' || value === 'remote_mp4_ingest') {
+function normalizeSourcePipeline(
+  value: unknown,
+  sourceType: 'upload' | 'remote_link' | 'direct_upload' | 'direct_url'
+) {
+  if (
+    value === 'direct_upload' ||
+    value === 'direct_url_import' ||
+    value === 'remote_mp4_ingest'
+  ) {
     return value;
+  }
+
+  if (sourceType === 'direct_url') {
+    return 'direct_url_import';
   }
 
   return sourceType === 'remote_link' ? 'remote_mp4_ingest' : 'direct_upload';

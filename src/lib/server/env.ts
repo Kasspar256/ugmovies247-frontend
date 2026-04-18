@@ -15,10 +15,25 @@ export const VIDEO_JOB_TIMEOUT_MS = Number(process.env.VIDEO_JOB_TIMEOUT_MS || 1
 export const DIRECT_VIDEO_JOB_TIMEOUT_MS = Number(
   process.env.DIRECT_VIDEO_JOB_TIMEOUT_MS || 1000 * 60 * 60 * 4
 );
+export const DIRECT_URL_IMPORT_PROBE_TIMEOUT_MS = Number(
+  process.env.DIRECT_URL_IMPORT_PROBE_TIMEOUT_MS || 1000 * 30
+);
+export const DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES = Number(
+  process.env.DIRECT_URL_IMPORT_MAX_FILE_SIZE_BYTES || 5 * 1024 * 1024 * 1024
+);
 export const VIDEO_MIN_FREE_DISK_BYTES = Number(
   process.env.VIDEO_MIN_FREE_DISK_BYTES || 8 * 1024 * 1024 * 1024
 );
+export const VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER = Number(
+  process.env.VIDEO_REQUIRED_FREE_SPACE_MULTIPLIER || 2.5
+);
 export const VIDEO_WORKER_POLL_MS = Number(process.env.VIDEO_WORKER_POLL_MS || 5000);
+export const VIDEO_JOB_AUTO_RETRY_LIMIT = Number(
+  process.env.VIDEO_JOB_AUTO_RETRY_LIMIT || 2
+);
+export const VIDEO_JOB_RETRY_BASE_DELAY_MS = Number(
+  process.env.VIDEO_JOB_RETRY_BASE_DELAY_MS || 1000 * 60
+);
 export const SUBSCRIPTION_WORKER_POLL_MS = Number(
   process.env.SUBSCRIPTION_WORKER_POLL_MS || 1000 * 60
 );

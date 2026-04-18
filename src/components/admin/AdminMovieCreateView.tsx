@@ -16,6 +16,7 @@ import {
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
+import type { VideoJobStatus } from '@/types/videoJobs';
 
 type PublishMode = 'upload' | 'link';
 
@@ -112,6 +113,10 @@ export function AdminMovieCreateView() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [uploadedMovieTitle, setUploadedMovieTitle] = useState('');
   const [queuedForProcessing, setQueuedForProcessing] = useState(false);
+  const [lastSubmittedMode, setLastSubmittedMode] = useState<PublishMode | null>(null);
+  const [latestJobId, setLatestJobId] = useState('');
+  const [latestMovieId, setLatestMovieId] = useState('');
+  const [latestJobStatus, setLatestJobStatus] = useState<VideoJobStatus | ''>('');
 
   useEffect(() => {
     let mounted = true;
@@ -209,6 +214,10 @@ export function AdminMovieCreateView() {
     setErrorMessage('');
     setUploadedMovieTitle('');
     setQueuedForProcessing(false);
+    setLastSubmittedMode(null);
+    setLatestJobId('');
+    setLatestMovieId('');
+    setLatestJobStatus('');
     setMovieFileInputKey((current) => current + 1);
     setPosterFileInputKey((current) => current + 1);
   };
@@ -288,14 +297,18 @@ export function AdminMovieCreateView() {
     }
 
     if (mode === 'link' && !movieUrl.trim()) {
-      setErrorMessage('Paste the direct MP4 link before uploading.');
+      setErrorMessage('Paste the direct MP4 download link before importing.');
       return;
     }
 
     setPublishing(true);
     setErrorMessage('');
     setStatusMessage('');
-    setLogLines(['[INIT] Preparing upload session...']);
+    setLogLines([
+      mode === 'link'
+        ? '[INIT] Validating direct MP4 link and preparing a VPS import job...'
+        : '[INIT] Preparing upload session...',
+    ]);
     setUploadStats(null);
 
     try {
@@ -343,7 +356,7 @@ export function AdminMovieCreateView() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            mode: 'existing_link',
+            mode: 'import_link',
             metadata,
             playbackUrl: movieUrl.trim(),
           }),
@@ -359,22 +372,33 @@ export function AdminMovieCreateView() {
       const queuedNormalizationCount = Number(result.payload.queuedNormalizationCount || 0);
 
       appendLogLine(
-        queuedNormalizationCount > 0
-          ? '[DONE] Movie uploaded and queued for compatibility processing.'
-          : '[DONE] Movie upload completed successfully.'
+        mode === 'link'
+          ? '[DONE] Direct MP4 import job queued. The VPS will now download, inspect, process, and upload the final file to R2.'
+          : queuedNormalizationCount > 0
+            ? '[DONE] Movie uploaded and queued for compatibility processing.'
+            : '[DONE] Movie upload completed successfully.'
       );
+      if (result.payload.warningMessage) {
+        appendLogLine(`[NOTE] ${String(result.payload.warningMessage)}`);
+      }
       setStatusMessage(
-        queuedNormalizationCount > 0
-          ? `Uploaded "${title.trim()}". We are now processing it into an iPhone-safe MP4 before it goes live.`
-          : `Uploaded "${title.trim()}".`
+        mode === 'link'
+          ? `Queued "${title.trim()}" for VPS import. We will only mark it ready after the final R2 upload succeeds.`
+          : queuedNormalizationCount > 0
+            ? `Uploaded "${title.trim()}". We are now processing it into an iPhone-safe MP4 before it goes live.`
+            : `Uploaded "${title.trim()}".`
       );
       setUploadedMovieTitle(title.trim());
       setQueuedForProcessing(queuedNormalizationCount > 0);
+      setLastSubmittedMode(mode);
+      setLatestJobId(String(result.payload.jobId || ''));
+      setLatestMovieId(String(result.payload.movieId || ''));
+      setLatestJobStatus((result.payload.status as VideoJobStatus) || 'queued');
       setUploadStats(null);
       setShowSuccessModal(true);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload movie.');
-      appendLogLine('[STOP] Upload paused before completion.');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit movie import.');
+      appendLogLine('[STOP] Upload or import stopped before completion.');
     } finally {
       setPublishing(false);
     }
@@ -403,8 +427,8 @@ export function AdminMovieCreateView() {
                 Upload Movie
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">
-                Direct MP4 publishing with resumable multipart uploads, clean TMDb selection, and
-                a focused upload workflow.
+                Direct MP4 publishing with resumable uploads, queued VPS link imports, clean TMDb
+                selection, and a focused admin workflow.
               </p>
             </div>
             <Link
@@ -460,7 +484,7 @@ export function AdminMovieCreateView() {
                       : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  Use Existing Cloud Link
+                  Import From Link
                 </button>
               </div>
 
@@ -492,18 +516,57 @@ export function AdminMovieCreateView() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <FieldLabel>Existing MP4 URL</FieldLabel>
+                  <FieldLabel>Direct MP4 URL</FieldLabel>
                   <TextInput
                     value={movieUrl}
                     onChange={(event) => setMovieUrl(event.target.value)}
                     onBlur={() => applyDetectedMovieData(movieUrl.split('/').pop() || movieUrl)}
-                    placeholder="https://your-r2-public-url-or-existing-mp4-link.mp4"
+                    placeholder="https://example.com/movie.mp4"
                   />
                   <div className="text-xs leading-6 text-white/55">
-                    Paste a direct MP4 link that is already reachable from storage.
+                    Paste a direct MP4 download link. The admin browser will not upload the large
+                    file in this flow; the VPS will import it, inspect it, lightly normalize it,
+                    upload the final file to R2, and only then mark the movie ready.
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                      Processing Stages
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {['queued', 'downloading', 'inspecting', 'processing', 'uploading', 'ready', 'failed'].map(
+                        (stage) => (
+                          <span
+                            key={stage}
+                            className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/70"
+                          >
+                            {stage}
+                          </span>
+                        )
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
+
+              {latestJobId && latestJobStatus ? (
+                <div className="rounded-2xl border border-[#D90429]/18 bg-black/20 px-4 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-white/45">
+                      Latest Import Job
+                    </div>
+                    <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-100">
+                      {latestJobStatus}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-white/60">
+                    Job {latestJobId}
+                    {latestMovieId ? ` | Movie ${latestMovieId}` : ''}
+                  </div>
+                  <div className="mt-2 text-xs leading-6 text-white/50">
+                    Open the processing queue to follow live stage changes after submission.
+                  </div>
+                </div>
+              ) : null}
 
               {uploadStats && (
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -562,7 +625,13 @@ export function AdminMovieCreateView() {
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#D90429] px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-60 sm:w-auto"
               >
                 <UploadCloud size={14} />
-                {publishing ? 'Uploading...' : 'Upload Movie'}
+                {publishing
+                  ? mode === 'link'
+                    ? 'Queueing Import...'
+                    : 'Uploading...'
+                  : mode === 'link'
+                    ? 'Import Movie'
+                    : 'Upload Movie'}
               </button>
 
               <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -581,7 +650,7 @@ export function AdminMovieCreateView() {
                     ))
                   ) : (
                     <div className="text-white/35">
-                      Upload activity will appear here once the movie starts uploading.
+                      Upload or import activity will appear here once the workflow starts.
                     </div>
                   )}
                 </div>
@@ -781,13 +850,17 @@ export function AdminMovieCreateView() {
             </button>
 
             <div className="mb-4 inline-flex items-center rounded-full border border-[#D90429]/25 bg-[#D90429]/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-[#FF8A9E]">
-              Upload Complete
+              {lastSubmittedMode === 'link' ? 'Import Queued' : 'Upload Complete'}
             </div>
             <h2 className="text-2xl font-black uppercase tracking-[0.14em] text-white">
-              Upload Complete
+              {lastSubmittedMode === 'link' ? 'Import Queued' : 'Upload Complete'}
             </h2>
             <p className="mt-3 text-sm leading-7 text-white/70">
-              {queuedForProcessing
+              {lastSubmittedMode === 'link'
+                ? uploadedMovieTitle
+                  ? `"${uploadedMovieTitle}" is queued. The VPS will download it from the link, inspect it, process it for browser/mobile playback, upload the final file to R2, and only then mark it ready.`
+                  : 'The movie import is queued. The VPS will download it, inspect it, process it, and upload the final file to R2 before it goes live.'
+                : queuedForProcessing
                 ? uploadedMovieTitle
                   ? `"${uploadedMovieTitle}" is uploaded and is now being processed into an iPhone-safe MP4.`
                   : 'The movie is uploaded and is now being processed into an iPhone-safe MP4.'
@@ -805,7 +878,7 @@ export function AdminMovieCreateView() {
                 }}
                 className="inline-flex flex-1 items-center justify-center rounded-full bg-[#D90429] px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition-transform duration-200 hover:scale-[1.01]"
               >
-                Upload Another Movie
+                {lastSubmittedMode === 'link' ? 'Import Another Movie' : 'Upload Another Movie'}
               </button>
               <button
                 type="button"

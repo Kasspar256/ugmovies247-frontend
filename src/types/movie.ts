@@ -1,3 +1,11 @@
+import type {
+  PlaybackType,
+  SourcePipeline,
+  SourceType,
+  VideoJobStatus,
+  VideoRendition,
+} from '@/types/videoJobs';
+
 export type Episode = {
   episodeNumber: number;
   title: string;
@@ -6,22 +14,16 @@ export type Episode = {
   video_url: string;
   poster?: string;
   thumbnail?: string;
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
-  sourcePipeline?: 'hls_pipeline' | 'direct_upload' | 'remote_mkv_to_mp4' | 'remote_mp4_ingest';
+  sourceType?: SourceType;
+  sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
   sourceUrl?: string;
-  jobStatus?: 'queued' | 'validating' | 'downloading' | 'uploading_source' | 'transcoding' | 'packaging' | 'uploading_hls' | 'ready' | 'failed' | 'cancelled';
+  jobStatus?: VideoJobStatus;
   processingProgress?: number;
   errorMessage?: string;
-  playbackType?: 'mp4' | 'hls';
+  playbackType?: PlaybackType;
   masterPlaylistUrl?: string;
-  availableRenditions?: {
-    name: '360p' | '480p' | '720p' | '1080p';
-    width: number;
-    height: number;
-    bitrateKbps: number;
-    playlistUrl?: string;
-  }[];
+  availableRenditions?: VideoRendition[];
   durationSeconds?: number;
   videoResolution?: {
     width: number;
@@ -45,22 +47,16 @@ export type MoviePart = {
   video_url: string;
   poster?: string;
   thumbnail?: string;
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
-  sourcePipeline?: 'hls_pipeline' | 'direct_upload' | 'remote_mkv_to_mp4' | 'remote_mp4_ingest';
+  sourceType?: SourceType;
+  sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
   sourceUrl?: string;
-  jobStatus?: 'queued' | 'validating' | 'downloading' | 'uploading_source' | 'transcoding' | 'packaging' | 'uploading_hls' | 'ready' | 'failed' | 'cancelled';
+  jobStatus?: VideoJobStatus;
   processingProgress?: number;
   errorMessage?: string;
-  playbackType?: 'mp4' | 'hls';
+  playbackType?: PlaybackType;
   masterPlaylistUrl?: string;
-  availableRenditions?: {
-    name: '360p' | '480p' | '720p' | '1080p';
-    width: number;
-    height: number;
-    bitrateKbps: number;
-    playlistUrl?: string;
-  }[];
+  availableRenditions?: VideoRendition[];
   durationSeconds?: number;
   videoResolution?: {
     width: number;
@@ -88,22 +84,16 @@ export type Movie = {
   id: string;
   movieId?: string;
   contentType?: 'movie' | 'series';
-  sourceType?: 'upload' | 'remote_link' | 'direct_upload';
-  sourcePipeline?: 'hls_pipeline' | 'direct_upload' | 'remote_mkv_to_mp4' | 'remote_mp4_ingest';
+  sourceType?: SourceType;
+  sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
   sourceUrl?: string;
-  jobStatus?: 'queued' | 'validating' | 'downloading' | 'uploading_source' | 'transcoding' | 'packaging' | 'uploading_hls' | 'ready' | 'failed' | 'cancelled';
+  jobStatus?: VideoJobStatus;
   processingProgress?: number;
   errorMessage?: string;
-  playbackType?: 'mp4' | 'hls';
+  playbackType?: PlaybackType;
   masterPlaylistUrl?: string;
-  availableRenditions?: {
-    name: '360p' | '480p' | '720p' | '1080p';
-    width: number;
-    height: number;
-    bitrateKbps: number;
-    playlistUrl?: string;
-  }[];
+  availableRenditions?: VideoRendition[];
   durationSeconds?: number;
   videoResolution?: {
     width: number;
@@ -144,7 +134,10 @@ export type Movie = {
 export type MovieDocument = Omit<Movie, 'id'>;
 
 function normalizeSourceType(value: unknown): Episode['sourceType'] {
-  return value === 'upload' || value === 'remote_link' || value === 'direct_upload'
+  return value === 'upload' ||
+    value === 'remote_link' ||
+    value === 'direct_upload' ||
+    value === 'direct_url'
     ? value
     : undefined;
 }
@@ -152,6 +145,7 @@ function normalizeSourceType(value: unknown): Episode['sourceType'] {
 function normalizeSourcePipeline(value: unknown): Episode['sourcePipeline'] {
   return value === 'hls_pipeline' ||
     value === 'direct_upload' ||
+    value === 'direct_url_import' ||
     value === 'remote_mkv_to_mp4' ||
     value === 'remote_mp4_ingest'
     ? value
@@ -223,10 +217,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
             processingProgress:
               typeof rawPart.processingProgress === 'number' ? rawPart.processingProgress : 0,
             errorMessage: typeof rawPart.errorMessage === 'string' ? rawPart.errorMessage : '',
-            playbackType:
-              rawPart.playbackType === 'hls' || rawPart.playbackType === 'mp4'
-                ? rawPart.playbackType
-                : 'mp4',
+            playbackType: 'mp4',
             masterPlaylistUrl: typeof rawPart.masterPlaylistUrl === 'string' ? rawPart.masterPlaylistUrl : '',
             availableRenditions: normalizeRenditions(rawPart.availableRenditions) as MoviePart['availableRenditions'],
             durationSeconds:
@@ -281,10 +272,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                 processingProgress:
                   typeof rawEpisode.processingProgress === 'number' ? rawEpisode.processingProgress : 0,
                 errorMessage: typeof rawEpisode.errorMessage === 'string' ? rawEpisode.errorMessage : '',
-                playbackType:
-                  rawEpisode.playbackType === 'hls' || rawEpisode.playbackType === 'mp4'
-                    ? rawEpisode.playbackType
-                    : 'mp4',
+                playbackType: 'mp4',
                 masterPlaylistUrl:
                   typeof rawEpisode.masterPlaylistUrl === 'string' ? rawEpisode.masterPlaylistUrl : '',
                 availableRenditions: normalizeRenditions(rawEpisode.availableRenditions) as Episode['availableRenditions'],
@@ -334,7 +322,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     jobStatus: typeof data.jobStatus === 'string' ? (data.jobStatus as Movie['jobStatus']) : undefined,
     processingProgress: typeof data.processingProgress === 'number' ? data.processingProgress : 0,
     errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : '',
-    playbackType: data.playbackType === 'hls' || data.playbackType === 'mp4' ? data.playbackType : 'mp4',
+    playbackType: 'mp4',
     masterPlaylistUrl: typeof data.masterPlaylistUrl === 'string' ? data.masterPlaylistUrl : '',
     availableRenditions: normalizeRenditions(data.availableRenditions) as Movie['availableRenditions'],
     durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 0,
