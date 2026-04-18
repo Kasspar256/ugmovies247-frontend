@@ -31,7 +31,19 @@ type RepairCandidate = {
 
 type RepairCandidatesResponse = {
   candidates?: RepairCandidate[];
+  scannedMovies?: number;
+  scanLimit?: number;
 };
+
+function formatProcessingError(message: string, scope: 'jobs' | 'repairs') {
+  if (/resource_exhausted|quota exceeded|timed out|deadline exceeded/i.test(message)) {
+    return scope === 'jobs'
+      ? 'Live processing jobs are temporarily unavailable, but the page is now using a lighter polling mode and cached fallback to avoid hammering Firestore.'
+      : 'Repairable legacy uploads are temporarily unavailable. They now load only on demand and scan a smaller recent slice of the catalog to keep Firestore usage down.';
+  }
+
+  return message;
+}
 
 function formatTimestamp(value?: string) {
   if (!value) {
@@ -82,11 +94,15 @@ export function AdminVideoJobsTab() {
   const [jobs, setJobs] = useState<VideoJobDocument[]>([]);
   const [repairCandidates, setRepairCandidates] = useState<RepairCandidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [jobErrorMessage, setJobErrorMessage] = useState('');
+  const [repairErrorMessage, setRepairErrorMessage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [actionBusyId, setActionBusyId] = useState('');
   const [repairBusy, setRepairBusy] = useState(false);
-  const [repairCandidatesLoading, setRepairCandidatesLoading] = useState(true);
+  const [repairCandidatesLoading, setRepairCandidatesLoading] = useState(false);
+  const [repairCandidatesLoaded, setRepairCandidatesLoaded] = useState(false);
+  const [repairScannedMovies, setRepairScannedMovies] = useState(0);
+  const [repairScanLimit, setRepairScanLimit] = useState(100);
   const [repairSearch, setRepairSearch] = useState('');
   const [selectedRepairMovieIds, setSelectedRepairMovieIds] = useState<string[]>([]);
 
@@ -97,12 +113,18 @@ export function AdminVideoJobsTab() {
 
     try {
       const payload = await fetchAdminJson<VideoJobsResponse>('/api/admin/video-jobs', {
-        force: true,
+        force: showSpinner,
+        ttlMs: 1000 * 30,
       });
       setJobs(payload.jobs || []);
-      setErrorMessage('');
+      setJobErrorMessage('');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load video jobs.');
+      setJobErrorMessage(
+        formatProcessingError(
+          error instanceof Error ? error.message : 'Failed to load video jobs.',
+          'jobs'
+        )
+      );
     } finally {
       if (showSpinner) {
         setLoading(false);
@@ -117,20 +139,28 @@ export function AdminVideoJobsTab() {
 
     try {
       const payload = await fetchAdminJson<RepairCandidatesResponse>(
-        '/api/admin/video-jobs/repair-direct-uploads?limit=250',
+        '/api/admin/video-jobs/repair-direct-uploads?limit=50&scanLimit=100',
         {
-          force: true,
+          force: showSpinner,
+          ttlMs: 1000 * 60 * 5,
         }
       );
       const nextCandidates = payload.candidates || [];
       setRepairCandidates(nextCandidates);
+      setRepairScannedMovies(Number(payload.scannedMovies || 0));
+      setRepairScanLimit(Number(payload.scanLimit || 100));
+      setRepairCandidatesLoaded(true);
       setSelectedRepairMovieIds((current) =>
         current.filter((movieId) => nextCandidates.some((candidate) => candidate.movieId === movieId))
       );
-      setErrorMessage('');
+      setRepairErrorMessage('');
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to load legacy repair candidates.'
+      setRepairCandidatesLoaded(true);
+      setRepairErrorMessage(
+        formatProcessingError(
+          error instanceof Error ? error.message : 'Failed to load legacy repair candidates.',
+          'repairs'
+        )
       );
     } finally {
       if (showSpinner) {
@@ -140,29 +170,22 @@ export function AdminVideoJobsTab() {
   };
 
   useEffect(() => {
-    let mounted = true;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
+    let active = true;
     const start = async () => {
-      await Promise.all([loadJobs(true), loadRepairCandidates(true)]);
-
-      if (!mounted) {
-        return;
-      }
-
-      intervalId = setInterval(() => {
-        void loadJobs(false);
-      }, 5000);
+      await loadJobs(true);
     };
 
     void start();
 
-    return () => {
-      mounted = false;
-
-      if (intervalId) {
-        clearInterval(intervalId);
+    const intervalId = setInterval(() => {
+      if (active && document.visibilityState === 'visible') {
+        void loadJobs(false);
       }
+    }, 30000);
+
+    return () => {
+      active = false;
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -190,9 +213,7 @@ export function AdminVideoJobsTab() {
 
     return normalizedSearch
       ? repairCandidates.filter((candidate) =>
-          `${candidate.title} ${candidate.contentType}`
-            .toLowerCase()
-            .includes(normalizedSearch)
+          `${candidate.title} ${candidate.contentType}`.toLowerCase().includes(normalizedSearch)
         )
       : repairCandidates;
   }, [repairCandidates, repairSearch]);
@@ -225,7 +246,7 @@ export function AdminVideoJobsTab() {
   const handleRetry = async (jobId: string) => {
     setActionBusyId(jobId);
     setStatusMessage('');
-    setErrorMessage('');
+    setJobErrorMessage('');
 
     try {
       const response = await fetch(`/api/admin/video-jobs/${encodeURIComponent(jobId)}/retry`, {
@@ -240,7 +261,7 @@ export function AdminVideoJobsTab() {
       setStatusMessage('The failed job was moved back into the queue.');
       await loadJobs(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to retry the job.');
+      setJobErrorMessage(error instanceof Error ? error.message : 'Failed to retry the job.');
     } finally {
       setActionBusyId('');
     }
@@ -249,7 +270,7 @@ export function AdminVideoJobsTab() {
   const handleCancel = async (jobId: string) => {
     setActionBusyId(jobId);
     setStatusMessage('');
-    setErrorMessage('');
+    setJobErrorMessage('');
 
     try {
       const response = await fetch(`/api/admin/video-jobs/${encodeURIComponent(jobId)}/cancel`, {
@@ -264,7 +285,7 @@ export function AdminVideoJobsTab() {
       setStatusMessage('The job was cancelled.');
       await loadJobs(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to cancel the job.');
+      setJobErrorMessage(error instanceof Error ? error.message : 'Failed to cancel the job.');
     } finally {
       setActionBusyId('');
     }
@@ -272,13 +293,13 @@ export function AdminVideoJobsTab() {
 
   const handleRepairLegacyUploads = async () => {
     if (!selectedRepairMovieIds.length) {
-      setErrorMessage('Select at least one movie before queueing repairs.');
+      setRepairErrorMessage('Select at least one movie before queueing repairs.');
       return;
     }
 
     setRepairBusy(true);
     setStatusMessage('');
-    setErrorMessage('');
+    setRepairErrorMessage('');
 
     try {
       const response = await fetch('/api/admin/video-jobs/repair-direct-uploads', {
@@ -286,6 +307,7 @@ export function AdminVideoJobsTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           movieIds: selectedRepairMovieIds,
+          scanLimit: repairScanLimit,
         }),
       });
       const payload = (await response.json().catch(() => ({}))) as RepairResponse & {
@@ -299,13 +321,16 @@ export function AdminVideoJobsTab() {
       setStatusMessage(
         payload.queuedJobs
           ? `Queued ${payload.queuedJobs} repair job${payload.queuedJobs === 1 ? '' : 's'} across ${payload.updatedMovies || 0} selected movie${payload.updatedMovies === 1 ? '' : 's'}.`
-          : `None of the selected movies needed repair anymore.`
+          : 'None of the selected movies needed repair anymore.'
       );
       setSelectedRepairMovieIds([]);
       await Promise.all([loadJobs(false), loadRepairCandidates(false)]);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'Failed to queue legacy direct-upload repairs.'
+      setRepairErrorMessage(
+        formatProcessingError(
+          error instanceof Error ? error.message : 'Failed to queue legacy direct-upload repairs.',
+          'repairs'
+        )
       );
     } finally {
       setRepairBusy(false);
@@ -314,15 +339,23 @@ export function AdminVideoJobsTab() {
 
   return (
     <div className="space-y-6">
-      {(statusMessage || errorMessage) && (
-        <div
-          className={`rounded-2xl border px-4 py-3 text-sm ${
-            errorMessage
-              ? 'border-red-500/30 bg-red-500/10 text-red-100'
-              : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
-          }`}
-        >
-          {errorMessage || statusMessage}
+      {(statusMessage || jobErrorMessage || repairErrorMessage) && (
+        <div className="space-y-3">
+          {statusMessage ? (
+            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+              {statusMessage}
+            </div>
+          ) : null}
+          {jobErrorMessage ? (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {jobErrorMessage}
+            </div>
+          ) : null}
+          {repairErrorMessage ? (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              {repairErrorMessage}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -354,7 +387,7 @@ export function AdminVideoJobsTab() {
                 Legacy Repair
               </div>
               <p className="mt-2 text-sm leading-7 text-white/70">
-                Pick the exact old direct-upload movies you want to repair instead of queueing them all at once. That keeps the VPS safer and lets you work in controlled batches.
+                Pick the exact old direct-upload movies you want to repair instead of queueing them all at once. To protect Firestore quota, repairables are loaded only on demand and the scan checks the latest updated titles first.
               </p>
             </div>
 
@@ -372,7 +405,7 @@ export function AdminVideoJobsTab() {
                   onClick={() => void loadRepairCandidates(true)}
                   className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/10"
                 >
-                  Refresh Repairables
+                  {repairCandidatesLoaded ? 'Refresh Repairables' : 'Load Repairables'}
                 </button>
                 <button
                   type="button"
@@ -402,6 +435,9 @@ export function AdminVideoJobsTab() {
               <div className="text-xs leading-6 text-white/60">
                 {selectedRepairCount} selected | {filteredRepairCandidates.length} repairable movie
                 {filteredRepairCandidates.length === 1 ? '' : 's'} shown
+                {repairCandidatesLoaded
+                  ? ` | scanned ${repairScannedMovies} of the latest ${repairScanLimit} updated titles`
+                  : ''}
               </div>
               <button
                 type="button"
@@ -414,7 +450,12 @@ export function AdminVideoJobsTab() {
             </div>
           </div>
 
-          {repairCandidatesLoading ? (
+          {!repairCandidatesLoaded ? (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-sm leading-7 text-white/55">
+              Repairable legacy uploads are loaded only when needed to keep Firestore reads down.
+              Click ` Load Repairables ` when you actually want to prepare a repair batch.
+            </div>
+          ) : repairCandidatesLoading ? (
             <div className="mt-4 flex items-center justify-center rounded-2xl border border-white/10 bg-black/20 py-10">
               <Loader2 className="h-6 w-6 animate-spin text-[#D90429]" />
             </div>
@@ -455,7 +496,9 @@ export function AdminVideoJobsTab() {
                         (candidate.repairablePartCount || candidate.repairableEpisodeCount)
                           ? ' | '
                           : null}
-                        {candidate.repairablePartCount ? `${candidate.repairablePartCount} part${candidate.repairablePartCount === 1 ? '' : 's'}` : null}
+                        {candidate.repairablePartCount
+                          ? `${candidate.repairablePartCount} part${candidate.repairablePartCount === 1 ? '' : 's'}`
+                          : null}
                         {candidate.repairablePartCount && candidate.repairableEpisodeCount ? ' | ' : null}
                         {candidate.repairableEpisodeCount
                           ? `${candidate.repairableEpisodeCount} episode${candidate.repairableEpisodeCount === 1 ? '' : 's'}`
@@ -516,7 +559,9 @@ export function AdminVideoJobsTab() {
                               ? 'bg-emerald-500'
                               : 'bg-[#D90429]'
                         }`}
-                        style={{ width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%` }}
+                        style={{
+                          width: `${Math.max(0, Math.min(100, Number(job.progress || 0)))}%`,
+                        }}
                       />
                     </div>
 

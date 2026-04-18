@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { retryVideoJob } from '@/lib/server/videoJobs';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
+import { clearAdminProcessingCache } from '@/lib/server/adminProcessingCache';
 
 export async function POST(
   _req: Request,
@@ -14,6 +15,7 @@ export async function POST(
     }
 
     await retryVideoJob(params.jobId);
+    clearAdminProcessingCache(['jobs']);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

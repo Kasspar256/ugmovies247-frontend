@@ -56,6 +56,12 @@ export type LegacyDirectUploadRepairCandidate = {
   updatedAt: string;
 };
 
+export type LegacyDirectUploadRepairCandidatesResult = {
+  candidates: LegacyDirectUploadRepairCandidate[];
+  scannedMovies: number;
+  scanLimit: number;
+};
+
 function isoNow() {
   return new Date().toISOString();
 }
@@ -283,9 +289,17 @@ export async function queuePreparedDirectUploadJobs(jobs: PendingNormalizationJo
   );
 }
 
-export async function listLegacyDirectUploadRepairCandidates(options?: { limit?: number }) {
-  const limit = Math.max(1, Math.min(500, Number(options?.limit || 250)));
-  const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
+export async function listLegacyDirectUploadRepairCandidates(options?: {
+  limit?: number;
+  scanLimit?: number;
+}): Promise<LegacyDirectUploadRepairCandidatesResult> {
+  const limit = Math.max(1, Math.min(250, Number(options?.limit || 50)));
+  const scanLimit = Math.max(limit, Math.min(250, Number(options?.scanLimit || 100)));
+  const snapshot = await adminDb
+    .collection(MOVIES_COLLECTION)
+    .orderBy('updatedAt', 'desc')
+    .limit(scanLimit)
+    .get();
   const candidates: LegacyDirectUploadRepairCandidate[] = [];
 
   for (const doc of snapshot.docs) {
@@ -300,14 +314,20 @@ export async function listLegacyDirectUploadRepairCandidates(options?: { limit?:
     }
   }
 
-  return candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return {
+    candidates: candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    scannedMovies: snapshot.docs.length,
+    scanLimit,
+  };
 }
 
 export async function queueLegacyDirectUploadRepairs(options?: {
   movieLimit?: number;
   movieIds?: string[];
+  scanLimit?: number;
 }) {
   const movieLimit = Math.max(1, Math.min(250, Number(options?.movieLimit || 25)));
+  const scanLimit = Math.max(movieLimit, Math.min(250, Number(options?.scanLimit || 100)));
   const requestedMovieIds = Array.from(
     new Set(
       (options?.movieIds || [])
@@ -321,7 +341,13 @@ export async function queueLegacyDirectUploadRepairs(options?: {
           adminDb.collection(MOVIES_COLLECTION).doc(movieId).get()
         )
       )
-    : (await adminDb.collection(MOVIES_COLLECTION).get()).docs;
+    : (
+        await adminDb
+          .collection(MOVIES_COLLECTION)
+          .orderBy('updatedAt', 'desc')
+          .limit(scanLimit)
+          .get()
+      ).docs;
   const affectedMovieIds: string[] = [];
   let scannedMovies = 0;
   let updatedMovies = 0;
@@ -370,3 +396,4 @@ export async function queueLegacyDirectUploadRepairs(options?: {
     affectedMovieIds,
   };
 }
+

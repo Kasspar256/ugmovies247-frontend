@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import {
+  clearAdminProcessingCache,
+  readCachedRepairCandidates,
+} from '@/lib/server/adminProcessingCache';
+import {
   listLegacyDirectUploadRepairCandidates,
   queueLegacyDirectUploadRepairs,
 } from '@/lib/server/adminVideoProcessing';
@@ -18,19 +22,31 @@ export async function GET(request: Request) {
 
     const requestUrl = new URL(request.url);
     const limit = Number(requestUrl.searchParams.get('limit') || 250);
-    const candidates = await listLegacyDirectUploadRepairCandidates({ limit });
+    const scanLimit = Number(requestUrl.searchParams.get('scanLimit') || 100);
+    const cacheKey = `${limit}-${scanLimit}`;
+    const { candidates, scannedMovies } = await readCachedRepairCandidates(cacheKey, () =>
+      listLegacyDirectUploadRepairCandidates({
+        limit,
+        scanLimit,
+      })
+    );
 
     return NextResponse.json({
       candidates,
+      scannedMovies,
+      scanLimit,
     });
   } catch (error) {
     console.error('[video-jobs] failed to list legacy direct-upload repair candidates', error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Failed to load legacy direct-upload repair candidates.';
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to load legacy direct-upload repair candidates.',
+        error: /resource_exhausted|quota exceeded|timed out|deadline exceeded/i.test(message)
+          ? 'Repairable legacy uploads are temporarily unavailable. Try again when Firestore quota recovers.'
+          : message,
       },
       { status: 500 }
     );
@@ -48,12 +64,15 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       movieLimit?: number;
       movieIds?: string[];
+      scanLimit?: number;
     };
 
     const result = await queueLegacyDirectUploadRepairs({
       movieLimit: body.movieLimit,
       movieIds: body.movieIds,
+      scanLimit: body.scanLimit,
     });
+    clearAdminProcessingCache(['jobs', 'repairs']);
 
     return NextResponse.json({
       success: true,
