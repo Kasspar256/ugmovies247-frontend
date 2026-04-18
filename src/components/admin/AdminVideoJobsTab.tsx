@@ -552,10 +552,16 @@ export function AdminVideoJobsTab() {
                 {(() => {
                   const pipelineProgress = Math.max(0, Math.min(100, Number(job.progress || 0)));
                   const hasDownloadStats = job.status === 'downloading' && Number(job.downloadedBytes || 0) > 0;
+                  const hasUploadStats = job.status === 'uploading' && Number(job.uploadedBytes || 0) > 0;
                   const downloadPercent =
                     typeof job.downloadProgressPercent === 'number' &&
                     Number.isFinite(job.downloadProgressPercent)
                       ? Math.max(0, Math.min(100, Number(job.downloadProgressPercent)))
+                      : null;
+                  const uploadPercent =
+                    typeof job.uploadProgressPercent === 'number' &&
+                    Number.isFinite(job.uploadProgressPercent)
+                      ? Math.max(0, Math.min(100, Number(job.uploadProgressPercent)))
                       : null;
 
                   return (
@@ -595,7 +601,7 @@ export function AdminVideoJobsTab() {
                     </div>
 
                     <div className="mt-2 text-xs leading-6 text-white/55">
-                      {hasDownloadStats
+                      {hasDownloadStats || hasUploadStats
                         ? `Pipeline stage: ${pipelineProgress}%`
                         : `Progress: ${pipelineProgress}%`}
                     </div>
@@ -607,6 +613,17 @@ export function AdminVideoJobsTab() {
                         {' '}| Downloaded {formatBytes(job.downloadedBytes)}
                         {Number(job.downloadTotalBytes || 0) > 0
                           ? ` of ${formatBytes(job.downloadTotalBytes)}`
+                          : ''}
+                      </div>
+                    ) : null}
+
+                    {hasUploadStats ? (
+                      <div className="text-xs leading-6 text-white/55">
+                        R2 upload:{' '}
+                        {uploadPercent !== null ? `${uploadPercent}%` : 'In progress'}
+                        {' '}| Uploaded {formatBytes(job.uploadedBytes)}
+                        {Number(job.uploadTotalBytes || 0) > 0
+                          ? ` of ${formatBytes(job.uploadTotalBytes)}`
                           : ''}
                       </div>
                     ) : null}

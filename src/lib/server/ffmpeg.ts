@@ -21,7 +21,15 @@ export type FfprobeResult = {
   format?: FfprobeFormat;
 };
 
-function runProcess(command: string, args: string[], timeoutMs: number) {
+function runProcess(
+  command: string,
+  args: string[],
+  timeoutMs: number,
+  options?: {
+    onStdoutChunk?: (chunk: string) => void;
+    onStderrChunk?: (chunk: string) => void;
+  }
+) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
@@ -39,11 +47,15 @@ function runProcess(command: string, args: string[], timeoutMs: number) {
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      options?.onStdoutChunk?.(text);
     });
 
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      options?.onStderrChunk?.(text);
     });
 
     child.on('error', (error) => {
@@ -93,9 +105,90 @@ export async function runFfmpeg(args: string[], timeoutMs: number) {
   return runProcess(process.env.FFMPEG_PATH || 'ffmpeg', args, timeoutMs);
 }
 
-export async function convertVideoToMp4(inputPath: string, outputPath: string, timeoutMs: number) {
-  return runFfmpeg(
-    [
+function createFfmpegProgressReader(options?: {
+  durationSeconds?: number;
+  onProgress?: (progressPercent: number) => void | Promise<void>;
+}) {
+  if (!options?.onProgress || !options.durationSeconds || options.durationSeconds <= 0) {
+    return undefined;
+  }
+
+  let buffered = '';
+  let lastReportedPercent = -1;
+  const totalDurationMs = options.durationSeconds * 1000;
+
+  return (chunk: string) => {
+    buffered += chunk;
+    const lines = buffered.split(/\r?\n/);
+    buffered = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed.startsWith('out_time_ms=')) {
+        continue;
+      }
+
+      const rawValue = Number(trimmed.split('=')[1] || 0);
+
+      if (!Number.isFinite(rawValue) || rawValue <= 0) {
+        continue;
+      }
+
+      const progressPercent = Math.max(
+        0,
+        Math.min(100, Math.round((rawValue / 1000 / totalDurationMs) * 100))
+      );
+
+      if (progressPercent <= lastReportedPercent) {
+        continue;
+      }
+
+      lastReportedPercent = progressPercent;
+      void Promise.resolve(options.onProgress(progressPercent)).catch(() => undefined);
+    }
+  };
+}
+
+export async function runFfmpegWithProgress(options: {
+  args: string[];
+  timeoutMs: number;
+  durationSeconds?: number;
+  onProgress?: (progressPercent: number) => void | Promise<void>;
+}) {
+  const progressReader = createFfmpegProgressReader({
+    durationSeconds: options.durationSeconds,
+    onProgress: options.onProgress,
+  });
+
+  return runProcess(
+    process.env.FFMPEG_PATH || 'ffmpeg',
+    progressReader
+      ? ['-progress', 'pipe:1', '-nostats', ...options.args]
+      : options.args,
+    options.timeoutMs,
+    progressReader
+      ? {
+          onStdoutChunk: progressReader,
+        }
+      : undefined
+  );
+}
+
+export async function convertVideoToMp4(
+  inputPath: string,
+  outputPath: string,
+  timeoutMs: number,
+  options?: {
+    durationSeconds?: number;
+    onProgress?: (progressPercent: number) => void | Promise<void>;
+  }
+) {
+  return runFfmpegWithProgress({
+    timeoutMs,
+    durationSeconds: options?.durationSeconds,
+    onProgress: options?.onProgress,
+    args: [
       '-y',
       '-i',
       inputPath,
@@ -122,17 +215,23 @@ export async function convertVideoToMp4(inputPath: string, outputPath: string, t
       '160k',
       outputPath,
     ],
-    timeoutMs
-  );
+  });
 }
 
 export async function rewriteMp4ForStreaming(
   inputPath: string,
   outputPath: string,
-  timeoutMs: number
+  timeoutMs: number,
+  options?: {
+    durationSeconds?: number;
+    onProgress?: (progressPercent: number) => void | Promise<void>;
+  }
 ) {
-  return runFfmpeg(
-    [
+  return runFfmpegWithProgress({
+    timeoutMs,
+    durationSeconds: options?.durationSeconds,
+    onProgress: options?.onProgress,
+    args: [
       '-y',
       '-i',
       inputPath,
@@ -149,6 +248,5 @@ export async function rewriteMp4ForStreaming(
       '-sn',
       outputPath,
     ],
-    timeoutMs
-  );
+  });
 }

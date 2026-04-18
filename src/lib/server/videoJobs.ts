@@ -44,6 +44,11 @@ const CLAIMING_STALE_MS = 30 * 1000;
 const DOWNLOAD_PROGRESS_PERCENT_WRITE_STEP = 5;
 const DOWNLOAD_PROGRESS_FALLBACK_BYTES_WRITE_STEP = 100 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_WRITE_INTERVAL_MS = 1000 * 15;
+const PROCESSING_PROGRESS_PERCENT_WRITE_STEP = 5;
+const PROCESSING_PROGRESS_WRITE_INTERVAL_MS = 1000 * 15;
+const UPLOAD_PROGRESS_PERCENT_WRITE_STEP = 5;
+const UPLOAD_PROGRESS_BYTES_WRITE_STEP = 100 * 1024 * 1024;
+const UPLOAD_PROGRESS_WRITE_INTERVAL_MS = 1000 * 15;
 const IN_FLIGHT_STATUSES: VideoJobStatus[] = [
   'downloading',
   'inspecting',
@@ -166,6 +171,9 @@ export async function createVideoJob(
     downloadedBytes: 0,
     downloadTotalBytes: 0,
     downloadProgressPercent: null,
+    uploadedBytes: 0,
+    uploadTotalBytes: 0,
+    uploadProgressPercent: null,
     createdAt: now,
     updatedAt: now,
     retryCount: 0,
@@ -184,6 +192,9 @@ export async function retryVideoJob(jobId: string) {
       downloadedBytes: 0,
       downloadTotalBytes: 0,
       downloadProgressPercent: null,
+      uploadedBytes: 0,
+      uploadTotalBytes: 0,
+      uploadProgressPercent: null,
       queueOrder: Date.now(),
       errorMessage: '',
       startedAt: '',
@@ -205,6 +216,9 @@ export async function cancelVideoJob(jobId: string) {
       downloadedBytes: 0,
       downloadTotalBytes: 0,
       downloadProgressPercent: null,
+      uploadedBytes: 0,
+      uploadTotalBytes: 0,
+      uploadProgressPercent: null,
       errorMessage: ADMIN_CANCELLED_MESSAGE,
       timeoutAt: '',
       updatedAt: isoNow(),
@@ -293,6 +307,12 @@ async function recoverStaleInFlightJobs() {
         {
           status: 'queued',
           progress: 0,
+          downloadedBytes: 0,
+          downloadTotalBytes: 0,
+          downloadProgressPercent: null,
+          uploadedBytes: 0,
+          uploadTotalBytes: 0,
+          uploadProgressPercent: null,
           errorMessage: '',
           startedAt: '',
           timeoutAt: '',
@@ -341,6 +361,12 @@ async function recoverOldestInFlightJob() {
     {
       status: 'queued',
       progress: 0,
+      downloadedBytes: 0,
+      downloadTotalBytes: 0,
+      downloadProgressPercent: null,
+      uploadedBytes: 0,
+      uploadTotalBytes: 0,
+      uploadProgressPercent: null,
       errorMessage: '',
       startedAt: '',
       timeoutAt: '',
@@ -673,6 +699,12 @@ async function scheduleJobRetry(job: VideoJobDocument, message: string) {
     {
       status: 'queued',
       progress: 0,
+      downloadedBytes: 0,
+      downloadTotalBytes: 0,
+      downloadProgressPercent: null,
+      uploadedBytes: 0,
+      uploadTotalBytes: 0,
+      uploadProgressPercent: null,
       queueOrder: retryAt,
       retryCount: nextRetryCount,
       errorMessage: retryMessage,
@@ -709,6 +741,9 @@ export async function processNextVideoJob() {
       downloadedBytes: 0,
       downloadTotalBytes: 0,
       downloadProgressPercent: null,
+      uploadedBytes: 0,
+      uploadTotalBytes: 0,
+      uploadProgressPercent: null,
     });
     await updateLinkedAssetStage(job, 'downloading', 10, {
       video_url: '',
@@ -813,15 +848,52 @@ export async function processNextVideoJob() {
         : 'Processing the MP4 for wider browser and mobile compatibility.'
     );
 
+    let lastProcessingProgress = 60;
+    let lastProcessingUpdateAt = 0;
+    let lastRecordedProcessingPercent = 0;
+    const handleProcessingProgress = async (rawPercent: number) => {
+      const now = Date.now();
+      const numericProcessingPercent = Math.max(0, Math.min(100, Math.round(rawPercent)));
+      const nextProgress = Math.max(
+        60,
+        Math.min(84, 60 + Math.round(numericProcessingPercent * 0.24))
+      );
+      const shouldWrite =
+        nextProgress > lastProcessingProgress ||
+        numericProcessingPercent >=
+          lastRecordedProcessingPercent + PROCESSING_PROGRESS_PERCENT_WRITE_STEP ||
+        now - lastProcessingUpdateAt >= PROCESSING_PROGRESS_WRITE_INTERVAL_MS;
+
+      if (!shouldWrite) {
+        return;
+      }
+
+      lastProcessingProgress = Math.max(lastProcessingProgress, nextProgress);
+      lastProcessingUpdateAt = now;
+      lastRecordedProcessingPercent = numericProcessingPercent;
+
+      await updateJobState(job.id!, {
+        status: 'processing',
+        progress: lastProcessingProgress,
+      });
+    };
+
     const preparedMp4 = await prepareDirectMp4Source({
       sourcePath: source.path,
       outputDirectory: workspace.outputDirectory,
       timeoutMs: DIRECT_VIDEO_JOB_TIMEOUT_MS,
+      onProgress: handleProcessingProgress,
     });
     await throwIfJobWasCancelled(job.id!);
     await touchWorkerHeartbeat(job.id!);
 
-    await updateJobState(job.id!, { status: 'uploading', progress: 85 });
+    await updateJobState(job.id!, {
+      status: 'uploading',
+      progress: 85,
+      uploadedBytes: 0,
+      uploadTotalBytes: preparedMp4.fileSizeBytes,
+      uploadProgressPercent: 0,
+    });
     await updateLinkedAssetStage(job, 'uploading', 85, {
       sourceFileName: path.basename(preparedMp4.outputPath),
       fileSizeBytes: preparedMp4.fileSizeBytes,
@@ -831,9 +903,51 @@ export async function processNextVideoJob() {
     });
     await appendJobLog(job.id!, 'Uploading the final MP4 to Cloudflare R2.');
 
+    let lastUploadProgress = 85;
+    let lastUploadUpdateAt = 0;
+    let lastRecordedUploadPercent = 0;
+    let lastRecordedUploadedBytes = 0;
+    const handleUploadProgress = async (progress: {
+      uploadedBytes: number;
+      totalBytes: number;
+      progressPercent: number;
+    }) => {
+      const now = Date.now();
+      const numericUploadPercent = Math.max(0, Math.min(100, Math.round(progress.progressPercent)));
+      const nextProgress = Math.max(85, Math.min(99, 85 + Math.round(numericUploadPercent * 0.14)));
+      const percentAdvancedEnough =
+        numericUploadPercent >= lastRecordedUploadPercent + UPLOAD_PROGRESS_PERCENT_WRITE_STEP ||
+        numericUploadPercent === 100;
+      const bytesAdvancedEnough =
+        progress.uploadedBytes >= lastRecordedUploadedBytes + UPLOAD_PROGRESS_BYTES_WRITE_STEP;
+      const shouldWrite =
+        nextProgress > lastUploadProgress ||
+        percentAdvancedEnough ||
+        bytesAdvancedEnough ||
+        now - lastUploadUpdateAt >= UPLOAD_PROGRESS_WRITE_INTERVAL_MS;
+
+      if (!shouldWrite) {
+        return;
+      }
+
+      lastUploadProgress = Math.max(lastUploadProgress, nextProgress);
+      lastUploadUpdateAt = now;
+      lastRecordedUploadPercent = numericUploadPercent;
+      lastRecordedUploadedBytes = progress.uploadedBytes;
+
+      await updateJobState(job.id!, {
+        status: 'uploading',
+        progress: lastUploadProgress,
+        uploadedBytes: progress.uploadedBytes,
+        uploadTotalBytes: progress.totalBytes,
+        uploadProgressPercent: numericUploadPercent,
+      });
+    };
+
     const uploadedMp4 = await uploadDirectMp4Asset({
       localMp4Path: preparedMp4.outputPath,
       target: job.target,
+      onProgress: handleUploadProgress,
     });
     await throwIfJobWasCancelled(job.id!);
 
@@ -863,6 +977,9 @@ export async function processNextVideoJob() {
       errorMessage: '',
       processedAt: isoNow(),
       timeoutAt: '',
+      uploadedBytes: preparedMp4.fileSizeBytes,
+      uploadTotalBytes: preparedMp4.fileSizeBytes,
+      uploadProgressPercent: 100,
       output: {
         playbackType: 'mp4',
         durationSeconds: preparedMp4.durationSeconds,
@@ -885,6 +1002,7 @@ export async function processNextVideoJob() {
       progress: 0,
       errorMessage: message,
       timeoutAt: '',
+      uploadProgressPercent: null,
     });
     await updateLinkedAssetStage(job, 'failed', 0, {
       errorMessage: message,

@@ -88,6 +88,9 @@ export type VideoJobDocument = {
   downloadedBytes?: number;
   downloadTotalBytes?: number;
   downloadProgressPercent?: number | null;
+  uploadedBytes?: number;
+  uploadTotalBytes?: number;
+  uploadProgressPercent?: number | null;
   target: VideoJobTarget;
   createdAt: string;
   updatedAt: string;

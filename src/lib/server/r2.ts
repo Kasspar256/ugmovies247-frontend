@@ -409,6 +409,13 @@ export async function uploadFileToR2(options: {
   localPath: string;
   key: string;
   contentType?: string;
+  onProgress?: (progress: {
+    uploadedBytes: number;
+    totalBytes: number;
+    progressPercent: number;
+    uploadedParts?: number;
+    totalParts?: number;
+  }) => Promise<void> | void;
 }) {
   const stats = await fs.stat(options.localPath);
   const contentType = options.contentType || 'application/octet-stream';
@@ -432,6 +439,7 @@ export async function uploadFileToR2(options: {
       }
 
       const totalParts = Math.ceil(stats.size / partSize);
+      let uploadedBytes = 0;
 
       for (let index = 0; index < totalParts; index += 1) {
         const partNumber = index + 1;
@@ -496,6 +504,15 @@ export async function uploadFileToR2(options: {
           partNumber,
           etag: String(response.ETag).trim(),
         });
+
+        uploadedBytes += expectedLength;
+        await options.onProgress?.({
+          uploadedBytes,
+          totalBytes: stats.size,
+          progressPercent: Math.max(0, Math.min(100, Math.round((uploadedBytes / stats.size) * 100))),
+          uploadedParts: partNumber,
+          totalParts,
+        });
       }
 
       await completeMultipartR2Upload({
@@ -530,6 +547,14 @@ export async function uploadFileToR2(options: {
     }),
     `put:${options.key}`
   );
+
+  await options.onProgress?.({
+    uploadedBytes: stats.size,
+    totalBytes: stats.size,
+    progressPercent: 100,
+    uploadedParts: 1,
+    totalParts: 1,
+  });
 
   return {
     key: options.key,

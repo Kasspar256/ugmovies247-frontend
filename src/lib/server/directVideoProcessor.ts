@@ -78,6 +78,7 @@ export async function prepareDirectMp4Source(options: {
   sourcePath: string;
   outputDirectory: string;
   timeoutMs: number;
+  onProgress?: (progressPercent: number) => void | Promise<void>;
 }) {
   const sourceExtension = path.extname(options.sourcePath).toLowerCase();
   const outputPath = path.join(
@@ -89,9 +90,15 @@ export async function prepareDirectMp4Source(options: {
   await fs.mkdir(options.outputDirectory, { recursive: true });
 
   if (sourceExtension === '.mp4' && sourceInfo.isSafariCompatibleMp4) {
-    await rewriteMp4ForStreaming(options.sourcePath, outputPath, options.timeoutMs);
+    await rewriteMp4ForStreaming(options.sourcePath, outputPath, options.timeoutMs, {
+      durationSeconds: sourceInfo.durationSeconds,
+      onProgress: options.onProgress,
+    });
   } else {
-    await convertVideoToMp4(options.sourcePath, outputPath, options.timeoutMs);
+    await convertVideoToMp4(options.sourcePath, outputPath, options.timeoutMs, {
+      durationSeconds: sourceInfo.durationSeconds,
+      onProgress: options.onProgress,
+    });
   }
 
   const mediaInfo = await inspectDirectVideoSource(outputPath);
@@ -108,6 +115,13 @@ export async function uploadDirectMp4Asset(options: {
     | { kind: 'movie'; movieId: string }
     | { kind: 'part'; movieId: string; partId: string }
     | { kind: 'episode'; movieId: string; seasonNumber: number; episodeNumber: number };
+  onProgress?: (progress: {
+    uploadedBytes: number;
+    totalBytes: number;
+    progressPercent: number;
+    uploadedParts?: number;
+    totalParts?: number;
+  }) => Promise<void> | void;
 }) {
   const basePrefix =
     options.target.kind === 'movie'
@@ -121,6 +135,7 @@ export async function uploadDirectMp4Asset(options: {
     localPath: options.localMp4Path,
     key,
     contentType: getContentTypeForFile(options.localMp4Path),
+    onProgress: options.onProgress,
   });
 }
 
