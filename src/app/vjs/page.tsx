@@ -1,81 +1,108 @@
 'use client';
+
 import Link from 'next/link';
 import { VJ_DIRECTORY } from '@/config/constants';
-import { Mic2, ChevronRight, Search as SearchIcon } from 'lucide-react';
+import { ChevronRight, Search as SearchIcon } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
 export default function VJsDirectory() {
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
-
+    <div className="min-h-screen bg-[#05070B] text-white pb-[calc(4rem+env(safe-area-inset-bottom))] pt-[84px] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
-        title="VJ Directory"
-        subtitle="Browse dubbed collections"
+        title="VJs"
+        subtitle="Browse translators"
         fallbackHref="/"
         actionHref="/search"
         actionIcon={<SearchIcon size={18} />}
         actionAriaLabel="Search movies"
       />
 
-      <div className="mt-6 md:mt-2 max-w-[1380px] mx-auto">
-        <p className="text-[#888888] text-sm md:text-lg mb-4 md:mb-8 max-w-2xl px-1">Select a translator to browse their entire fully-dubbed underground collection. High-octane action, strictly in Luganda.</p>
-        
-        {/* Simple inline search bar for the VJ Directory */}
-        <div className="mb-6 md:mb-8 bg-[#1F2833]/80 border border-[#D90429]/30 rounded-full flex items-center px-4 py-1.5 md:p-2 sticky top-[72px] md:top-[80px] z-30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-xl mx-4 md:mx-0 transition-all focus-within:border-[#D90429] focus-within:ring-2 focus-within:ring-[#D90429]/20">
-           <div className="text-[#888888] flex-shrink-0"><SearchIcon size={18} /></div>
-           <input 
-             type="text" 
-             placeholder="Search specific VJ..." 
-             className="w-full bg-transparent border-none focus:outline-none focus:ring-0 text-white px-3 py-2 text-base md:text-sm placeholder-[#888888]/60 appearance-none"
-             onChange={(e) => {
-               const val = e.target.value.toLowerCase();
-               const cards = document.querySelectorAll('.vj-card');
-               cards.forEach((el: any) => {
-                  const vjName = el.getAttribute('data-vjname')?.toLowerCase() || "";
-                  if (vjName.includes(val)) {
-                     el.style.display = 'block';
-                  } else {
-                     el.style.display = 'none';
-                  }
-               });
-             }}
-           />
-        </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6 pb-20">
-          {VJ_DIRECTORY.map((vj, idx) => (
-            <Link 
-              href={`/vjs/${vj.id}`} 
-              key={vj.id}
-              data-vjname={vj.name}
-              className="vj-card group relative h-32 md:h-48 rounded-xl overflow-hidden bg-[#1F2833] border border-[#1F2833]/50 hover:border-[#D90429] transition-all hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(217,4,41,0.2)]"
-            >
-              {/* Dynamic Abstract Background for VJs */}
-              <div 
-                className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-60 transition-opacity"
-                style={{ 
-                  backgroundImage: `url(https://picsum.photos/seed/${vj.id}/400/400?grayscale&blur=2)`,
-                  mixBlendMode: 'luminosity'
-                }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-black/50 to-transparent group-hover:via-[#D90429]/20 transition-colors" />
-              
-              <div className="absolute inset-0 p-4 md:p-6 flex flex-col justify-between">
-                <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/10 group-hover:border-[#D90429] group-hover:text-[#D90429] transition-all">
-                  <Mic2 size={16} className="md:w-5 md:h-5" />
-                </div>
-                <div>
-                  <div className="text-[#D90429] text-[10px] font-bold uppercase tracking-widest mb-1 opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">Dubbed By</div>
-                  <h2 className="text-white font-black text-lg md:text-xl drop-shadow-lg group-hover:text-[#D90429] transition-colors flex items-center justify-between">
-                    {vj.name}
-                    <ChevronRight size={20} className="text-[#888888] group-hover:text-[#D90429] transition-colors translate-x-0 group-hover:translate-x-2" />
-                  </h2>
-                </div>
+      <main className="mx-auto max-w-[1180px] px-4 sm:px-5 md:px-0">
+        <header className="hidden md:block">
+          <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white">
+            VJs
+          </h1>
+          <p className="mt-2 text-sm text-white/54">
+            Browse translators
+          </p>
+          <div className="mt-5 h-px w-full bg-white/8" />
+        </header>
+
+        <section className="mt-5 md:mt-8">
+          <div className="rounded-[20px] border border-white/8 bg-[#0B0F15] p-3 shadow-[0_12px_32px_rgba(0,0,0,0.28)] md:p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-center gap-3 text-sm text-white/52">
+                <span className="font-medium">{VJ_DIRECTORY.length} translators</span>
               </div>
-            </Link>
-          ))}
-        </div>
-      </div>
+
+              <div className="relative w-full md:max-w-[380px]">
+                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-white/38">
+                  <SearchIcon size={17} />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search VJs"
+                  aria-label="Search VJs"
+                  className="w-full rounded-[16px] border border-white/8 bg-white/[0.02] py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-white/14 focus:bg-white/[0.03]"
+                  onChange={(e) => {
+                    const val = e.target.value.toLowerCase();
+                    const cards = document.querySelectorAll('.vj-card');
+                    cards.forEach((el: any) => {
+                      const vjName = el.getAttribute('data-vjname')?.toLowerCase() || '';
+                      if (vjName.includes(val)) {
+                        el.style.display = 'block';
+                      } else {
+                        el.style.display = 'none';
+                      }
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-4 pb-20 md:mt-6">
+          {VJ_DIRECTORY.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 md:gap-4 xl:grid-cols-3 2xl:grid-cols-4">
+              {VJ_DIRECTORY.map((vj) => (
+                <Link
+                  href={`/vjs/${vj.id}`}
+                  key={vj.id}
+                  data-vjname={vj.name}
+                  className="vj-card group block"
+                >
+                  <article className="flex items-center justify-between rounded-[18px] border border-white/8 bg-[#0A0E14] px-4 py-4 transition-colors duration-200 hover:border-white/12 hover:bg-white/[0.035]">
+                    <div className="min-w-0">
+                      <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-white sm:text-base">
+                        {vj.name}
+                      </h2>
+                      <p className="mt-1 text-xs text-white/42 sm:text-sm">
+                        Browse collection
+                      </p>
+                    </div>
+
+                    <div className="ml-4 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/8 bg-white/[0.03] text-white/42 transition-all duration-200 group-hover:border-white/14 group-hover:text-white/68">
+                      <ChevronRight size={16} className="transition-transform duration-200 group-hover:translate-x-0.5" />
+                    </div>
+                  </article>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-[260px] items-center justify-center rounded-[20px] border border-dashed border-white/10 bg-[#0A0E14] px-6 text-center">
+              <div>
+                <h2 className="text-xl font-semibold tracking-[-0.02em] text-white">
+                  No VJs available
+                </h2>
+                <p className="mt-2 text-sm text-white/48">
+                  Translators will appear here when they are added.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }

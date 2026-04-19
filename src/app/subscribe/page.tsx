@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
 import SubscribeFlowNotices from '@/components/subscribe/SubscribeFlowNotices';
@@ -13,6 +14,7 @@ import {
 
 export default function SubscribePlanPage() {
   const router = useRouter();
+  const proceedSectionRef = useRef<HTMLDivElement | null>(null);
   const {
     loadError,
     error,
@@ -28,6 +30,19 @@ export default function SubscribePlanPage() {
     safeReturnTo,
   } = useSubscribeFlow();
   const backHref = safeReturnTo || '/profile';
+
+  const scrollToProceedSection = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      proceedSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    });
+  };
 
   const handleProceed = () => {
     if (!selectedPlanDefinition) {
@@ -140,8 +155,9 @@ export default function SubscribePlanPage() {
                     onClick={() => {
                       clearFeedback();
                       setSelectedPlan(plan.type);
+                      scrollToProceedSection();
                     }}
-                    className={`rounded-[22px] border px-3.5 py-3.5 text-left transition-all ${
+                    className={`rounded-[22px] border px-3 py-3 text-left transition-all ${
                       isSelected
                         ? 'border-[#D90429] bg-[#D90429]/10 shadow-[0_16px_36px_rgba(217,4,41,0.14)]'
                         : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
@@ -152,7 +168,7 @@ export default function SubscribePlanPage() {
                         <div className="text-[10px] font-black uppercase tracking-[0.22em] text-white/42">
                           {plan.type}
                         </div>
-                        <div className="mt-1.5 text-base font-black text-white">{plan.name}</div>
+                        <div className="mt-1 text-base font-black text-white">{plan.name}</div>
                       </div>
 
                       <div className="flex flex-col items-end gap-2">
@@ -167,13 +183,13 @@ export default function SubscribePlanPage() {
                       </div>
                     </div>
 
-                    <div className="mt-3 text-xl font-black tracking-[-0.04em] text-[#D90429]">
+                    <div className="mt-2.5 text-xl font-black tracking-[-0.04em] text-[#D90429]">
                       {formatMoney(plan.currency, plan.amount)}
                     </div>
-                    <p className="mt-1.5 text-[13px] leading-5 text-white/60">{plan.description}</p>
+                    <p className="mt-1 text-[13px] leading-5 text-white/60">{plan.description}</p>
 
                     {isSelected ? (
-                      <div className="mt-3 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#FFB3C1]">
+                      <div className="mt-2.5 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#FFB3C1]">
                         <CheckCircle2 size={14} />
                         Selected
                       </div>
@@ -188,7 +204,10 @@ export default function SubscribePlanPage() {
             </div>
           )}
 
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            ref={proceedSectionRef}
+            className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          >
             <button
               type="button"
               onClick={handleProceed}
