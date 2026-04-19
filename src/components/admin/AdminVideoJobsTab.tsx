@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, RefreshCw, RotateCcw, SquareX, UploadCloud } from 'lucide-react';
-import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
+import { clearAdminFetchCache, fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import type { VideoJobDocument, VideoJobStatus } from '@/types/videoJobs';
 import { Card, StatTile, TextInput } from '@/components/admin/controlCenterFields';
 
@@ -274,7 +274,8 @@ export function AdminVideoJobsTab() {
       }
 
       setStatusMessage('The failed job was moved back into the queue.');
-      await loadJobs(false);
+      clearAdminFetchCache('/api/admin/video-jobs');
+      await loadJobs(true);
     } catch (error) {
       setJobErrorMessage(error instanceof Error ? error.message : 'Failed to retry the job.');
     } finally {
@@ -298,7 +299,8 @@ export function AdminVideoJobsTab() {
       }
 
       setStatusMessage('The job was stopped and marked as failed.');
-      await loadJobs(false);
+      clearAdminFetchCache('/api/admin/video-jobs');
+      await loadJobs(true);
     } catch (error) {
       setJobErrorMessage(error instanceof Error ? error.message : 'Failed to cancel the job.');
     } finally {
@@ -339,7 +341,8 @@ export function AdminVideoJobsTab() {
           : 'None of the selected movies needed repair anymore.'
       );
       setSelectedRepairMovieIds([]);
-      await Promise.all([loadJobs(false), loadRepairCandidates(false)]);
+      clearAdminFetchCache('/api/admin/video-jobs');
+      await Promise.all([loadJobs(true), loadRepairCandidates(false)]);
     } catch (error) {
       setRepairErrorMessage(
         formatProcessingError(
