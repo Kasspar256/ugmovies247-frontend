@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Clock3, Download, Search, UserCircle2 } from 'lucide-react';
+import { isLegalRoute } from '@/lib/legalRoutes';
 
 function shouldShowDesktopHeader(pathname: string) {
   if (!pathname) {
@@ -19,6 +20,10 @@ function shouldShowDesktopHeader(pathname: string) {
   }
 
   if (pathname.startsWith('/admin')) {
+    return false;
+  }
+
+  if (isLegalRoute(pathname)) {
     return false;
   }
 

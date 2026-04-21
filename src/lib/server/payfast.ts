@@ -25,6 +25,17 @@ type PayFastValidationResult = {
   reason?: string;
 };
 
+const DEFAULT_PAYFAST_PLAN_PRICES_ZAR: Record<SubscriptionPlanType, number> = {
+  daily: 10,
+  seven_days: 25,
+  fourteen_days: 32,
+  monthly: 70,
+  two_months: 100,
+  three_months: 140,
+  six_months: 270,
+  twelve_months: 540,
+};
+
 function parseBoolean(value: string | undefined) {
   return value === 'true' || value === '1';
 }
@@ -98,6 +109,7 @@ function getConfiguredPlanPrices() {
   }
 
   return {
+    ...DEFAULT_PAYFAST_PLAN_PRICES_ZAR,
     ...jsonPrices,
     ...individualPrices,
   };

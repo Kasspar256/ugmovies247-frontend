@@ -2,11 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { isLegalRoute } from '@/lib/legalRoutes';
 
 const HIDDEN_PREFIXES = ['/admin'];
 
 function shouldHideFooter(pathname: string) {
-  return HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return (
+    isLegalRoute(pathname) ||
+    HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  );
 }
 
 export default function SiteFooter() {
@@ -29,12 +33,12 @@ export default function SiteFooter() {
 
         <div className="flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-white/72">
           <Link href="/terms" className="transition-colors hover:text-white">
-            Terms of Service
+            Terms &amp; Conditions
           </Link>
-          <Link href="/privacy-policy" className="transition-colors hover:text-white">
+          <Link href="/privacy" className="transition-colors hover:text-white">
             Privacy Policy
           </Link>
-          <Link href="/dcma" className="transition-colors hover:text-white">
+          <Link href="/dmca" className="transition-colors hover:text-white">
             DMCA
           </Link>
         </div>

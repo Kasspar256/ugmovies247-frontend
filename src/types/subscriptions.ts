@@ -8,7 +8,15 @@ export type SubscriptionPlanType =
   | 'six_months'
   | 'twelve_months';
 export type SubscriptionCurrency = 'UGX' | 'ZAR';
-export type SubscriptionStatus = 'inactive' | 'active' | 'expired' | 'cancelled';
+export type SubscriptionStatus =
+  | 'inactive'
+  | 'active'
+  | 'expired'
+  | 'cancelled'
+  | 'revoked'
+  | 'scheduled';
+export type SubscriptionAccessSource = 'payment' | 'admin_override' | 'promo' | 'admin_role' | '';
+export type ManualSubscriptionAccessType = 'paid_equivalent' | 'promo' | 'admin_override';
 export type PaymentProvider = 'pawapay' | 'payfast';
 export type PaymentMethodProvider = string;
 export type CheckoutPaymentMethod = 'mobile_money' | 'card';
@@ -51,6 +59,9 @@ export type SubscriptionSnapshot = {
   startsAt: string;
   expiresAt: string;
   paymentProvider: PaymentProvider | '';
+  source?: SubscriptionAccessSource;
+  accessType?: ManualSubscriptionAccessType | '';
+  autoRenewEnabled?: boolean;
   updatedAt: string;
 };
 
@@ -72,6 +83,56 @@ export type UserSubscriptionDocument = {
   nextChargeAt: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type SubscriptionOverrideDocument = {
+  userId: string;
+  planType: SubscriptionPlanType | null;
+  planName: string;
+  source: Extract<SubscriptionAccessSource, 'admin_override' | 'promo'>;
+  accessType: ManualSubscriptionAccessType;
+  status: Extract<SubscriptionStatus, 'active' | 'expired' | 'cancelled' | 'revoked' | 'scheduled'>;
+  isActive: boolean;
+  startsAt: string;
+  expiresAt: string;
+  note: string;
+  grantedByAdminId: string;
+  grantedByAdminEmail: string;
+  grantedByAdminName: string;
+  revokedAt: string;
+  revokedByAdminId: string;
+  revokedByAdminEmail: string;
+  revokedByAdminName: string;
+  revokedReason: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SubscriptionOverrideAuditAction =
+  | 'grant'
+  | 'overlay'
+  | 'replace'
+  | 'extend'
+  | 'revoke'
+  | 'clear_override'
+  | 'downgrade_free'
+  | 'cancel_auto_renew';
+
+export type SubscriptionOverrideAuditLogDocument = {
+  id?: string;
+  actionType: SubscriptionOverrideAuditAction;
+  adminUserId: string;
+  adminEmail: string;
+  adminName: string;
+  targetUserId: string;
+  targetUserEmail: string;
+  targetUserName: string;
+  planType: SubscriptionPlanType | null;
+  planName: string;
+  note: string;
+  oldState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  createdAt: string;
 };
 
 export type PaymentAttemptDocument = {
@@ -155,6 +216,16 @@ export type SubscriptionEntitlement = {
   hasPremiumAccess: boolean;
   requiresSubscription: boolean;
   subscription: SubscriptionSnapshot;
+};
+
+export type EffectiveSubscriptionState = {
+  paidSubscription: UserSubscriptionDocument | null;
+  paidSnapshot: SubscriptionSnapshot;
+  manualOverride: SubscriptionOverrideDocument | null;
+  manualSnapshot: SubscriptionSnapshot;
+  effectiveSnapshot: SubscriptionSnapshot;
+  hasPremiumAccess: boolean;
+  requiresSubscription: boolean;
 };
 
 export type PaymentMethodProviderOption = {

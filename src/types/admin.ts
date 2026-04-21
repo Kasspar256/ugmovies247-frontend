@@ -1,5 +1,12 @@
 import type { Movie } from '@/types/movie';
-import type { PaymentAttemptDocument, SubscriptionSnapshot } from '@/types/subscriptions';
+import type {
+  PaymentAttemptDocument,
+  RecurringAgreementSummary,
+  SubscriptionOverrideAuditAction,
+  SubscriptionSnapshot,
+  SubscriptionOverrideDocument,
+  UserSubscriptionDocument,
+} from '@/types/subscriptions';
 
 export type AdminCategoryType = 'home_row' | 'genre' | 'custom';
 
@@ -37,6 +44,8 @@ export type AdminUserSummary = {
   id: string;
   name: string;
   email: string;
+  username?: string;
+  phoneNumber?: string;
   role: 'user' | 'admin';
   joinDate: string;
   lastLoginAt: string;
@@ -111,4 +120,65 @@ export type AdminControlCenterPayload = {
   requests: AdminRequest[];
   libraryAssets: AdminLibraryAsset[];
   revenue: AdminRevenueSummary;
+};
+
+export type AdminSubscriptionUserSummary = {
+  id: string;
+  name: string;
+  email: string;
+  username: string;
+  phoneNumber: string;
+  role: 'user' | 'admin';
+  joinDate: string;
+  lastLoginAt: string;
+  isActive: boolean;
+  avatarUrl: string;
+  effectiveSubscription: SubscriptionSnapshot;
+  paidSubscription: Pick<
+    UserSubscriptionDocument,
+    | 'planType'
+    | 'planName'
+    | 'status'
+    | 'isActive'
+    | 'startsAt'
+    | 'expiresAt'
+    | 'paymentProvider'
+    | 'autoRenewEnabled'
+    | 'nextChargeAt'
+    | 'updatedAt'
+  > | null;
+  manualOverride: Pick<
+    SubscriptionOverrideDocument,
+    | 'planType'
+    | 'planName'
+    | 'source'
+    | 'accessType'
+    | 'status'
+    | 'isActive'
+    | 'startsAt'
+    | 'expiresAt'
+    | 'note'
+    | 'grantedByAdminEmail'
+    | 'grantedByAdminName'
+    | 'updatedAt'
+    | 'revokedAt'
+  > | null;
+  recurringAgreement: RecurringAgreementSummary;
+};
+
+export type AdminSubscriptionOverrideActivity = {
+  id: string;
+  actionType: SubscriptionOverrideAuditAction;
+  adminUserId: string;
+  adminEmail: string;
+  adminName: string;
+  targetUserId: string;
+  targetUserEmail: string;
+  targetUserName: string;
+  planType: string | null;
+  planName: string;
+  note: string;
+  oldState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  createdAt: string;
 };

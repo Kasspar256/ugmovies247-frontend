@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Home, Search, User, Mic2, Film } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { isLegalRoute } from '@/lib/legalRoutes';
 
 const MOBILE_NAV_HEIGHT_PX = 64;
 
@@ -21,6 +22,10 @@ function shouldShowMobileNav(pathname: string) {
   }
 
   if (pathname.startsWith('/admin')) {
+    return false;
+  }
+
+  if (isLegalRoute(pathname)) {
     return false;
   }
 

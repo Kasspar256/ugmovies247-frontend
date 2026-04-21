@@ -789,7 +789,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
   </header>
 
   {/* Video Player */}
-  <div className="relative w-full h-[40vh] bg-black mt-20 md:mx-auto md:mt-[118px] md:h-[72vh] md:max-w-[1380px] md:overflow-hidden md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
+  <div className="relative isolate mt-20 h-[40vh] min-h-[220px] w-full overflow-hidden bg-black md:mx-auto md:mt-[118px] md:h-[72vh] md:max-w-[1380px] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
     {isPlaybackLocked ? (
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-black/70 to-black px-6 text-center">
         <div className="rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.26em] text-[#FFB3C1]">

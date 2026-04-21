@@ -3,19 +3,20 @@
 import { useEffect, useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { fetchAuthStatus } from '@/lib/auth/status-client';
+import { isLegalRoute } from '@/lib/legalRoutes';
 
 const AUTH_FREE_PREFIXES = [
   '/login',
   '/signup',
   '/forgot-password',
   '/admin',
-  '/terms',
-  '/privacy-policy',
-  '/dcma',
 ];
 
 function isAuthFreePath(pathname: string) {
-  return AUTH_FREE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return (
+    isLegalRoute(pathname) ||
+    AUTH_FREE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  );
 }
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {

@@ -1,71 +1,114 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
-import MobilePageHeader from '@/components/MobilePageHeader';
 
-type LegalSection = {
-  title: string;
-  paragraphs?: ReactNode[];
-  items?: ReactNode[];
-};
-
-export default function LegalDocumentPage({
-  eyebrow,
-  title,
-  summary,
-  updatedLabel,
-  sections,
-}: {
-  eyebrow: string;
+type LegalDocumentPageProps = {
+  eyebrow?: string;
   title: string;
   summary: ReactNode;
-  updatedLabel: string;
-  sections: LegalSection[];
+  lastUpdated: string;
+  children: ReactNode;
+};
+
+type SectionProps = {
+  id?: string;
+  title: string;
+  children: ReactNode;
+};
+
+type SubsectionProps = {
+  title: string;
+  children: ReactNode;
+};
+
+export function LegalInlineLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
 }) {
   return (
-    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
-      <MobilePageHeader title={title} fallbackHref="/login" />
+    <a
+      href={href}
+      className="font-semibold text-[#B00020] underline decoration-[#D90429]/35 underline-offset-4 transition-colors hover:text-black"
+    >
+      {children}
+    </a>
+  );
+}
 
-      <div className="mx-auto max-w-4xl">
-        <div className="hidden md:block">
-          <div className="text-xs font-black uppercase tracking-[0.24em] text-white/42">{eyebrow}</div>
-          <h1 className="mt-3 text-4xl font-black tracking-[-0.04em] text-white">{title}</h1>
+export function LegalSection({ id, title, children }: SectionProps) {
+  return (
+    <section id={id} className="scroll-mt-24 border-t border-slate-200 pt-10 first:border-t-0 first:pt-0">
+      <h2 className="text-2xl font-bold tracking-[-0.03em] text-slate-950">{title}</h2>
+      <div className="mt-4 space-y-4 text-[15px] leading-7 text-slate-700 sm:text-base">{children}</div>
+    </section>
+  );
+}
+
+export function LegalSubsection({ title, children }: SubsectionProps) {
+  return (
+    <div className="space-y-3 pt-2">
+      <h3 className="text-lg font-semibold tracking-[-0.02em] text-slate-900">{title}</h3>
+      <div className="space-y-3 text-[15px] leading-7 text-slate-700 sm:text-base">{children}</div>
+    </div>
+  );
+}
+
+export function LegalBulletList({ children }: { children: ReactNode }) {
+  return (
+    <ul className="list-disc space-y-2 pl-6 text-[15px] leading-7 text-slate-700 marker:text-[#D90429] sm:text-base">
+      {children}
+    </ul>
+  );
+}
+
+export function LegalNumberedList({ children }: { children: ReactNode }) {
+  return (
+    <ol className="list-decimal space-y-2 pl-6 text-[15px] leading-7 text-slate-700 marker:font-semibold marker:text-slate-900 sm:text-base">
+      {children}
+    </ol>
+  );
+}
+
+export default function LegalDocumentPage({
+  eyebrow = 'UGMovies247 Legal',
+  title,
+  summary,
+  lastUpdated,
+  children,
+}: LegalDocumentPageProps) {
+  return (
+    <div className="min-h-screen bg-white text-slate-900">
+      <header className="border-b border-black/10 bg-black">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-center px-4 sm:h-[72px] sm:px-6">
+          <Link
+            href="/"
+            className="text-center text-[15px] font-black uppercase tracking-[0.38em] text-[#D90429] transition-transform hover:scale-[1.01] sm:text-[18px] [text-shadow:0_0_18px_rgba(217,4,41,0.38)]"
+          >
+            UGMOVIES247
+          </Link>
         </div>
+      </header>
 
-        <section className="mt-6 rounded-[30px] border border-white/10 bg-[#11141C]/84 p-6 shadow-[0_24px_54px_rgba(0,0,0,0.34)] md:p-8">
-          <div className="text-xs font-black uppercase tracking-[0.24em] text-white/42">Last Updated</div>
-          <div className="mt-2 text-base font-semibold text-white">{updatedLabel}</div>
-          <div className="mt-5 text-[15px] leading-7 text-white/74">{summary}</div>
-        </section>
+      <main className="px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+        <article className="mx-auto max-w-4xl">
+          <div className="text-xs font-bold uppercase tracking-[0.24em] text-slate-500">{eyebrow}</div>
+          <h1 className="mt-4 text-4xl font-black uppercase tracking-[-0.04em] text-slate-950 sm:text-5xl">
+            {title}
+          </h1>
 
-        <div className="mt-5 space-y-4">
-          {sections.map((section) => (
-            <section
-              key={section.title}
-              className="rounded-[28px] border border-white/10 bg-[#11141C]/74 p-6 shadow-[0_18px_42px_rgba(0,0,0,0.24)] md:p-7"
-            >
-              <h2 className="text-xl font-black tracking-[-0.03em] text-white">{section.title}</h2>
+          <div className="mt-6 rounded-[24px] border border-slate-200 bg-slate-50 p-5 sm:p-6">
+            <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500">
+              Last Updated
+            </div>
+            <div className="mt-2 text-sm font-semibold text-slate-900 sm:text-base">{lastUpdated}</div>
+            <div className="mt-4 text-[15px] leading-7 text-slate-700 sm:text-base">{summary}</div>
+          </div>
 
-              {section.paragraphs?.length ? (
-                <div className="mt-4 space-y-3 text-[15px] leading-7 text-white/72">
-                  {section.paragraphs.map((paragraph, index) => (
-                    <p key={`${section.title}-paragraph-${index}`}>{paragraph}</p>
-                  ))}
-                </div>
-              ) : null}
-
-              {section.items?.length ? (
-                <ul className="mt-4 space-y-3 text-[15px] leading-7 text-white/72">
-                  {section.items.map((item, index) => (
-                    <li key={`${section.title}-item-${index}`} className="flex gap-3">
-                      <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#D90429]" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </section>
-          ))}
-        </div>
-      </div>
-    </main>
+          <div className="mt-10 space-y-10">{children}</div>
+        </article>
+      </main>
+    </div>
   );
 }

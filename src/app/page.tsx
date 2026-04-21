@@ -107,7 +107,7 @@ export default function Home() {
 
     const fetchMovies = async () => {
       try {
-        const data = dedupeSeriesMovies(await fetchPublicMovies());
+        const data = dedupeSeriesMovies(await fetchPublicMovies({ force: true }));
         setMovies(data);
       } catch (err) {
         console.error("Error fetching movies:", err);

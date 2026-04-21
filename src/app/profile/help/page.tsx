@@ -118,20 +118,20 @@ export default function HelpPage() {
           <div className="mt-5 space-y-3">
             <SupportAction
               href="/terms"
-              label="Terms of Service"
-              description="Read the rules for accounts, subscriptions, billing, and acceptable use."
+              label="Terms & Conditions"
+              description="Read the rules for accounts, subscriptions, billing, streaming, and acceptable use."
               icon={Scale}
               accentClass="border border-white/10 bg-white/5 text-white"
             />
             <SupportAction
-              href="/privacy-policy"
+              href="/privacy"
               label="Privacy Policy"
               description="See what information we collect, how it is used, and how deletion requests work."
               icon={FileText}
               accentClass="border border-white/10 bg-white/5 text-white"
             />
             <SupportAction
-              href="/dcma"
+              href="/dmca"
               label="DMCA"
               description="Read the copyright notice policy for rights holders and authorized agents."
               icon={FileText}

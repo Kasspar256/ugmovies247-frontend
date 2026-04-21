@@ -77,7 +77,7 @@ export default function SubscribeCardPage() {
 
         <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} />
 
-        <SubscribePlanSummaryCard plan={selectedPlanDefinition} eyebrow="Ready for checkout" />
+        <SubscribePlanSummaryCard plan={selectedPlanDefinition} eyebrow="Ready for card checkout" />
 
         <section className="rounded-[30px] border border-white/10 bg-[#11141C]/82 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.28)] md:p-6">
           <div className="rounded-[26px] border border-white/10 bg-white/5 p-5">
@@ -130,4 +130,3 @@ export default function SubscribeCardPage() {
     </SubscribeStepShell>
   );
 }
-

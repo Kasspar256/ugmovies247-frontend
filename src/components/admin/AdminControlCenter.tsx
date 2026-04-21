@@ -14,6 +14,7 @@ import {
   Loader2,
   MonitorPlay,
   RefreshCw,
+  ShieldCheck,
   Tags,
   Users,
 } from 'lucide-react';
@@ -56,6 +57,7 @@ import { AdminCategoriesTab } from '@/components/admin/AdminCategoriesTab';
 import { AdminUsersTab } from '@/components/admin/AdminUsersTab';
 import { AdminRequestsTab } from '@/components/admin/AdminRequestsTab';
 import { AdminRevenueTab } from '@/components/admin/AdminRevenueTab';
+import { AdminSubscriptionOverridesTab } from '@/components/admin/AdminSubscriptionOverridesTab';
 
 type AdminControlCenterProps = {
   section?: AdminTab;
@@ -207,6 +209,9 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       } else if (activeTab === 'processing') {
         // The processing section uses its own live polling requests and does not need
         // the heavier control-center payload on entry.
+      } else if (activeTab === 'subscription_overrides') {
+        // This section loads its own focused data so it can stay responsive while
+        // handling user search, access actions, and audit history.
       } else if (activeTab === 'library') {
         await loadResource<{ assets: AdminLibraryAsset[] }>(
           'Library',
@@ -470,6 +475,14 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         description: 'Search members, plans, and account activity.',
         meta: `${payload?.users.length || 0} users`,
         icon: <Users size={20} />,
+      },
+      {
+        id: 'subscription_overrides' as AdminTab,
+        href: '/admin/subscription-overrides',
+        label: 'Subscription Overrides',
+        description: 'Grant, extend, revoke, and audit manual premium access.',
+        meta: 'Manual access + audit trail',
+        icon: <ShieldCheck size={20} />,
       },
       {
         id: 'requests' as AdminTab,
@@ -1493,6 +1506,8 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 onSearchChange={setUserSearch}
               />
             )}
+
+            {activeTab === 'subscription_overrides' && <AdminSubscriptionOverridesTab />}
 
             {activeTab === 'requests' && (
               <AdminRequestsTab

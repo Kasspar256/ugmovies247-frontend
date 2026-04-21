@@ -9,6 +9,7 @@ export type AdminTab =
   | 'library'
   | 'categories'
   | 'users'
+  | 'subscription_overrides'
   | 'requests'
   | 'revenue';
 

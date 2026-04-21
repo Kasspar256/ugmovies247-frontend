@@ -84,6 +84,13 @@ function clampLogLines(lines: string[]) {
   return lines.slice(-20);
 }
 
+function splitCommaList(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export function AdminMovieCreateView() {
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const [movieFileInputKey, setMovieFileInputKey] = useState(0);
@@ -98,6 +105,7 @@ export function AdminMovieCreateView() {
   const [vj, setVj] = useState('');
   const [description, setDescription] = useState('');
   const [releaseYear, setReleaseYear] = useState('');
+  const [genres, setGenres] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [tmdbQuery, setTmdbQuery] = useState('');
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([]);
@@ -201,6 +209,7 @@ export function AdminMovieCreateView() {
     setVj('');
     setDescription('');
     setReleaseYear('');
+    setGenres('');
     setSelectedCategories([]);
     setTmdbQuery('');
     setTmdbResults([]);
@@ -292,7 +301,7 @@ export function AdminMovieCreateView() {
     }
 
     if (mode === 'upload' && !movieFile) {
-      setErrorMessage('Choose an MP4 file before uploading.');
+      setErrorMessage('Choose a video file before uploading.');
       return;
     }
 
@@ -321,6 +330,7 @@ export function AdminMovieCreateView() {
         originalTitle: selectedTmdb?.original_title || title.trim(),
         description: description.trim(),
         poster: uploadedPoster?.publicUrl || currentPoster,
+        genres: splitCommaList(genres),
         category: selectedCategories,
         vj: vj.trim() || 'Unknown',
         releaseDate: releaseYear.trim() ? `${releaseYear.trim()}-01-01` : '',
@@ -456,7 +466,7 @@ export function AdminMovieCreateView() {
         <div className="grid gap-6 xl:grid-cols-[1.05fr_1.2fr]">
           <Card
             title="Upload Movie"
-            description="Choose the direct MP4 source first. The uploader now adapts chunk size, limits concurrency, retries with backoff, and keeps resumable checkpoints."
+            description="Choose a local MP4 or MKV file first, or paste a direct MP4 link. The uploader now adapts chunk size, limits concurrency, retries with backoff, and keeps resumable checkpoints."
             className="border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(23,9,13,0.94),rgba(17,20,28,0.94))] shadow-[0_24px_70px_rgba(0,0,0,0.42)]"
             headerClassName="rounded-[26px] border border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(217,4,41,0.12),rgba(255,255,255,0.01))] px-4 py-4 md:px-5"
             titleClassName="text-lg tracking-[0.2em] text-white"
@@ -473,7 +483,7 @@ export function AdminMovieCreateView() {
                       : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  Upload MP4
+                  Upload Video
                 </button>
                 <button
                   type="button"
@@ -490,11 +500,11 @@ export function AdminMovieCreateView() {
 
               {mode === 'upload' ? (
                 <div className="space-y-3">
-                  <FieldLabel>Local MP4 File</FieldLabel>
+                  <FieldLabel>Local Video File</FieldLabel>
                   <input
                     key={movieFileInputKey}
                     type="file"
-                    accept="video/mp4"
+                    accept=".mp4,.mkv,video/mp4,video/x-matroska,video/mkv"
                     onChange={(event) => {
                       const nextFile = event.target.files?.[0] || null;
                       setMovieFile(nextFile);
@@ -786,6 +796,14 @@ export function AdminMovieCreateView() {
                     value={releaseYear}
                     onChange={(event) => setReleaseYear(event.target.value)}
                     placeholder="2026"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <FieldLabel>Genres</FieldLabel>
+                  <TextInput
+                    value={genres}
+                    onChange={(event) => setGenres(event.target.value)}
+                    placeholder="Animation, Family, Adventure"
                   />
                 </div>
                 <div className="md:col-span-2">

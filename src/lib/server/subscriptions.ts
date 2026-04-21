@@ -2,7 +2,13 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { isAdminEmail } from '@/lib/auth/server';
 import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
+import {
+  getSubscriptionOverrideSnapshotFromData,
+  resolveSubscriptionOverrideForUser,
+} from '@/lib/server/subscriptionOverrides';
 import type {
+  EffectiveSubscriptionState,
+  ManualSubscriptionAccessType,
   PaymentAttemptDocument,
   PaymentAttemptStatus,
   PaymentKind,
@@ -10,10 +16,12 @@ import type {
   RecurringAgreementDocument,
   RecurringAgreementSummary,
   RecurringAgreementStatus,
+  SubscriptionAccessSource,
   SubscriptionEntitlement,
   SubscriptionPlanDefinition,
   SubscriptionPlanType,
   SubscriptionSnapshot,
+  SubscriptionOverrideDocument,
   UserSubscriptionDocument,
 } from '@/types/subscriptions';
 
@@ -35,6 +43,9 @@ function blankSubscriptionSnapshot(): SubscriptionSnapshot {
     startsAt: '',
     expiresAt: '',
     paymentProvider: '',
+    source: '',
+    accessType: '',
+    autoRenewEnabled: false,
     updatedAt: '',
   };
 }
@@ -48,6 +59,9 @@ function adminAccessSnapshot(): SubscriptionSnapshot {
     startsAt: '',
     expiresAt: '',
     paymentProvider: '',
+    source: 'admin_role',
+    accessType: 'admin_override',
+    autoRenewEnabled: false,
     updatedAt: nowIso(),
   };
 }
@@ -119,24 +133,46 @@ export function getPlanDefinition(planType: string) {
 }
 
 export function getSubscriptionSnapshotFromData(
-  data?: Partial<UserSubscriptionDocument> | null
+  data?: Partial<UserSubscriptionDocument> | Partial<SubscriptionSnapshot> | null
 ): SubscriptionSnapshot {
   if (!data) {
     return blankSubscriptionSnapshot();
   }
 
   const expiresAt = typeof data.expiresAt === 'string' ? data.expiresAt : '';
+  const startsAt = typeof data.startsAt === 'string' ? data.startsAt : '';
+  const startsAtMs = startsAt ? new Date(startsAt).getTime() : Number.NaN;
   const isExpired = Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
-  const isActive = Boolean(data.isActive && !isExpired && data.status === 'active');
+  const isScheduled = Number.isFinite(startsAtMs) && startsAtMs > Date.now();
+  const isActive = Boolean(data.isActive && !isExpired && !isScheduled && data.status === 'active');
+  const source =
+    data.source ||
+    (data.planName || data.paymentProvider || data.planType ? ('payment' as SubscriptionAccessSource) : '');
+  const accessType =
+    data.accessType ||
+    (source === 'admin_override'
+      ? ('admin_override' as ManualSubscriptionAccessType)
+      : source === 'promo'
+        ? ('promo' as ManualSubscriptionAccessType)
+        : '');
 
   return {
     planType: data.planType || null,
     planName: data.planName || '',
-    status: isActive ? 'active' : isExpired ? 'expired' : data.status || 'inactive',
+    status: isActive
+      ? 'active'
+      : isExpired
+        ? 'expired'
+        : isScheduled
+          ? 'scheduled'
+          : data.status || 'inactive',
     isActive,
-    startsAt: data.startsAt || '',
+    startsAt,
     expiresAt,
     paymentProvider: data.paymentProvider || '',
+    source,
+    accessType,
+    autoRenewEnabled: data.autoRenewEnabled === true,
     updatedAt: data.updatedAt || '',
   };
 }
@@ -155,6 +191,25 @@ export function getEntitlementFromSubscriptionData(
   };
 }
 
+function buildEffectiveSubscriptionState(options: {
+  paidSubscription?: Partial<UserSubscriptionDocument> | null;
+  manualOverride?: Partial<SubscriptionOverrideDocument> | null;
+}): EffectiveSubscriptionState {
+  const paidSnapshot = getSubscriptionSnapshotFromData(options.paidSubscription || null);
+  const manualSnapshot = getSubscriptionOverrideSnapshotFromData(options.manualOverride || null);
+  const effectiveSnapshot = manualSnapshot.isActive ? manualSnapshot : paidSnapshot;
+
+  return {
+    paidSubscription: (options.paidSubscription as UserSubscriptionDocument | null) || null,
+    paidSnapshot,
+    manualOverride: (options.manualOverride as SubscriptionOverrideDocument | null) || null,
+    manualSnapshot,
+    effectiveSnapshot,
+    hasPremiumAccess: effectiveSnapshot.isActive,
+    requiresSubscription: !effectiveSnapshot.isActive,
+  };
+}
+
 export async function getCurrentSubscription(userId: string) {
   try {
     const snapshot = await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).get();
@@ -170,8 +225,36 @@ export async function getCurrentSubscription(userId: string) {
   }
 }
 
-export async function syncUserSubscriptionSnapshot(userId: string, subscription?: Partial<UserSubscriptionDocument> | null) {
-  const snapshot = getSubscriptionSnapshotFromData(subscription || null);
+export async function resolveEffectiveSubscriptionState(
+  userId: string,
+  options?: {
+    subscription?: Partial<UserSubscriptionDocument> | null;
+    manualOverride?: Partial<SubscriptionOverrideDocument> | null;
+  }
+): Promise<EffectiveSubscriptionState> {
+  const [subscription, manualOverride] = await Promise.all([
+    options?.subscription === undefined ? getCurrentSubscription(userId) : options.subscription || null,
+    options?.manualOverride === undefined
+      ? resolveSubscriptionOverrideForUser(userId)
+      : options.manualOverride || null,
+  ]);
+
+  return buildEffectiveSubscriptionState({
+    paidSubscription: subscription,
+    manualOverride,
+  });
+}
+
+export async function syncUserSubscriptionSnapshot(
+  userId: string,
+  subscription?: Partial<UserSubscriptionDocument> | null,
+  manualOverride?: Partial<SubscriptionOverrideDocument> | null
+) {
+  const resolved = await resolveEffectiveSubscriptionState(userId, {
+    subscription,
+    manualOverride,
+  });
+  const snapshot = resolved.effectiveSnapshot;
 
   await adminDb.collection('users').doc(userId).set(
     {
@@ -182,6 +265,65 @@ export async function syncUserSubscriptionSnapshot(userId: string, subscription?
   );
 
   return snapshot;
+}
+
+export async function setCurrentSubscriptionState(
+  userId: string,
+  patch: Partial<UserSubscriptionDocument>
+) {
+  const currentSubscription = await getCurrentSubscription(userId);
+  const timestamp = nowIso();
+
+  const merged: UserSubscriptionDocument = {
+    userId,
+    planType:
+      patch.planType !== undefined ? patch.planType : currentSubscription?.planType || null,
+    planName:
+      patch.planName !== undefined ? patch.planName : currentSubscription?.planName || '',
+    amount:
+      patch.amount !== undefined ? Number(patch.amount || 0) : Number(currentSubscription?.amount || 0),
+    currency:
+      patch.currency !== undefined ? patch.currency : currentSubscription?.currency || 'UGX',
+    status:
+      patch.status !== undefined ? patch.status : currentSubscription?.status || 'inactive',
+    paymentProvider:
+      patch.paymentProvider !== undefined
+        ? patch.paymentProvider
+        : currentSubscription?.paymentProvider || '',
+    providerTransactionId:
+      patch.providerTransactionId !== undefined
+        ? patch.providerTransactionId
+        : currentSubscription?.providerTransactionId || '',
+    latestPaymentId:
+      patch.latestPaymentId !== undefined
+        ? patch.latestPaymentId
+        : currentSubscription?.latestPaymentId || '',
+    startsAt:
+      patch.startsAt !== undefined ? patch.startsAt : currentSubscription?.startsAt || '',
+    expiresAt:
+      patch.expiresAt !== undefined ? patch.expiresAt : currentSubscription?.expiresAt || '',
+    isActive:
+      patch.isActive !== undefined
+        ? patch.isActive
+        : currentSubscription?.isActive === true,
+    recurringAgreementId:
+      patch.recurringAgreementId !== undefined
+        ? patch.recurringAgreementId
+        : currentSubscription?.recurringAgreementId || '',
+    autoRenewEnabled:
+      patch.autoRenewEnabled !== undefined
+        ? patch.autoRenewEnabled
+        : currentSubscription?.autoRenewEnabled === true,
+    nextChargeAt:
+      patch.nextChargeAt !== undefined ? patch.nextChargeAt : currentSubscription?.nextChargeAt || '',
+    createdAt: currentSubscription?.createdAt || timestamp,
+    updatedAt: timestamp,
+  };
+
+  await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).set(merged, { merge: true });
+  await syncUserSubscriptionSnapshot(userId, merged);
+
+  return merged;
 }
 
 export async function getViewerEntitlement(
@@ -196,10 +338,9 @@ export async function getViewerEntitlement(
     };
   }
 
-  const subscription = await getCurrentSubscription(userId);
-  const snapshot = getSubscriptionSnapshotFromData(subscription);
+  const resolved = await resolveEffectiveSubscriptionState(userId);
 
-  if (!snapshot.isActive && subscription?.status === 'active') {
+  if (!resolved.paidSnapshot.isActive && resolved.paidSubscription?.status === 'active') {
     try {
       await adminDb.collection(SUBSCRIPTIONS_COLLECTION).doc(userId).set(
         {
@@ -210,30 +351,20 @@ export async function getViewerEntitlement(
         { merge: true }
       );
       await syncUserSubscriptionSnapshot(userId, {
-        ...subscription,
+        ...resolved.paidSubscription,
         status: 'expired',
         isActive: false,
         updatedAt: nowIso(),
-      });
+      }, resolved.manualOverride);
     } catch (error) {
       console.warn('[subscriptions] failed to sync expired subscription state', error);
     }
-
-    return {
-      hasPremiumAccess: false,
-      requiresSubscription: true,
-      subscription: getSubscriptionSnapshotFromData({
-        ...subscription,
-        status: 'expired',
-        isActive: false,
-      }),
-    };
   }
 
   return {
-    hasPremiumAccess: snapshot.isActive,
-    requiresSubscription: !snapshot.isActive,
-    subscription: snapshot,
+    hasPremiumAccess: resolved.hasPremiumAccess,
+    requiresSubscription: resolved.requiresSubscription,
+    subscription: resolved.effectiveSnapshot,
   };
 }
 
@@ -868,7 +999,7 @@ export async function applySuccessfulSubscriptionPayment(options: {
   const paymentRef = adminDb.collection(PAYMENTS_COLLECTION).doc(options.paymentId);
   const timestamp = nowIso();
 
-  return adminDb.runTransaction(async (transaction) => {
+  const result = await adminDb.runTransaction(async (transaction) => {
     const paymentSnapshot = await transaction.get(paymentRef);
 
     if (!paymentSnapshot.exists) {
@@ -962,20 +1093,17 @@ export async function applySuccessfulSubscriptionPayment(options: {
       { merge: true }
     );
 
-    transaction.set(
-      adminDb.collection('users').doc(payment.userId),
-      {
-        subscription: getSubscriptionSnapshotFromData(subscriptionDoc),
-        updatedAt: timestamp,
-      },
-      { merge: true }
-    );
-
     return {
       alreadyApplied: false,
       subscription: subscriptionDoc,
     };
   });
+
+  if (result.subscription?.userId) {
+    await syncUserSubscriptionSnapshot(result.subscription.userId, result.subscription);
+  }
+
+  return result;
 }
 
 export async function markPaymentAttemptFailed(options: {

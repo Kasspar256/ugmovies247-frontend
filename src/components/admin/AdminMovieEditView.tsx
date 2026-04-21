@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
-import type { AdminCategory, AdminControlCenterPayload } from '@/types/admin';
+import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import type { AdminCategory } from '@/types/admin';
 import type { Movie } from '@/types/movie';
 import { parseApiResponse, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
@@ -17,6 +18,67 @@ function normalizeYear(value: string) {
   return Number.isFinite(parsed) && parsed > 1800 ? parsed : null;
 }
 
+function normalizeName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function splitCommaList(value: string) {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function mergeUniqueStrings(...lists: string[][]) {
+  const values = new Map<string, string>();
+
+  for (const list of lists) {
+    for (const entry of list) {
+      const trimmed = entry.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const normalized = normalizeName(trimmed);
+
+      if (!values.has(normalized)) {
+        values.set(normalized, trimmed);
+      }
+    }
+  }
+
+  return [...values.values()];
+}
+
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000): Promise<T> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      credentials: 'include',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Failed to load ${url}.`);
+    }
+
+    return payload;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Movie editor took too long to load. Refresh and try again.');
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -27,31 +89,38 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const [vj, setVj] = useState('');
   const [description, setDescription] = useState('');
   const [releaseYear, setReleaseYear] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedHomeCategories, setSelectedHomeCategories] = useState<string[]>([]);
+  const [preservedCategories, setPreservedCategories] = useState<string[]>([]);
+  const [genres, setGenres] = useState('');
   const [posterFile, setPosterFile] = useState<File | null>(null);
   const [posterPreview, setPosterPreview] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+
+  const manualCategories = useMemo(() => {
+    const categoryMap = new Map(categories.map((category) => [normalizeName(category.name), category]));
+    return MANUAL_HOME_CATEGORIES.map((name) => categoryMap.get(normalizeName(name))).filter(
+      (category): category is AdminCategory => Boolean(category)
+    );
+  }, [categories]);
+
+  const preservedCategoriesLabel = useMemo(
+    () => mergeUniqueStrings(preservedCategories).join(', '),
+    [preservedCategories]
+  );
 
   useEffect(() => {
     let mounted = true;
 
     const loadMovie = async () => {
       try {
-        const response = await fetch('/api/admin/control-center', {
-          credentials: 'include',
-          cache: 'no-store',
-        });
-        const payload = (await response.json()) as Partial<AdminControlCenterPayload> & {
-          error?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'Failed to load movie editor.');
-        }
+        const [moviesResponse, categoriesResponse] = await Promise.all([
+          fetchJsonWithTimeout<{ movies?: Movie[] }>('/api/admin/movies'),
+          fetchJsonWithTimeout<{ categories?: AdminCategory[] }>('/api/admin/categories'),
+        ]);
 
         const nextMovie =
-          (payload.movies || []).find(
+          (moviesResponse.movies || []).find(
             (entry) => entry.id === movieId && entry.contentType !== 'series'
           ) || null;
 
@@ -64,7 +133,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
         }
 
         setMovie(nextMovie);
-        setCategories(payload.categories || []);
+        setCategories(categoriesResponse.categories || []);
         setTitle(nextMovie.title || '');
         setVj(nextMovie.vj || 'Unknown');
         setDescription(nextMovie.description || nextMovie.overview || '');
@@ -73,7 +142,22 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
             ? String(nextMovie.releaseYear)
             : nextMovie.release_date?.slice(0, 4) || ''
         );
-        setSelectedCategories(nextMovie.category || []);
+        setSelectedHomeCategories(
+          (nextMovie.category || []).filter((entry) =>
+            MANUAL_HOME_CATEGORIES.some(
+              (categoryName) => normalizeName(categoryName) === normalizeName(entry)
+            )
+          )
+        );
+        setPreservedCategories(
+          (nextMovie.category || []).filter(
+            (entry) =>
+              !MANUAL_HOME_CATEGORIES.some(
+                (categoryName) => normalizeName(categoryName) === normalizeName(entry)
+              )
+          )
+        );
+        setGenres((nextMovie.genres || []).join(', '));
         setPosterPreview(nextMovie.poster || '');
       } catch (error) {
         if (mounted) {
@@ -110,7 +194,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
   }, [movie?.poster, posterFile]);
 
   const toggleCategory = (name: string) => {
-    setSelectedCategories((current) =>
+    setSelectedHomeCategories((current) =>
       current.includes(name)
         ? current.filter((entry) => entry !== name)
         : [...current, name]
@@ -133,6 +217,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
 
     try {
       const uploadedPoster = posterFile ? await uploadPosterToAdmin(posterFile) : null;
+      const mergedCategories = mergeUniqueStrings(preservedCategories, selectedHomeCategories);
 
       const response = await fetch(`/api/admin/movies/${movie.id}`, {
         method: 'PATCH',
@@ -144,9 +229,12 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
             description: description.trim(),
             poster: uploadedPoster?.publicUrl || movie.poster || '',
             releaseYear: normalizeYear(releaseYear),
-            category: selectedCategories,
+            genres: splitCommaList(genres),
+            category: mergedCategories,
             vj: vj.trim() || 'Unknown',
-            is_trending_tiktok: selectedCategories.includes(TRENDING_CATEGORY),
+            is_trending_tiktok: mergedCategories.some(
+              (entry) => normalizeName(entry) === normalizeName(TRENDING_CATEGORY)
+            ),
             tmdb_id: movie.tmdb_id ?? null,
           },
         }),
@@ -193,7 +281,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                 Edit Movie
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">
-                Update the movie details in one focused page instead of editing inside the catalog.
+                Update the movie metadata, homepage shelf assignments, and genre classification in one focused page.
               </p>
             </div>
             <Link
@@ -259,15 +347,32 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                       placeholder="Admin description override"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <FieldLabel>Genres</FieldLabel>
+                    <TextInput
+                      value={genres}
+                      onChange={(event) => setGenres(event.target.value)}
+                      placeholder="Animation, Family, Adventure"
+                    />
+                    <div className="mt-2 text-xs leading-6 text-white/45">
+                      Use comma-separated genres. The homepage auto rows, including Animation, read this classification now.
+                    </div>
+                  </div>
                 </div>
 
                 <div>
                   <FieldLabel>Manual Home Categories</FieldLabel>
                   <CategoryChecklist
-                    categories={categories}
-                    selected={selectedCategories}
+                    categories={manualCategories}
+                    selected={selectedHomeCategories}
                     onToggle={toggleCategory}
+                    getLabel={(category) => category.displayLabel || category.name}
                   />
+                  {preservedCategoriesLabel ? (
+                    <div className="mt-3 text-xs leading-6 text-white/45">
+                      Keeping non-home category tags on save: {preservedCategoriesLabel}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap justify-end gap-3">
