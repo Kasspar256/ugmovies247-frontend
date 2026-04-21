@@ -145,11 +145,15 @@ export function getSubscriptionSnapshotFromData(
   const isExpired = Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
   const isScheduled = Number.isFinite(startsAtMs) && startsAtMs > Date.now();
   const isActive = Boolean(data.isActive && !isExpired && !isScheduled && data.status === 'active');
+  const snapshotSource =
+    'source' in data && typeof data.source === 'string' ? data.source : '';
+  const snapshotAccessType =
+    'accessType' in data && typeof data.accessType === 'string' ? data.accessType : '';
   const source =
-    data.source ||
+    snapshotSource ||
     (data.planName || data.paymentProvider || data.planType ? ('payment' as SubscriptionAccessSource) : '');
   const accessType =
-    data.accessType ||
+    snapshotAccessType ||
     (source === 'admin_override'
       ? ('admin_override' as ManualSubscriptionAccessType)
       : source === 'promo'
