@@ -1,4 +1,5 @@
 import type { Movie } from '@/types/movie';
+import type { AdminAuthSessionSummary } from '@/types/authSessions';
 import type {
   PaymentAttemptDocument,
   RecurringAgreementSummary,
@@ -164,6 +165,9 @@ export type AdminSubscriptionUserSummary = {
     | 'revokedAt'
   > | null;
   recurringAgreement: RecurringAgreementSummary;
+  deviceLimit: number;
+  activeDeviceCount: number;
+  activeDevices: AdminAuthSessionSummary[];
 };
 
 export type AdminSubscriptionOverrideActivity = {
