@@ -1,7 +1,12 @@
 'use client';
 
 export { getAuthDevDiagnostics, getFirebaseAuthErrorMessage } from './devDiagnostics';
-import { clearAuthStatusCache, primeAuthStatusCache } from './status-client';
+import {
+  clearAuthStatusCache,
+  fetchAuthStatus,
+  primeAuthStatusCache,
+  type ClientAuthStatus,
+} from './status-client';
 import { clearPublicMovieCache } from '@/lib/publicMovies';
 import {
   GoogleAuthProvider,
@@ -21,8 +26,55 @@ type SessionResponse = {
 
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
 
+function buildSessionValidationError(
+  reason?: 'session_replaced' | 'session_revoked' | 'session_missing'
+) {
+  const error = new Error(
+    reason === 'session_replaced'
+      ? 'Your session has ended because this account was signed in on another device.'
+      : reason === 'session_revoked'
+        ? 'Your session has ended. Please sign in again to continue.'
+        : "We couldn't complete your sign-in. Please try again."
+  ) as Error & { code?: string };
+
+  error.code =
+    reason === 'session_replaced'
+      ? 'auth/session-replaced'
+      : reason === 'session_revoked'
+        ? 'auth/session-revoked'
+        : 'auth/session-not-established';
+
+  return error;
+}
+
+async function confirmServerAuthSession(fallbackUser: {
+  name: string;
+  email: string;
+  role: 'user' | 'admin';
+}) {
+  const status = await fetchAuthStatus({ force: true });
+
+  if (!status.authenticated) {
+    clearAuthStatusCache();
+    throw buildSessionValidationError(status.reason);
+  }
+
+  const normalizedStatus: ClientAuthStatus = {
+    authenticated: true,
+    user: {
+      id: status.user?.id || '',
+      name: status.user?.name || fallbackUser.name || 'User',
+      email: status.user?.email || fallbackUser.email || '',
+      role: status.user?.role === 'admin' ? 'admin' : fallbackUser.role,
+    },
+  };
+
+  primeAuthStatusCache(normalizedStatus);
+  return normalizedStatus;
+}
+
 async function parseAuthResponse(response: Response) {
-  const payload = (await response.json().catch(() => ({}))) as {
+  const payload = (await response.clone().json().catch(() => ({}))) as {
     error?: string;
     code?: string;
     success?: boolean;
@@ -30,10 +82,35 @@ async function parseAuthResponse(response: Response) {
     redirectTo?: string;
     message?: string;
   };
+  const responseText = await response.text().catch(() => '');
 
   if (!response.ok) {
-    const error = new Error(payload.error || 'Authentication failed.') as Error & { code?: string };
-    error.code = payload.code || 'auth/request-failed';
+    const isDeviceLimitStatusFallback =
+      response.status === 409 &&
+      (response.url.includes('/api/auth/login') || response.url.includes('/api/auth/session'));
+    const normalizedErrorMessage =
+      payload.error ||
+      payload.message ||
+      (isDeviceLimitStatusFallback
+        ? 'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.'
+        : '') ||
+      (/maximum number of allowed devices|maximum number of devices/i.test(responseText)
+        ? 'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.'
+        : '');
+    const normalizedCode =
+      payload.code ||
+      (isDeviceLimitStatusFallback ? 'auth/device-limit-exceeded' : '') ||
+      (/maximum number of allowed devices|maximum number of devices/i.test(
+        `${payload.error || ''} ${payload.message || ''} ${responseText}`
+      )
+        ? 'auth/device-limit-exceeded'
+        : '');
+    const error = new Error(
+      normalizedErrorMessage || "We couldn't sign you in right now. Please try again."
+    ) as Error & {
+      code?: string;
+    };
+    error.code = normalizedCode || 'auth/request-failed';
     throw error;
   }
 
@@ -81,6 +158,22 @@ function clearGooglePreference() {
   window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
 }
 
+export function hasPendingGoogleRedirectSignIn() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null;
+}
+
+function shouldPreferGoogleRedirect() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /android|iphone|ipad|mobile/i.test(navigator.userAgent || '');
+}
+
 async function createSessionFromIdToken(options: {
   idToken: string;
   name?: string;
@@ -100,14 +193,10 @@ async function createSessionFromIdToken(options: {
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
   clearPublicMovieCache();
-  primeAuthStatusCache({
-    authenticated: true,
-    user: {
-      id: '',
-      name: options.name || 'User',
-      email: options.email || '',
-      role: session.role,
-    },
+  await confirmServerAuthSession({
+    name: options.name || 'User',
+    email: options.email || '',
+    role: session.role,
   });
 
   return session;
@@ -165,14 +254,10 @@ export async function loginWithEmailPassword(
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
   clearPublicMovieCache();
-  primeAuthStatusCache({
-    authenticated: true,
-    user: {
-      id: '',
-      name: 'User',
-      email,
-      role: session.role,
-    },
+  await confirmServerAuthSession({
+    name: 'User',
+    email,
+    role: session.role,
   });
   return { credential: null, session };
 }
@@ -191,29 +276,31 @@ export async function signupWithEmailPassword(options: {
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
   clearPublicMovieCache();
-  primeAuthStatusCache({
-    authenticated: true,
-    user: {
-      id: '',
-      name: options.name || 'User',
-      email: options.email,
-      role: session.role,
-    },
+  await confirmServerAuthSession({
+    name: options.name || 'User',
+    email: options.email,
+    role: session.role,
   });
   return { credential: null, session };
 }
 
 export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const rememberMe = options?.rememberMe !== false;
+  const provider = createGoogleProvider();
 
   rememberGooglePreference(rememberMe);
 
+  if (shouldPreferGoogleRedirect()) {
+    await signInWithRedirect(auth, provider);
+    return { redirected: true as const };
+  }
+
   try {
-    const result = await signInWithPopup(auth, createGoogleProvider());
+    const result = await signInWithPopup(auth, provider);
     return syncGoogleUserToSession(result.user, rememberMe);
   } catch (error) {
     if (shouldFallbackToRedirect(error)) {
-      await signInWithRedirect(auth, createGoogleProvider());
+      await signInWithRedirect(auth, provider);
       return { redirected: true as const };
     }
 
@@ -224,6 +311,10 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
 }
 
 export async function completeGoogleRedirectSignIn() {
+  if (!hasPendingGoogleRedirectSignIn()) {
+    return null;
+  }
+
   const rememberMe = consumeGooglePreference(true);
 
   try {

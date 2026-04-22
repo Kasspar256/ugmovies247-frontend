@@ -14,9 +14,36 @@ import {
   loginWithEmailPassword,
 } from '@/lib/auth/client';
 
+const GOOGLE_REDIRECT_MARKER_KEY = 'ugmovies247_google_auth_remember_me';
+
+function hasPendingGoogleRedirectMarker() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(GOOGLE_REDIRECT_MARKER_KEY) !== null;
+}
+
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
+  const sessionNotice = useMemo(() => {
+    const reason = searchParams.get('reason') || '';
+
+    if (reason === 'session-replaced') {
+      return 'Your session has ended because this account was signed in on another device.';
+    }
+
+    if (reason === 'session-revoked') {
+      return 'Your session has ended. Please sign in again to continue.';
+    }
+
+    if (reason === 'session-missing') {
+      return "We couldn't complete your sign-in. Please try again.";
+    }
+
+    return '';
+  }, [searchParams]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +57,10 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
+      if (!hasPendingGoogleRedirectMarker()) {
+        return;
+      }
+
       setGoogleLoading(true);
 
       try {
@@ -39,7 +70,7 @@ export default function LoginPage() {
           return;
         }
 
-        window.location.assign(redirectTarget);
+        window.location.replace(redirectTarget || result.session.redirectTo || '/');
       } catch (authError) {
         if (!active) {
           return;
@@ -74,8 +105,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await loginWithEmailPassword(email.trim(), password, { rememberMe });
-      window.location.assign(redirectTarget);
+      const result = await loginWithEmailPassword(email.trim(), password, { rememberMe });
+      window.location.replace(redirectTarget || result.session.redirectTo || '/');
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));
@@ -96,7 +127,7 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.assign(redirectTarget);
+      window.location.replace(redirectTarget || result.session.redirectTo || '/');
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));
@@ -162,6 +193,12 @@ export default function LoginPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+              {sessionNotice && (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                  {sessionNotice}
+                </div>
+              )}
+
               <label className="block">
                 <span className="mb-2 block text-xs font-bold uppercase tracking-[0.25em] text-white/60">
                   Email
@@ -224,7 +261,7 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="rounded-2xl border border-[#D90429]/40 bg-[#D90429]/10 px-4 py-3 text-sm text-red-100">
+                <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 shadow-[0_10px_24px_rgba(120,72,10,0.18)]">
                   {error}
                 </div>
               )}

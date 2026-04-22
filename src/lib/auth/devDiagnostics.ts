@@ -25,6 +25,14 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
       return 'Too many attempts. Please wait and try again.';
     case 'auth/quota-exceeded':
       return 'Firebase auth quota is temporarily exhausted. Please wait a bit and try again.';
+    case 'auth/device-limit-exceeded':
+      return 'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.';
+    case 'auth/session-not-established':
+      return "We couldn't complete your sign-in. Please try again.";
+    case 'auth/session-replaced':
+      return 'Your session has ended because this account was signed in on another device.';
+    case 'auth/session-revoked':
+      return 'Your session has ended. Please sign in again to continue.';
     case 'auth/operation-not-allowed':
       return 'This sign-in method is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
     case 'auth/popup-blocked':
@@ -38,11 +46,15 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
     case 'auth/network-request-failed':
       return 'Network request failed. Check your internet connection and try again.';
     default:
+      if (/maximum number of allowed devices|maximum number of devices/i.test(message)) {
+        return 'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.';
+      }
+
       if (/RESOURCE_EXHAUSTED|quota exceeded/i.test(message)) {
         return 'Firebase auth quota is temporarily exhausted. Please wait a bit and try again.';
       }
 
-      return message || 'Authentication failed.';
+      return message || "We couldn't sign you in right now. Please try again.";
   }
 }
 
