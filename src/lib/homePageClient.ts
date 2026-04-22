@@ -173,7 +173,12 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
   const artworkUrls = Array.from(
     new Set(
       movies
-        .flatMap((movie) => [movie.poster, movie.thumbnail])
+        .flatMap((movie) => [
+          movie.poster,
+          movie.parts?.[0]?.thumbnail,
+          movie.parts?.[0]?.poster,
+          movie.seasons?.[0]?.poster,
+        ])
         .map((value) => String(value || '').trim())
         .filter(Boolean)
     )
