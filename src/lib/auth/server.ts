@@ -2,8 +2,16 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { NextRequest } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
-import { ADMIN_EMAILS, AUTH_ROLE_COOKIE, AUTH_SESSION_COOKIE } from './constants';
+import {
+  ADMIN_EMAILS,
+  AUTH_DEVICE_COOKIE,
+  AUTH_DEVICE_SESSION_COOKIE,
+  AUTH_ROLE_COOKIE,
+  AUTH_SESSION_COOKIE,
+} from './constants';
+import { validateManagedAuthSessionFromCookieValues } from '@/lib/server/authSessions';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
+import type { AuthInvalidReason } from '@/types/authSessions';
 import { resolveUserAvatar } from '@/lib/avatarPresets';
 
 export type UserRole = 'user' | 'admin';
@@ -33,6 +41,11 @@ export type AuthSession = {
   name: string;
   role: UserRole;
   userRecord: AppUserRecord;
+};
+
+export type AuthSessionValidationResult = {
+  session: AuthSession | null;
+  reason?: AuthInvalidReason;
 };
 
 function buildFallbackUserRecord(
@@ -69,7 +82,7 @@ function normalizeUserRole(value: unknown): UserRole {
   return value === 'admin' ? 'admin' : 'user';
 }
 
-function getCookieValueFromRequest(request: Request | NextRequest, name: string) {
+export function getCookieValueFromRequest(request: Request | NextRequest, name: string) {
   const cookieHeader = request.headers.get('cookie') || '';
   const parts = cookieHeader.split(';').map((entry) => entry.trim());
   const matches = parts.filter((entry) => entry.startsWith(`${name}=`));
@@ -83,6 +96,10 @@ function getCookieValueFromRequest(request: Request | NextRequest, name: string)
   }
 
   return '';
+}
+
+function getLatestCookieValue(cookieValues: Array<{ value: string }>) {
+  return cookieValues.map((cookie) => cookie.value).filter(Boolean).at(-1) || '';
 }
 
 export function isAdminEmail(email?: string | null) {
@@ -134,61 +151,122 @@ async function fetchUserRecord(uid: string, fallback: { email?: string; name?: s
   });
 }
 
+async function resolveAuthSessionValidation(options: {
+  sessionCookie: string;
+  roleHint?: string;
+  deviceCookie?: string;
+  managedSessionCookie?: string;
+  hydrateUserRecord?: boolean;
+}): Promise<AuthSessionValidationResult> {
+  if (!options.sessionCookie) {
+    return { session: null, reason: 'session_missing' };
+  }
+
+  try {
+    const decoded = await adminAuth.verifySessionCookie(options.sessionCookie, true);
+    const email = decoded.email || '';
+    const name = typeof decoded.name === 'string' ? decoded.name : '';
+    const hintedRole = normalizeUserRole(options.roleHint);
+    const decodedRole = normalizeUserRole((decoded as { role?: string }).role);
+    const resolvedRole = hintedRole === 'admin' || decodedRole === 'admin' || isAdminEmail(email)
+      ? 'admin'
+      : 'user';
+    const shouldSkipFirestoreProfileRead =
+      options.hydrateUserRecord === false || resolvedRole === 'admin';
+    const userRecord = shouldSkipFirestoreProfileRead
+      ? buildFallbackUserRecord(decoded.uid, { email, name, role: resolvedRole })
+      : await fetchUserRecord(decoded.uid, { email, name });
+
+    if (!userRecord.isActive) {
+      return { session: null, reason: 'session_revoked' };
+    }
+
+    if (options.deviceCookie !== undefined || options.managedSessionCookie !== undefined) {
+      const validation = await validateManagedAuthSessionFromCookieValues({
+        userId: decoded.uid,
+        deviceId: options.deviceCookie || '',
+        managedSessionCookie: options.managedSessionCookie || '',
+      });
+
+      if (!validation.valid) {
+        return {
+          session: null,
+          reason: validation.reason,
+        };
+      }
+    }
+
+    return {
+      session: {
+        uid: decoded.uid,
+        email: userRecord.email,
+        name: userRecord.name,
+        role: userRecord.role,
+        userRecord,
+      } as AuthSession,
+    };
+  } catch {
+    return { session: null, reason: 'session_missing' };
+  }
+}
+
 export async function getAuthSessionFromSessionCookie(
   sessionCookie: string,
   options?: { roleHint?: string }
 ) {
+  const result = await resolveAuthSessionValidation({
+    sessionCookie,
+    roleHint: options?.roleHint,
+  });
+
+  return result.session;
+}
+
+export async function getRequestAuthSessionValidation(request: Request | NextRequest) {
+  const sessionCookie = getCookieValueFromRequest(request, AUTH_SESSION_COOKIE);
+
   if (!sessionCookie) {
-    return null;
+    return { session: null, reason: 'session_missing' };
   }
+  const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
+  const deviceCookie = getCookieValueFromRequest(request, AUTH_DEVICE_COOKIE);
+  const managedSessionCookie = getCookieValueFromRequest(request, AUTH_DEVICE_SESSION_COOKIE);
 
-  try {
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const email = decoded.email || '';
-    const name = typeof decoded.name === 'string' ? decoded.name : '';
-    const hintedRole = normalizeUserRole(options?.roleHint);
-    const shouldSkipFirestoreProfileRead = hintedRole === 'admin' || isAdminEmail(email);
-    const userRecord = shouldSkipFirestoreProfileRead
-      ? buildFallbackUserRecord(decoded.uid, { email, name, role: 'admin' })
-      : await fetchUserRecord(decoded.uid, { email, name });
-
-    if (!userRecord.isActive) {
-      return null;
-    }
-
-    return {
-      uid: decoded.uid,
-      email: userRecord.email,
-      name: userRecord.name,
-      role: userRecord.role,
-      userRecord,
-    } as AuthSession;
-  } catch (error) {
-    return null;
-  }
+  return resolveAuthSessionValidation({
+    sessionCookie,
+    roleHint: roleCookie,
+    deviceCookie,
+    managedSessionCookie,
+    hydrateUserRecord: false,
+  });
 }
 
 export async function getRequestAuthSession(request: Request | NextRequest) {
-  const sessionCookie = getCookieValueFromRequest(request, AUTH_SESSION_COOKIE);
-  const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
-  return getAuthSessionFromSessionCookie(sessionCookie, { roleHint: roleCookie });
+  const result = await getRequestAuthSessionValidation(request);
+  return result.session;
 }
 
-export async function getCurrentAuthSession() {
+export async function getCurrentAuthSessionValidation(options?: { hydrateUserRecord?: boolean }) {
   const cookieStore = await cookies();
-  const sessionCookie =
-    cookieStore
-      .getAll(AUTH_SESSION_COOKIE)
-      .map((cookie) => cookie.value)
-      .filter(Boolean)
-      .at(-1) || '';
-  const roleCookie =
-    cookieStore
-      .getAll(AUTH_ROLE_COOKIE)
-      .map((cookie) => cookie.value)
-      .filter(Boolean)
-      .at(-1) || '';
-  return getAuthSessionFromSessionCookie(sessionCookie, { roleHint: roleCookie });
+  const sessionCookie = getLatestCookieValue(cookieStore.getAll(AUTH_SESSION_COOKIE));
+  const roleCookie = getLatestCookieValue(cookieStore.getAll(AUTH_ROLE_COOKIE));
+  const deviceCookie = getLatestCookieValue(cookieStore.getAll(AUTH_DEVICE_COOKIE));
+  const managedSessionCookie = getLatestCookieValue(cookieStore.getAll(AUTH_DEVICE_SESSION_COOKIE));
+
+  return resolveAuthSessionValidation({
+    sessionCookie,
+    roleHint: roleCookie,
+    deviceCookie,
+    managedSessionCookie,
+    hydrateUserRecord: options?.hydrateUserRecord,
+  });
+}
+
+export async function getCurrentAuthSession(options?: { hydrateUserRecord?: boolean }) {
+  const result = await getCurrentAuthSessionValidation({
+    hydrateUserRecord: options?.hydrateUserRecord === true,
+  });
+  return result.session;
 }
 
 export async function requireUserPage(redirectTo: string) {
@@ -228,4 +306,9 @@ export function getRoleCookieValue(role: UserRole) {
   return role === 'admin' ? 'admin' : 'user';
 }
 
-export { AUTH_ROLE_COOKIE, AUTH_SESSION_COOKIE };
+export {
+  AUTH_DEVICE_COOKIE,
+  AUTH_DEVICE_SESSION_COOKIE,
+  AUTH_ROLE_COOKIE,
+  AUTH_SESSION_COOKIE,
+};
