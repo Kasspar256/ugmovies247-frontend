@@ -3,7 +3,11 @@ import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
-import { getArtworkOrigin, getOptimizedArtworkUrl } from '@/lib/artwork';
+import {
+  getArtworkOrigin,
+  getOptimizedArtworkUrl,
+  markArtworkUrlLoaded,
+} from '@/lib/artwork';
 
 type CachedHomePageCategories = {
   categories: HomePageCategoryRecord[];
@@ -228,7 +232,14 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       warmedArtworkUrls.add(url);
       const image = new window.Image();
       image.decoding = 'async';
+      image.onload = () => {
+        markArtworkUrlLoaded(url);
+      };
       image.src = url;
+
+      if (image.complete) {
+        markArtworkUrlLoaded(url);
+      }
     });
   });
 }
