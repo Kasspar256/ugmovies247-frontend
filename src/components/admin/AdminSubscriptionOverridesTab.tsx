@@ -376,7 +376,7 @@ export function AdminSubscriptionOverridesTab() {
         recentActivity: data.recentActivity || current.recentActivity,
       }));
       await loadState({
-        userId: selectedUserId || String(resolvedBody.userId || ''),
+        userId: selectedUserId || String(body.userId || ''),
         keepSelection: true,
         includeActivity: true,
       });
