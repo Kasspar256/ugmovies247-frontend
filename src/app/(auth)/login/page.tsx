@@ -24,34 +24,49 @@ function hasPendingGoogleRedirectMarker() {
   return window.sessionStorage.getItem(GOOGLE_REDIRECT_MARKER_KEY) !== null;
 }
 
+function getSessionNoticeFromReason(reason: string) {
+  if (reason === 'session-replaced') {
+    return 'Your session has ended because this account was signed in on another device.';
+  }
+
+  if (reason === 'session-revoked') {
+    return 'Your session has ended. Please sign in again to continue.';
+  }
+
+  return '';
+}
+
 export default function LoginPage() {
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
-  const sessionNotice = useMemo(() => {
-    const reason = searchParams.get('reason') || '';
-
-    if (reason === 'session-replaced') {
-      return 'Your session has ended because this account was signed in on another device.';
-    }
-
-    if (reason === 'session-revoked') {
-      return 'Your session has ended. Please sign in again to continue.';
-    }
-
-    if (reason === 'session-missing') {
-      return "We couldn't complete your sign-in. Please try again.";
-    }
-
-    return '';
-  }, [searchParams]);
+  const sessionReason = useMemo(() => searchParams.get('reason') || '', [searchParams]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState('');
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  useEffect(() => {
+    setSessionNotice(getSessionNoticeFromReason(sessionReason));
+  }, [sessionReason]);
+
+  const clearFeedback = () => {
+    if (sessionNotice) {
+      setSessionNotice('');
+    }
+
+    if (error) {
+      setError('');
+    }
+
+    if (devDiagnostics.length) {
+      setDevDiagnostics([]);
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -94,6 +109,7 @@ export default function LoginPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSessionNotice('');
     setError('');
     setDevDiagnostics([]);
 
@@ -116,6 +132,7 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    setSessionNotice('');
     setError('');
     setDevDiagnostics([]);
     setGoogleLoading(true);
@@ -208,7 +225,10 @@ export default function LoginPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => {
+                      clearFeedback();
+                      setEmail(event.target.value);
+                    }}
                     className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="name@example.com"
                     autoComplete="email"
@@ -225,7 +245,10 @@ export default function LoginPage() {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) => {
+                      clearFeedback();
+                      setPassword(event.target.value);
+                    }}
                     className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="Enter your password"
                     autoComplete="current-password"
@@ -246,7 +269,10 @@ export default function LoginPage() {
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(event) => setRememberMe(event.target.checked)}
+                    onChange={(event) => {
+                      clearFeedback();
+                      setRememberMe(event.target.checked);
+                    }}
                     className="h-4 w-4 accent-[#D90429]"
                   />
                   Remember me

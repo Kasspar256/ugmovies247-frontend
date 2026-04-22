@@ -26,6 +26,7 @@ type SessionResponse = {
 };
 
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
+const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
 
 function buildSessionValidationError(
   reason?: 'session_replaced' | 'session_revoked' | 'session_missing'
@@ -48,40 +49,64 @@ function buildSessionValidationError(
   return error;
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 async function confirmServerAuthSession(fallbackUser: {
   name: string;
   email: string;
   role: 'user' | 'admin';
 }) {
-  const status = await fetchAuthStatus({ force: true });
+  for (let attempt = 0; attempt < SESSION_CONFIRM_RETRY_DELAYS_MS.length; attempt += 1) {
+    const retryDelay = SESSION_CONFIRM_RETRY_DELAYS_MS[attempt];
 
-  if (!status.authenticated) {
-    clearAuthStatusCache();
-
-    if (status.code === 'auth/device-limit-exceeded') {
-      const error = new Error(
-        status.error ||
-          'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.'
-      ) as Error & { code?: string };
-      error.code = 'auth/device-limit-exceeded';
-      throw error;
+    if (retryDelay > 0) {
+      await delay(retryDelay);
     }
 
-    throw buildSessionValidationError(status.reason);
+    const status = await fetchAuthStatus({ force: true });
+
+    if (!status.authenticated) {
+      if (status.code === 'auth/device-limit-exceeded') {
+        clearAuthStatusCache();
+        const error = new Error(
+          status.error ||
+            'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.'
+        ) as Error & { code?: string };
+        error.code = 'auth/device-limit-exceeded';
+        throw error;
+      }
+
+      const isFinalAttempt = attempt === SESSION_CONFIRM_RETRY_DELAYS_MS.length - 1;
+      const canRetry = status.reason === 'session_missing' && !isFinalAttempt;
+
+      if (canRetry) {
+        continue;
+      }
+
+      clearAuthStatusCache();
+      throw buildSessionValidationError(status.reason);
+    }
+
+    const normalizedStatus: ClientAuthStatus = {
+      authenticated: true,
+      user: {
+        id: status.user?.id || '',
+        name: status.user?.name || fallbackUser.name || 'User',
+        email: status.user?.email || fallbackUser.email || '',
+        role: status.user?.role === 'admin' ? 'admin' : fallbackUser.role,
+      },
+    };
+
+    primeAuthStatusCache(normalizedStatus);
+    return normalizedStatus;
   }
 
-  const normalizedStatus: ClientAuthStatus = {
-    authenticated: true,
-    user: {
-      id: status.user?.id || '',
-      name: status.user?.name || fallbackUser.name || 'User',
-      email: status.user?.email || fallbackUser.email || '',
-      role: status.user?.role === 'admin' ? 'admin' : fallbackUser.role,
-    },
-  };
-
-  primeAuthStatusCache(normalizedStatus);
-  return normalizedStatus;
+  clearAuthStatusCache();
+  throw buildSessionValidationError('session_missing');
 }
 
 async function warmPostLoginAppData(role: 'user' | 'admin') {

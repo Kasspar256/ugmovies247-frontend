@@ -179,6 +179,14 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
     setErrorMessage('');
 
+    if (activeTab === 'subscription_overrides') {
+      setStatusMessage('');
+      if (showSpinner) {
+        setLoading(false);
+      }
+      return payload;
+    }
+
     try {
       const issues: string[] = [];
       const nextPayload: Partial<AdminControlCenterPayload> = {};
@@ -315,7 +323,11 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         ]);
       }
 
-      if (Object.keys(nextPayload).length === 0 && activeTab !== 'processing') {
+      if (
+        Object.keys(nextPayload).length === 0 &&
+        activeTab !== 'processing' &&
+        activeTab !== 'subscription_overrides'
+      ) {
         throw new Error(
           issues[0] || 'Failed to load admin data for this section.'
         );
@@ -1335,7 +1347,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           </div>
         </header>
 
-        {(statusMessage || errorMessage) && (
+        {activeTab !== 'subscription_overrides' && (statusMessage || errorMessage) && (
           <div
             className={`rounded-2xl border px-4 py-3 text-sm ${
               errorMessage

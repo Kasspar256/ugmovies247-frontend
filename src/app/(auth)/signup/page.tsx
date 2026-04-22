@@ -38,6 +38,16 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
 
+  const clearFeedback = () => {
+    if (error) {
+      setError('');
+    }
+
+    if (devDiagnostics.length) {
+      setDevDiagnostics([]);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -79,6 +89,7 @@ export default function SignupPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    clearFeedback();
     setError('');
     setDevDiagnostics([]);
 
@@ -120,6 +131,7 @@ export default function SignupPage() {
   };
 
   const handleGoogleSignup = async () => {
+    clearFeedback();
     setError('');
     setDevDiagnostics([]);
     setGoogleLoading(true);
@@ -206,7 +218,10 @@ export default function SignupPage() {
                   <input
                     type="text"
                     value={name}
-                    onChange={(event) => setName(event.target.value)}
+                    onChange={(event) => {
+                      clearFeedback();
+                      setName(event.target.value);
+                    }}
                     className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="Your full name"
                     autoComplete="name"
@@ -223,7 +238,10 @@ export default function SignupPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => {
+                      clearFeedback();
+                      setEmail(event.target.value);
+                    }}
                     className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="name@example.com"
                     autoComplete="email"
@@ -241,7 +259,10 @@ export default function SignupPage() {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(event) => setPassword(event.target.value)}
+                      onChange={(event) => {
+                        clearFeedback();
+                        setPassword(event.target.value);
+                      }}
                       className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                       placeholder="Create password"
                       autoComplete="new-password"
@@ -266,7 +287,10 @@ export default function SignupPage() {
                     <input
                       type={showConfirmPassword ? 'text' : 'password'}
                       value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      onChange={(event) => {
+                        clearFeedback();
+                        setConfirmPassword(event.target.value);
+                      }}
                       className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                       placeholder="Confirm password"
                       autoComplete="new-password"
