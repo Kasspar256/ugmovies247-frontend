@@ -217,9 +217,6 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       } else if (activeTab === 'processing') {
         // The processing section uses its own live polling requests and does not need
         // the heavier control-center payload on entry.
-      } else if (activeTab === 'subscription_overrides') {
-        // This section loads its own focused data so it can stay responsive while
-        // handling user search, access actions, and audit history.
       } else if (activeTab === 'library') {
         await loadResource<{ assets: AdminLibraryAsset[] }>(
           'Library',
