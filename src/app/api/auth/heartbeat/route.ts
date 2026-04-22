@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           authenticated: false,
-          reason: touched.reason,
+          reason: 'reason' in touched ? touched.reason : 'session_missing',
         },
         { status: 401 }
       );
