@@ -6,6 +6,7 @@ import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 
 function getGenreMovies(genreId: string, allMovies: Movie[]) {
   if (genreId.toLowerCase() === 'indian') {
@@ -81,10 +82,16 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
 
       {/* Grid of Movies */}
       <div className="grid max-w-[1380px] mx-auto grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-6">
-        {movies.map(movie => (
+        {movies.map((movie, index) => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group bg-[#1F2833]/30 p-2 md:p-3 rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg">
             <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">
-              <img src={movie.poster} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <img
+                src={getOptimizedArtworkUrl(movie.poster, 'card')}
+                alt={movie.title}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                loading={index < 6 ? 'eager' : 'lazy'}
+                decoding="async"
+              />
               {isSeriesMovie(movie) && (
                 <div className="absolute top-3 right-3 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
                   EPS

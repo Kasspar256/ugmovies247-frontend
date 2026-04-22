@@ -7,6 +7,7 @@ import MobilePageHeader from '@/components/MobilePageHeader';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import type { Movie } from '@/types/movie';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 
 function getAllSeries(catalog: Movie[]) {
   return dedupeSeriesMovies(catalog).filter((movie) => isSeriesMovie(movie));
@@ -163,7 +164,7 @@ export default function SeriesDirectoryPage() {
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-              {filteredSeries.map((series) => (
+              {filteredSeries.map((series, index) => (
                 <Link
                   href={`/movie/${series.id}`}
                   key={series.id}
@@ -172,10 +173,11 @@ export default function SeriesDirectoryPage() {
                   <article className="overflow-hidden rounded-[16px] border border-white/8 bg-[#0A0E14] shadow-[0_12px_26px_rgba(0,0,0,0.24)] transition-colors duration-200 hover:border-white/14 hover:bg-white/[0.035]">
                     <div className="relative aspect-[2/3] overflow-hidden bg-[#12161F]">
                       <img
-                        src={series.poster}
+                        src={getOptimizedArtworkUrl(series.poster, 'card')}
                         alt={series.title}
                         className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        loading="lazy"
+                        loading={index < 6 ? 'eager' : 'lazy'}
+                        decoding="async"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#05070B] via-black/15 to-transparent" />
                       <div className="absolute left-2 top-2 rounded-full border border-white/15 bg-black/45 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-[0.14em] text-white/85 md:left-3 md:top-3 md:px-2 md:py-1 md:text-[10px]">

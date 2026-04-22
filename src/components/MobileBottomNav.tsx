@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { Home, Search, User, Mic2, Film } from 'lucide-react';
-import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
 
 const MOBILE_NAV_HEIGHT_PX = 64;
+const MOBILE_NAV_PREFETCH_ROUTES = ['/', '/vjs', '/genres', '/search', '/profile', '/downloads', '/notifications'];
 
 function shouldShowMobileNav(pathname: string) {
   if (!pathname) {
@@ -86,12 +87,23 @@ function NavItem({
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const shouldShow = shouldShowMobileNav(pathname);
+  const activeTab = getActiveTab(pathname);
 
-  if (!shouldShowMobileNav(pathname)) {
+  useEffect(() => {
+    if (!shouldShow) {
+      return;
+    }
+
+    MOBILE_NAV_PREFETCH_ROUTES.forEach((href) => {
+      router.prefetch(href);
+    });
+  }, [router, shouldShow]);
+
+  if (!shouldShow) {
     return null;
   }
-
-  const activeTab = getActiveTab(pathname);
 
   return (
     <nav

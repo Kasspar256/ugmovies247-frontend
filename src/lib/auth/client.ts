@@ -9,6 +9,8 @@ import {
 } from './status-client';
 import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
+import { buildHomeCollections } from '@/lib/homeRows';
+import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import {
   GoogleAuthProvider,
   getRedirectResult,
@@ -115,11 +117,23 @@ async function warmPostLoginAppData(role: 'user' | 'admin') {
   }
 
   try {
-    const [movies] = await Promise.all([
+    const [movies, homePageCategories] = await Promise.all([
       fetchPublicMovies({ force: true, refreshEntitlement: true }),
       fetchHomePageCategories({ force: true }),
     ]);
-    warmHomePageArtwork(movies, 18);
+    const normalizedMovies = dedupeSeriesMovies(movies);
+    const { homeRows } = buildHomeCollections({
+      movies: normalizedMovies,
+      homePageCategories,
+      activeCategory: 'ALL',
+    });
+    const prioritizedArtworkMovies = dedupeSeriesMovies([
+      ...normalizedMovies.slice(0, 1),
+      ...homeRows.slice(0, 3).flatMap((row) =>
+        row.movies.slice(0, row.usesSeriesBackdropCards ? 3 : 6)
+      ),
+    ]);
+    warmHomePageArtwork(prioritizedArtworkMovies.length ? prioritizedArtworkMovies : normalizedMovies, 28);
   } catch {
     // Keep sign-in fast even if background warming fails.
   }

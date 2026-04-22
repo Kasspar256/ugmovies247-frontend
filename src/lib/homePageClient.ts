@@ -3,6 +3,7 @@ import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
+import { getArtworkOrigin, getOptimizedArtworkUrl } from '@/lib/artwork';
 
 type CachedHomePageCategories = {
   categories: HomePageCategoryRecord[];
@@ -14,6 +15,8 @@ const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 5;
 
 let inMemoryHomePageCategories: CachedHomePageCategories | null = null;
 let inFlightHomePageCategoriesRequest: Promise<HomePageCategoryRecord[]> | null = null;
+const warmedArtworkUrls = new Set<string>();
+const preconnectedArtworkOrigins = new Set<string>();
 
 function canUseSessionStorage() {
   return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
@@ -174,10 +177,10 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
     new Set(
       movies
         .flatMap((movie) => [
-          movie.poster,
-          movie.parts?.[0]?.thumbnail,
-          movie.parts?.[0]?.poster,
-          movie.seasons?.[0]?.poster,
+          getOptimizedArtworkUrl(movie.poster, 'card'),
+          getOptimizedArtworkUrl(movie.parts?.[0]?.thumbnail, 'card'),
+          getOptimizedArtworkUrl(movie.parts?.[0]?.poster, 'card'),
+          getOptimizedArtworkUrl(movie.seasons?.[0]?.poster, 'backdrop'),
         ])
         .map((value) => String(value || '').trim())
         .filter(Boolean)
@@ -188,13 +191,41 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
     return;
   }
 
+  const artworkOrigins = Array.from(
+    new Set(artworkUrls.map((url) => getArtworkOrigin(url)).filter(Boolean))
+  );
+
   const schedule =
-    typeof window.requestIdleCallback === 'function'
-      ? (callback: () => void) => window.requestIdleCallback(() => callback())
-      : (callback: () => void) => window.setTimeout(callback, 16);
+    typeof window.requestAnimationFrame === 'function'
+      ? (callback: () => void) => window.requestAnimationFrame(() => callback())
+      : (callback: () => void) => window.setTimeout(callback, 0);
 
   schedule(() => {
+    artworkOrigins.forEach((origin) => {
+      if (preconnectedArtworkOrigins.has(origin)) {
+        return;
+      }
+
+      preconnectedArtworkOrigins.add(origin);
+
+      const preconnect = document.createElement('link');
+      preconnect.rel = 'preconnect';
+      preconnect.href = origin;
+      preconnect.crossOrigin = 'anonymous';
+      document.head.appendChild(preconnect);
+
+      const dnsPrefetch = document.createElement('link');
+      dnsPrefetch.rel = 'dns-prefetch';
+      dnsPrefetch.href = origin;
+      document.head.appendChild(dnsPrefetch);
+    });
+
     artworkUrls.forEach((url) => {
+      if (warmedArtworkUrls.has(url)) {
+        return;
+      }
+
+      warmedArtworkUrls.add(url);
       const image = new window.Image();
       image.decoding = 'async';
       image.src = url;

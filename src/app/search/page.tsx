@@ -6,6 +6,7 @@ import { Search as SearchIcon, X, Play, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -144,10 +145,16 @@ export default function SearchPage() {
             
             {/* Desktop Grid Layout / Mobile List Layout */}
             <div className="flex flex-col gap-3 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-6">
-              {filteredMovies.map(movie => (
+              {filteredMovies.map((movie, index) => (
                 <Link href={`/movie/${movie.id}`} key={movie.id} className="flex gap-4 md:gap-5 bg-[#1F2833]/30 p-2 md:p-4 rounded-lg hover:bg-[#1F2833] transition-colors group border border-transparent hover:border-white/5 shadow-sm">
                   <div className="w-24 md:w-28 rounded-md overflow-hidden relative flex-shrink-0 aspect-[2/3] shadow-md">
-                    <img src={movie.poster} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <img
+                      src={getOptimizedArtworkUrl(movie.poster, 'card')}
+                      alt={movie.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading={index < 4 ? 'eager' : 'lazy'}
+                      decoding="async"
+                    />
                     {isSeriesMovie(movie) && (
                       <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
                         EPS

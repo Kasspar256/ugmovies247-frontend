@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Clock3, Download, Search, UserCircle2 } from 'lucide-react';
 import { isLegalRoute } from '@/lib/legalRoutes';
@@ -49,6 +49,7 @@ const QUICK_ACTIONS = [
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/downloads', label: 'Downloads', icon: Download },
 ];
+const DESKTOP_PREFETCH_ROUTES = ['/', '/vjs', '/genres', '/search', '/profile', '/notifications', '/downloads'];
 
 type SubscriptionSnapshot = {
   status?: string;
@@ -92,7 +93,19 @@ function getTimeLeftLabel(subscription: SubscriptionSnapshot | null) {
 
 export default function DesktopHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const [subscription, setSubscription] = useState<SubscriptionSnapshot | null>(null);
+  const shouldShow = shouldShowDesktopHeader(pathname);
+
+  useEffect(() => {
+    if (!shouldShow) {
+      return;
+    }
+
+    DESKTOP_PREFETCH_ROUTES.forEach((href) => {
+      router.prefetch(href);
+    });
+  }, [router, shouldShow]);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,7 +145,7 @@ export default function DesktopHeader() {
 
   const timeLeftLabel = useMemo(() => getTimeLeftLabel(subscription), [subscription]);
 
-  if (!shouldShowDesktopHeader(pathname)) {
+  if (!shouldShow) {
     return null;
   }
 

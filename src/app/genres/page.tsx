@@ -5,6 +5,7 @@ import { Search as SearchIcon } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Comedy", "Crime", 
@@ -15,7 +16,9 @@ const GENRES = [
 
 const getGenreImage = (genreName: string, movies: Movie[]) => {
   const movie = movies.find(m => m.genres?.includes(genreName) || m.country === genreName || (genreName === 'Indian' && m.country === 'India'));
-  return movie ? movie.poster : 'https://image.tmdb.org/t/p/w500/1E5baAaEse26fej7uHcjOgEE2t2.jpg';
+  return movie
+    ? getOptimizedArtworkUrl(movie.poster, 'genre')
+    : 'https://image.tmdb.org/t/p/w500/1E5baAaEse26fej7uHcjOgEE2t2.jpg';
 }
 
 export default function GenresDirectory() {
@@ -91,7 +94,7 @@ export default function GenresDirectory() {
         
         {/* Sleek, Professional Cinematic Grid Design like Disney+ / Apple TV+ */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6 pb-20">
-          {GENRES.map((genre) => (
+          {GENRES.map((genre, index) => (
             <Link 
               href={`/genres/${genre.toLowerCase()}`} 
               key={genre}
@@ -101,7 +104,9 @@ export default function GenresDirectory() {
               <img 
                 src={getGenreImage(genre, movies)} 
                 alt={genre} 
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-60 group-hover:opacity-80" 
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 opacity-60 group-hover:opacity-80"
+                loading={index < 4 ? 'eager' : 'lazy'}
+                decoding="async"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-black/40 to-transparent group-hover:via-[#D90429]/20 transition-colors" />
               
