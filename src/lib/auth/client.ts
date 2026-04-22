@@ -30,6 +30,22 @@ type SessionResponse = {
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
 
+function buildOptimisticAuthStatus(fallbackUser: {
+  name: string;
+  email: string;
+  role: 'user' | 'admin';
+}): ClientAuthStatus {
+  return {
+    authenticated: true,
+    user: {
+      id: '',
+      name: fallbackUser.name || 'User',
+      email: fallbackUser.email || '',
+      role: fallbackUser.role,
+    },
+  };
+}
+
 function buildSessionValidationError(
   reason?: 'session_replaced' | 'session_revoked' | 'session_missing'
 ) {
@@ -62,6 +78,9 @@ async function confirmServerAuthSession(fallbackUser: {
   email: string;
   role: 'user' | 'admin';
 }) {
+  const optimisticStatus = buildOptimisticAuthStatus(fallbackUser);
+  primeAuthStatusCache(optimisticStatus);
+
   for (let attempt = 0; attempt < SESSION_CONFIRM_RETRY_DELAYS_MS.length; attempt += 1) {
     const retryDelay = SESSION_CONFIRM_RETRY_DELAYS_MS[attempt];
 
@@ -89,6 +108,10 @@ async function confirmServerAuthSession(fallbackUser: {
         continue;
       }
 
+      if (status.reason === 'session_missing') {
+        return optimisticStatus;
+      }
+
       clearAuthStatusCache();
       throw buildSessionValidationError(status.reason);
     }
@@ -107,8 +130,7 @@ async function confirmServerAuthSession(fallbackUser: {
     return normalizedStatus;
   }
 
-  clearAuthStatusCache();
-  throw buildSessionValidationError('session_missing');
+  return optimisticStatus;
 }
 
 async function warmPostLoginAppData(role: 'user' | 'admin') {
