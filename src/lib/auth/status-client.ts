@@ -1,5 +1,6 @@
 export type ClientAuthStatus = {
   authenticated: boolean;
+  reason?: 'session_replaced' | 'session_revoked' | 'session_missing';
   user?: {
     id: string;
     name: string;
@@ -56,13 +57,28 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
     cache: 'no-store',
   })
     .then(async (response) => {
+      const payload = (await response.json().catch(() => ({}))) as Partial<ClientAuthStatus>;
+
       if (!response.ok) {
-        return { authenticated: false } satisfies ClientAuthStatus;
+        return {
+          authenticated: false,
+          reason:
+            payload.reason === 'session_replaced' ||
+            payload.reason === 'session_revoked' ||
+            payload.reason === 'session_missing'
+              ? payload.reason
+              : 'session_missing',
+        } satisfies ClientAuthStatus;
       }
 
-      const payload = (await response.json()) as Partial<ClientAuthStatus>;
       const value: ClientAuthStatus = {
         authenticated: payload.authenticated !== false,
+        reason:
+          payload.reason === 'session_replaced' ||
+          payload.reason === 'session_revoked' ||
+          payload.reason === 'session_missing'
+            ? payload.reason
+            : undefined,
         user: payload.user
           ? {
               id: payload.user.id || '',
@@ -80,7 +96,7 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
 
       return value;
     })
-    .catch(() => ({ authenticated: false } satisfies ClientAuthStatus))
+    .catch(() => ({ authenticated: false, reason: 'session_missing' } satisfies ClientAuthStatus))
     .finally(() => {
       inFlightAuthStatusRequest = null;
     });

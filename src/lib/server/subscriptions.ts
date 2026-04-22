@@ -29,6 +29,16 @@ const SUBSCRIPTIONS_COLLECTION = 'user_subscriptions';
 const PAYMENTS_COLLECTION = 'subscription_payments';
 const WEBHOOK_LOGS_COLLECTION = 'payment_webhook_logs';
 const RECURRING_AGREEMENTS_COLLECTION = 'subscription_recurring_agreements';
+const DEVICE_LIMIT_BY_PLAN: Record<SubscriptionPlanType, number> = {
+  daily: 1,
+  seven_days: 1,
+  fourteen_days: 1,
+  monthly: 2,
+  two_months: 2,
+  three_months: 2,
+  six_months: 3,
+  twelve_months: 4,
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -195,6 +205,29 @@ export function getEntitlementFromSubscriptionData(
   };
 }
 
+export function getDeviceLimitForPlanType(planType?: SubscriptionPlanType | null) {
+  if (!planType) {
+    return 1;
+  }
+
+  return DEVICE_LIMIT_BY_PLAN[planType] || 1;
+}
+
+export function getDeviceLimitForSubscriptionSnapshot(
+  snapshot?: Partial<SubscriptionSnapshot> | null,
+  role?: string
+) {
+  if (role === 'admin') {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  if (!snapshot?.isActive) {
+    return 1;
+  }
+
+  return getDeviceLimitForPlanType(snapshot.planType || null);
+}
+
 function buildEffectiveSubscriptionState(options: {
   paidSubscription?: Partial<UserSubscriptionDocument> | null;
   manualOverride?: Partial<SubscriptionOverrideDocument> | null;
@@ -267,6 +300,16 @@ export async function syncUserSubscriptionSnapshot(
     },
     { merge: true }
   );
+
+  try {
+    const { enforceDeviceSessionLimit } = await import('@/lib/server/authSessions');
+    await enforceDeviceSessionLimit(userId, {
+      subscriptionSnapshot: snapshot,
+      deviceLimit: getDeviceLimitForSubscriptionSnapshot(snapshot),
+    });
+  } catch (error) {
+    console.warn('[subscriptions] failed to reconcile managed auth sessions after subscription sync', error);
+  }
 
   return snapshot;
 }

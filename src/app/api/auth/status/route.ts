@@ -1,23 +1,29 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getRequestAuthSessionValidation } from '@/lib/auth/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const session = await getCurrentAuthSession();
+export async function GET(request: Request) {
+  const validation = await getRequestAuthSessionValidation(request);
 
-  if (!session) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
+  if (!validation.session) {
+    return NextResponse.json(
+      {
+        authenticated: false,
+        reason: validation.reason || 'session_missing',
+      },
+      { status: 401 }
+    );
   }
 
   return NextResponse.json({
     authenticated: true,
     user: {
-      id: session.uid,
-      name: session.userRecord.name,
-      email: session.userRecord.email,
-      role: session.userRecord.role,
+      id: validation.session.uid,
+      name: validation.session.userRecord.name,
+      email: validation.session.userRecord.email,
+      role: validation.session.userRecord.role,
     },
   });
 }
