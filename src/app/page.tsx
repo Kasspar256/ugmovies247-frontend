@@ -84,6 +84,61 @@ function formatRuntimeLabel(movie: Movie | null) {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
+function HomeCardImage({
+  src,
+  alt,
+  imageClassName,
+  logoClassName = 'h-16 w-16 scale-[1.9] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20',
+}: {
+  src?: string;
+  alt: string;
+  imageClassName: string;
+  logoClassName?: string;
+}) {
+  const normalizedSrc = src?.trim() || '';
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+    setHasError(false);
+  }, [normalizedSrc]);
+
+  const showPlaceholder = !normalizedSrc || !isLoaded || hasError;
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_center,rgba(34,41,54,0.98)_0%,rgba(20,24,34,0.98)_56%,rgba(11,12,16,1)_100%)]">
+      {showPlaceholder && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <img
+            src="/logow.png"
+            alt=""
+            aria-hidden="true"
+            className={logoClassName}
+          />
+        </div>
+      )}
+
+      {normalizedSrc ? (
+        <img
+          src={normalizedSrc}
+          alt={alt}
+          className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+          loading="lazy"
+          onLoad={() => {
+            setHasError(false);
+            setIsLoaded(true);
+          }}
+          onError={() => {
+            setHasError(true);
+            setIsLoaded(false);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export default function Home() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
@@ -726,13 +781,12 @@ function MovieRow({
           : undefined
       }
     >
-      <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
-        <img
-          src={m.poster || 'https://via.placeholder.com/300x450/1F2833/888888?text=NO+POSTER'}
-          alt={m.title}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-110"
-          loading="lazy"
-        />
+        <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
+          <HomeCardImage
+            src={m.poster}
+            alt={m.title}
+            imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-110"
+          />
 
         {isSeriesMovie(m) && (
           <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black px-1.5 py-0.5 rounded-full z-10 tracking-widest shadow-[0_4px_12px_rgba(0,0,0,0.35)]">
@@ -775,13 +829,13 @@ function MovieRow({
       key={m.id}
       className="group/card w-[62vw] min-w-[244px] max-w-[320px] cursor-pointer snap-start shrink-0 sm:w-[48vw] sm:min-w-[270px] md:w-[430px] md:max-w-none lg:w-[480px] xl:w-[520px]"
     >
-      <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">
-        <img
-          src={m.poster || 'https://via.placeholder.com/1280x720/1F2833/888888?text=NO+ART'}
-          alt={m.title}
-          className="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
-          loading="lazy"
-        />
+        <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">
+          <HomeCardImage
+            src={m.poster}
+            alt={m.title}
+            imageClassName="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
+            logoClassName="h-14 w-14 scale-[1.95] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20"
+          />
         <div className="absolute inset-0 bg-gradient-to-t from-[#06070B] via-[#06070B]/40 to-[#06070B]/10" />
         <div className="absolute inset-0 bg-black/10 transition-colors duration-300 md:group-hover/card:bg-black/0" />
         {m.isLocked && (

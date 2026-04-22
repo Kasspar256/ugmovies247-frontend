@@ -210,6 +210,19 @@ export async function upsertSubscriptionOverrideForUser(
   return next;
 }
 
+export async function clearSubscriptionOverrideForUser(userId: string) {
+  const ref = adminDb.collection(SUBSCRIPTION_OVERRIDES_COLLECTION).doc(userId);
+  const snapshot = await ref.get();
+
+  if (!snapshot.exists) {
+    return null;
+  }
+
+  const existing = snapshot.data() as SubscriptionOverrideDocument;
+  await ref.delete();
+  return existing;
+}
+
 export async function logSubscriptionOverrideAudit(entry: SubscriptionOverrideAuditLogDocument) {
   const timestamp = nowIso();
 

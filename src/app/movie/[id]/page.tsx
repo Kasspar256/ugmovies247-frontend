@@ -1089,48 +1089,56 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           </h3>
         </div>
 
-        <div className="flex gap-2.5 overflow-x-auto pb-2 md:grid md:grid-cols-3 xl:grid-cols-4 md:overflow-visible [scrollbar-color:#D90429_#1F2833]">
-          {selectedSeasonEpisodes.map((episode) => (
-            <button
-              key={`${movie.id}-season-${selectedSeason?.seasonNumber}-episode-${episode.episodeNumber}`}
-              onClick={() => {
-                if (!selectedSeason) {
-                  return;
-                }
+        <div className="flex gap-2 overflow-x-auto pb-2 md:grid md:grid-cols-3 xl:grid-cols-4 md:overflow-visible [scrollbar-color:#D90429_#1F2833]">
+          {selectedSeasonEpisodes.map((episode) => {
+            const episodeLabel = getEpisodeLabel(episode.episodeNumber);
+            const episodeDisplayTitle = getEpisodeDisplayTitle(episode.episodeNumber, episode.title);
+            const episodePreview = episode.thumbnail || episode.poster || selectedSeason?.poster || movie.poster;
 
-                syncSeriesSelection(selectedSeason.seasonNumber, episode.episodeNumber);
-              }}
-              className={`min-w-[118px] md:min-w-0 text-left flex items-start gap-2 rounded-xl border p-2.5 transition-colors ${
-                selectedEpisode?.episodeNumber === episode.episodeNumber
-                  ? 'border-[#D90429] bg-[#D90429]/12 shadow-[0_0_0_1px_rgba(217,4,41,0.3)]'
-                  : 'border-white/10 bg-[#1F2833]/20 hover:border-white/30'
-              }`}
-            >
-              <div className="w-11 h-11 rounded-lg bg-[#1F2833] overflow-hidden flex-shrink-0">
-                {(episode.thumbnail || episode.poster || movie.poster) ? (
-                  <img
-                    src={episode.thumbnail || episode.poster || movie.poster}
-                    alt={episode.title}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[#D90429] text-lg font-black">
-                    {getEpisodeLabel(episode.episodeNumber)}
+            return (
+              <button
+                key={`${movie.id}-season-${selectedSeason?.seasonNumber}-episode-${episode.episodeNumber}`}
+                onClick={() => {
+                  if (!selectedSeason) {
+                    return;
+                  }
+
+                  syncSeriesSelection(selectedSeason.seasonNumber, episode.episodeNumber);
+                }}
+                className={`relative min-w-[clamp(84px,calc((100vw-4rem)/3.6),104px)] sm:min-w-[clamp(88px,calc((100vw-4.5rem)/3.55),112px)] md:min-w-0 text-left overflow-hidden rounded-xl border transition-colors ${
+                  selectedEpisode?.episodeNumber === episode.episodeNumber
+                    ? 'border-[#D90429] bg-[#D90429]/12 shadow-[0_0_0_1px_rgba(217,4,41,0.3)]'
+                    : 'border-white/10 bg-[#1F2833]/20 hover:border-white/30'
+                }`}
+                aria-label={`Play ${episodeDisplayTitle}`}
+                type="button"
+              >
+                <div className="relative aspect-[1.85/1] w-full bg-[#11141C]">
+                  {episodePreview ? (
+                    <>
+                      <img
+                        src={episodePreview}
+                        alt={episode.title}
+                        className="absolute inset-0 h-full w-full object-cover object-center"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/18 via-black/12 to-black/38" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#1F2833] text-lg font-black text-[#D90429]">
+                      {episodeLabel}
+                    </div>
+                  )}
+
+                  <div className="absolute right-2.5 top-2.5 md:right-3 md:top-3">
+                    <p className="text-[10px] md:text-xs font-black leading-none text-[#D90429] drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
+                      {episodeLabel}
+                    </p>
                   </div>
-                )}
-              </div>
-              <div className="min-w-0 flex flex-1 items-center">
-                <p className="text-[11px] md:text-xs font-black text-[#D90429] leading-none">
-                  {getEpisodeLabel(episode.episodeNumber)}
-                </p>
-                {getEpisodeDisplayTitle(episode.episodeNumber, episode.title) !== getEpisodeLabel(episode.episodeNumber) && (
-                  <p className="ml-2 text-[11px] md:text-sm font-bold text-white line-clamp-2 leading-tight">
-                    {getEpisodeDisplayTitle(episode.episodeNumber, episode.title)}
-                  </p>
-                )}
-              </div>
-            </button>
-          ))}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
     )}

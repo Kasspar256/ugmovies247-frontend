@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Clock3,
   CreditCard,
+  LogOut,
+  Monitor,
   RefreshCw,
+  RotateCcw,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -14,6 +17,7 @@ import type {
   AdminSubscriptionOverrideActivity,
   AdminSubscriptionUserSummary,
 } from '@/types/admin';
+import type { AdminAuthSessionSummary } from '@/types/authSessions';
 import type { SubscriptionPlanDefinition } from '@/types/subscriptions';
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import {
@@ -46,6 +50,46 @@ const EMPTY_PAYLOAD: OverridesPayload = {
   selectedUser: null,
   recentActivity: [],
 };
+
+function formatManagedSessionStatus(status: AdminAuthSessionSummary['status']) {
+  if (status === 'logged_out') {
+    return 'logged out';
+  }
+
+  return status.replace(/_/g, ' ');
+}
+
+function getManagedSessionStatusTone(device: AdminAuthSessionSummary) {
+  if (device.status === 'active' && device.isActive) {
+    return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200';
+  }
+
+  if (device.status === 'revoked' || device.status === 'replaced') {
+    return 'border-red-500/25 bg-red-500/10 text-red-100';
+  }
+
+  return 'border-white/10 bg-white/5 text-white/62';
+}
+
+function getManagedSessionHeading(device: AdminAuthSessionSummary) {
+  return device.deviceName || device.browserName || device.userAgent || 'Unknown device';
+}
+
+function getManagedSessionSubheading(device: AdminAuthSessionSummary) {
+  const parts = [device.platformName, device.browserName].filter(
+    (value) => value && !/^unknown/i.test(value)
+  );
+
+  if (parts.length) {
+    return parts.join(' - ');
+  }
+
+  if (device.userAgent && device.userAgent !== 'unknown') {
+    return device.userAgent;
+  }
+
+  return 'Browser and platform unavailable';
+}
 
 function buildQueryString(params: Record<string, string>) {
   const searchParams = new URLSearchParams();
@@ -127,6 +171,27 @@ function normalizeDateTimeLocal(value: string) {
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
 }
 
+function resolveActionNote(actionType: string, notes: {
+  grantNote: string;
+  extendNote: string;
+  actionNote: string;
+  deviceActionNote: string;
+}) {
+  if (actionType === 'grant' || actionType === 'overlay' || actionType === 'replace') {
+    return notes.grantNote;
+  }
+
+  if (actionType === 'extend') {
+    return notes.extendNote;
+  }
+
+  if (actionType === 'force_logout_device' || actionType === 'reset_all_sessions') {
+    return notes.deviceActionNote;
+  }
+
+  return notes.actionNote;
+}
+
 export function AdminSubscriptionOverridesTab() {
   const [payload, setPayload] = useState<OverridesPayload>(EMPTY_PAYLOAD);
   const [loading, setLoading] = useState(true);
@@ -153,30 +218,50 @@ export function AdminSubscriptionOverridesTab() {
   const [extendNote, setExtendNote] = useState('');
 
   const [actionNote, setActionNote] = useState('');
+  const [deviceActionNote, setDeviceActionNote] = useState('');
 
-  const loadState = async (options?: { userId?: string; keepSelection?: boolean }) => {
+  const loadState = async (options?: {
+    userId?: string;
+    keepSelection?: boolean;
+    includeSelectedUser?: boolean;
+    includeActivity?: boolean;
+  }) => {
     setLoading(true);
     setErrorMessage('');
 
     try {
-      const requestedUserId = options?.userId ?? selectedUserId;
+      const includeSelectedUser = options?.includeSelectedUser !== false;
+      const includeActivity = options?.includeActivity !== false;
+      const requestedUserId = includeSelectedUser ? options?.userId ?? selectedUserId : '';
       const response = await fetchAdminJson<OverridesPayload>(
         `/api/admin/subscription-overrides${buildQueryString({
           query,
           status: statusFilter,
           source: sourceFilter,
           userId: requestedUserId,
+          includeActivity: includeActivity ? '1' : '0',
         })}`,
         { force: true }
       );
 
-      setPayload(response || EMPTY_PAYLOAD);
-
       const nextSelectedId =
-        requestedUserId ||
-        response.selectedUser?.id ||
-        response.users[0]?.id ||
-        '';
+        options?.keepSelection && selectedUserId
+          ? selectedUserId
+          : (
+              requestedUserId ||
+              response.selectedUser?.id ||
+              response.users[0]?.id ||
+              ''
+            );
+
+      setPayload((current) => ({
+        ...(response || EMPTY_PAYLOAD),
+        selectedUser:
+          includeSelectedUser
+            ? response.selectedUser
+            : current.selectedUser,
+        recentActivity: includeActivity ? response.recentActivity : current.recentActivity,
+      }));
 
       if (!options?.keepSelection || nextSelectedId !== selectedUserId) {
         setSelectedUserId(nextSelectedId);
@@ -196,15 +281,35 @@ export function AdminSubscriptionOverridesTab() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadState({ keepSelection: true });
+      void loadState({
+        keepSelection: true,
+        includeSelectedUser: false,
+        includeActivity: false,
+      });
     }, 180);
 
     return () => window.clearTimeout(timer);
   }, [query, statusFilter, sourceFilter]);
 
   useEffect(() => {
-    void loadState({ userId: selectedUserId, keepSelection: true });
+    void loadState({
+      userId: selectedUserId,
+      keepSelection: true,
+      includeActivity: true,
+    });
   }, []);
+
+  useEffect(() => {
+    if (!selectedUserId || payload.selectedUser?.id === selectedUserId) {
+      return;
+    }
+
+    void loadState({
+      userId: selectedUserId,
+      keepSelection: true,
+      includeActivity: true,
+    });
+  }, [payload.selectedUser?.id, selectedUserId]);
 
   const selectedUser = useMemo(() => {
     if (payload.selectedUser?.id === selectedUserId) {
@@ -232,13 +337,23 @@ export function AdminSubscriptionOverridesTab() {
     setStatusMessage('');
 
     try {
+      const actionType = String(body.actionType || '');
+      const resolvedBody = {
+        ...body,
+        note: resolveActionNote(actionType, {
+          grantNote,
+          extendNote,
+          actionNote,
+          deviceActionNote,
+        }).trim(),
+      };
       const response = await fetch('/api/admin/subscription-overrides', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(resolvedBody),
       });
       const data = (await response.json().catch(() => ({}))) as OverridesPayload & { error?: string };
 
@@ -246,16 +361,25 @@ export function AdminSubscriptionOverridesTab() {
         throw new Error(data.error || 'The subscription change could not be saved.');
       }
 
-      setStatusMessage('Subscription access updated successfully.');
+      setStatusMessage(
+        actionType === 'force_logout_device' || actionType === 'reset_all_sessions'
+          ? 'Device sessions updated successfully.'
+          : 'Subscription access updated successfully.'
+      );
       setGrantNote('');
       setExtendNote('');
       setActionNote('');
+      setDeviceActionNote('');
       setPayload((current) => ({
         ...current,
         selectedUser: data.selectedUser || current.selectedUser,
         recentActivity: data.recentActivity || current.recentActivity,
       }));
-      await loadState({ userId: selectedUserId || String(body.userId || ''), keepSelection: true });
+      await loadState({
+        userId: selectedUserId || String(resolvedBody.userId || ''),
+        keepSelection: true,
+        includeActivity: true,
+      });
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The subscription change could not be saved.');
     } finally {
@@ -295,7 +419,13 @@ export function AdminSubscriptionOverridesTab() {
           action={
             <button
               type="button"
-              onClick={() => void loadState({ userId: selectedUserId, keepSelection: true })}
+              onClick={() =>
+                void loadState({
+                  userId: selectedUserId,
+                  keepSelection: true,
+                  includeActivity: true,
+                })
+              }
               className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/75"
             >
               <RefreshCw size={14} />
@@ -360,7 +490,11 @@ export function AdminSubscriptionOverridesTab() {
                     type="button"
                     onClick={() => {
                       setSelectedUserId(user.id);
-                      void loadState({ userId: user.id, keepSelection: true });
+                      void loadState({
+                        userId: user.id,
+                        keepSelection: true,
+                        includeActivity: true,
+                      });
                     }}
                     className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
                       selectedUserId === user.id
@@ -416,7 +550,7 @@ export function AdminSubscriptionOverridesTab() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
                     <div className="text-[11px] font-black uppercase tracking-[0.2em] text-white/42">
                       Current Plan
@@ -452,6 +586,25 @@ export function AdminSubscriptionOverridesTab() {
                       <div>Granted by: <span className="font-semibold text-white">{selectedUser.manualOverride?.grantedByAdminEmail || '-'}</span></div>
                     </div>
                   </div>
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">
+                    <div className="text-[11px] font-black uppercase tracking-[0.2em] text-white/42">
+                      Active Devices
+                    </div>
+                    <div className="mt-3 text-sm leading-6 text-white/75">
+                      <div>
+                        In use:{' '}
+                        <span className="font-semibold text-white">
+                          {selectedUser.activeDeviceCount}
+                        </span>
+                      </div>
+                      <div>
+                        Limit:{' '}
+                        <span className="font-semibold text-white">
+                          {selectedUser.deviceLimit > 0 ? selectedUser.deviceLimit : 'Unlimited'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {activePlanWarning && (
@@ -459,6 +612,116 @@ export function AdminSubscriptionOverridesTab() {
                     This user already has an active access source. Choose carefully between overlaying new access, replacing it immediately, or extending from expiry.
                   </div>
                 )}
+
+                <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-white/42">
+                        Active Devices
+                      </div>
+                      <div className="mt-2 text-sm text-white/62">
+                        Force logout one device or reset every active session for this account.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!selectedUser || actionBusy || selectedUser.activeDevices.length === 0}
+                      onClick={() =>
+                        openConfirm({
+                          title: 'Reset all device sessions',
+                          message:
+                            'This will immediately end every current device session for the selected user and require a fresh login everywhere.',
+                          confirmLabel: 'Reset Sessions',
+                          danger: true,
+                          payload: {
+                            actionType: 'reset_all_sessions',
+                            userId: selectedUser?.id,
+                            note: deviceActionNote,
+                          },
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-full border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RotateCcw size={15} />
+                      Reset All Sessions
+                    </button>
+                  </div>
+
+                  <div className="mt-4">
+                    <FieldLabel>Device Action Note</FieldLabel>
+                    <TextArea
+                      value={deviceActionNote}
+                      onChange={(event) => setDeviceActionNote(event.target.value)}
+                      rows={3}
+                      placeholder="Explain why these device sessions are being ended."
+                    />
+                  </div>
+
+                  {selectedUser.activeDevices.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/60">
+                      No active or tracked device sessions were found for this user.
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-3">
+                      {selectedUser.activeDevices.map((device) => (
+                        <div
+                          key={device.id}
+                          className="rounded-2xl border border-white/10 bg-[#0D1017] px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                                <Monitor size={15} className="text-white/55" />
+                                <span className="truncate">{getManagedSessionHeading(device)}</span>
+                              </div>
+                              <div className="mt-1 text-xs uppercase tracking-[0.16em] text-white/38">
+                                {getManagedSessionSubheading(device)}
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs text-white/55 sm:grid-cols-2">
+                                <div>IP: <span className="text-white/78">{device.ipAddress || 'unknown'}</span></div>
+                                <div>Device ID: <span className="text-white/78">{device.deviceId || '-'}</span></div>
+                                <div>Session ID: <span className="text-white/78">{device.id || '-'}</span></div>
+                                <div>Last activity: <span className="text-white/78">{formatDate(device.lastActivityAt)}</span></div>
+                                <div>Created: <span className="text-white/78">{formatDate(device.createdAt)}</span></div>
+                                <div className="sm:col-span-2">User Agent: <span className="text-white/78 break-all">{device.userAgent || 'unknown'}</span></div>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-2">
+                              <span
+                                className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${getManagedSessionStatusTone(device)}`}
+                              >
+                                {formatManagedSessionStatus(device.status)}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={actionBusy}
+                                onClick={() =>
+                                  openConfirm({
+                                    title: 'Force logout this device',
+                                    message:
+                                      'This will immediately end the selected device session and require that device to sign in again.',
+                                    confirmLabel: 'Force Logout',
+                                    danger: true,
+                                    payload: {
+                                      actionType: 'force_logout_device',
+                                      userId: selectedUser?.id,
+                                      sessionId: device.id,
+                                      note: deviceActionNote,
+                                    },
+                                  })
+                                }
+                                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-white/78"
+                              >
+                                <LogOut size={14} />
+                                End Device
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/60">
@@ -688,7 +951,7 @@ export function AdminSubscriptionOverridesTab() {
                   <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
-                      disabled={!selectedUser || actionBusy}
+                      disabled={!selectedUser || actionBusy || !selectedUser.effectiveSubscription.isActive}
                       onClick={() =>
                         openConfirm({
                           title: 'Revoke premium access now',
@@ -710,7 +973,12 @@ export function AdminSubscriptionOverridesTab() {
                     </button>
                     <button
                       type="button"
-                      disabled={!selectedUser || actionBusy}
+                      disabled={
+                        !selectedUser ||
+                        actionBusy ||
+                        (!selectedUser.paidSubscription?.autoRenewEnabled &&
+                          !selectedUser.paidSubscription?.nextChargeAt)
+                      }
                       onClick={() =>
                         openConfirm({
                           title: 'Disable auto-renew',
@@ -731,7 +999,7 @@ export function AdminSubscriptionOverridesTab() {
                     </button>
                     <button
                       type="button"
-                      disabled={!selectedUser || actionBusy}
+                      disabled={!selectedUser || actionBusy || !selectedUser.manualOverride}
                       onClick={() =>
                         openConfirm({
                           title: 'Clear manual override',

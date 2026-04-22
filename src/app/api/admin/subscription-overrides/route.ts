@@ -3,6 +3,10 @@ import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import { clearAdminPanelServerCache } from '@/lib/server/adminControlCenter';
 import {
+  forceLogoutManagedAuthSession,
+  resetManagedAuthSessions,
+} from '@/lib/server/authSessions';
+import {
   getAdminSubscriptionUser,
   listRecentAdminSubscriptionActivity,
   searchAdminSubscriptionUsers,
@@ -15,6 +19,7 @@ import {
   syncUserSubscriptionSnapshot,
 } from '@/lib/server/subscriptions';
 import {
+  clearSubscriptionOverrideForUser,
   logSubscriptionOverrideAudit,
   upsertSubscriptionOverrideForUser,
 } from '@/lib/server/subscriptionOverrides';
@@ -386,17 +391,14 @@ async function applyRevokeAction(options: {
 
 async function applyClearOverrideAction(options: {
   userId: string;
-  note: string;
-  adminId: string;
-  adminEmail: string;
-  adminName: string;
 }) {
-  const updated = await revokeManualOverride(options);
+  const currentState = await resolveEffectiveSubscriptionState(options.userId);
 
-  if (!updated) {
+  if (!currentState.manualOverride) {
     throw createValidationError('There is no manual override to clear for this user.');
   }
 
+  await clearSubscriptionOverrideForUser(options.userId);
   await syncUserSubscriptionSnapshot(options.userId);
 }
 
@@ -432,6 +434,7 @@ export async function GET(request: Request) {
     const statusFilter = String(url.searchParams.get('status') || 'all');
     const sourceFilter = String(url.searchParams.get('source') || 'all');
     const userId = String(url.searchParams.get('userId') || '');
+    const includeActivity = url.searchParams.get('includeActivity') !== '0';
 
     const [users, selectedUser, recentActivity] = await Promise.all([
       searchAdminSubscriptionUsers({
@@ -440,7 +443,9 @@ export async function GET(request: Request) {
         sourceFilter,
       }),
       userId ? getAdminSubscriptionUser(userId) : Promise.resolve(null),
-      listRecentAdminSubscriptionActivity(20, userId || undefined),
+      includeActivity
+        ? listRecentAdminSubscriptionActivity(20, userId || undefined)
+        : Promise.resolve([]),
     ]);
 
     return NextResponse.json({
@@ -469,7 +474,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const actionType = String(body.actionType || '').trim() as SubscriptionOverrideAuditAction;
+    const actionType = String(body.actionType || '').trim();
     const userId = String(body.userId || '').trim();
     const note = requireNote(body.note);
 
@@ -532,10 +537,6 @@ export async function POST(request: Request) {
     } else if (actionType === 'clear_override') {
       await applyClearOverrideAction({
         userId,
-        note,
-        adminId: session.uid,
-        adminEmail: session.email,
-        adminName: session.name,
       });
       planType = before.manualOverride?.planType || null;
       planName = before.manualOverride?.planName || '';
@@ -543,6 +544,37 @@ export async function POST(request: Request) {
       await applyCancelAutoRenewAction({ userId });
       planType = before.paidSubscription?.planType || null;
       planName = before.paidSubscription?.planName || '';
+    } else if (actionType === 'force_logout_device') {
+      const sessionId = String(body.sessionId || '').trim();
+
+      if (!sessionId) {
+        return NextResponse.json({ error: 'Choose the device session to end first.' }, { status: 400 });
+      }
+
+      await forceLogoutManagedAuthSession({
+        userId,
+        sessionId,
+        admin: {
+          adminUserId: session.uid,
+          adminEmail: session.email,
+          adminName: session.name,
+        },
+        note,
+        targetUserEmail: before.email,
+        targetUserName: before.name,
+      });
+    } else if (actionType === 'reset_all_sessions') {
+      await resetManagedAuthSessions({
+        userId,
+        admin: {
+          adminUserId: session.uid,
+          adminEmail: session.email,
+          adminName: session.name,
+        },
+        note,
+        targetUserEmail: before.email,
+        targetUserName: before.name,
+      });
     } else {
       return NextResponse.json({ error: 'Unsupported admin action.' }, { status: 400 });
     }
@@ -550,15 +582,25 @@ export async function POST(request: Request) {
     const after = await getAdminSubscriptionUser(userId);
     clearAdminPanelServerCache('users');
 
-    await writeAuditLog({
-      actionType,
-      admin: session,
-      before,
-      after,
-      planType,
-      planName,
-      note,
-    });
+    if (
+      actionType === 'grant' ||
+      actionType === 'overlay' ||
+      actionType === 'replace' ||
+      actionType === 'extend' ||
+      actionType === 'revoke' ||
+      actionType === 'clear_override' ||
+      actionType === 'cancel_auto_renew'
+    ) {
+      await writeAuditLog({
+        actionType: actionType as SubscriptionOverrideAuditAction,
+        admin: session,
+        before,
+        after,
+        planType,
+        planName,
+        note,
+      });
+    }
 
     return NextResponse.json({
       success: true,
