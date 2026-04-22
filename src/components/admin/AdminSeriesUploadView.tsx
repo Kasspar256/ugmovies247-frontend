@@ -566,8 +566,8 @@ export function AdminSeriesUploadView() {
     );
   }, [categories]);
 
-  const categoryLabelMap = useMemo(
-    () => new Map(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
+  const categoryLabelMap = useMemo<Map<string, string>>(
+    () => new Map<string, string>(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
     []
   );
 
