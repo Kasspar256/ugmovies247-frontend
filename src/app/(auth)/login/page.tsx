@@ -123,7 +123,7 @@ export default function LoginPage() {
     try {
       const result = await continueWithGoogle({ rememberMe });
 
-      if (result.redirected) {
+      if (!('session' in result)) {
         return;
       }
 

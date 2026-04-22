@@ -127,7 +127,7 @@ export default function SignupPage() {
     try {
       const result = await continueWithGoogle({ rememberMe: true });
 
-      if (result.redirected) {
+      if (!('session' in result)) {
         return;
       }
 
@@ -315,4 +315,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
