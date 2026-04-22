@@ -1,4 +1,4 @@
-import type { Movie } from '@/types/movie';
+import type { Episode, Movie } from '@/types/movie';
 
 const EPISODIC_TITLE_PATTERN = /\b(s\d{1,2}\s*e\d{1,2}|season\s+\d+|episode\s+\d+|ep\s*\d+)\b/i;
 
@@ -116,7 +116,7 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
   const mergeEpisodeDetails = (
     existingEpisode: NonNullable<Movie['seasons']>[number]['episodes'][number] | undefined,
     nextEpisode: NonNullable<Movie['seasons']>[number]['episodes'][number]
-  ) => {
+  ): Episode => {
     if (!existingEpisode) {
       return nextEpisode;
     }
@@ -138,10 +138,11 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
         nextOverview.length >= existingOverview.length ? nextOverview : existingOverview,
       video_url: nextEpisode.video_url || existingEpisode.video_url || '',
       sourceUrl: nextEpisode.sourceUrl || existingEpisode.sourceUrl || '',
-      masterPlaylistUrl: '',
+      masterPlaylistUrl:
+        nextEpisode.masterPlaylistUrl || existingEpisode.masterPlaylistUrl || '',
       poster: nextEpisode.poster || existingEpisode.poster || '',
       thumbnail: nextEpisode.thumbnail || existingEpisode.thumbnail || '',
-      playbackType: 'mp4',
+      playbackType: nextEpisode.playbackType || existingEpisode.playbackType || 'mp4',
       durationSeconds: nextEpisode.durationSeconds || existingEpisode.durationSeconds || 0,
       isLocked: nextEpisode.isLocked ?? existingEpisode.isLocked ?? false,
     };
