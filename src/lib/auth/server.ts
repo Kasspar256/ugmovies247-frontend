@@ -9,7 +9,11 @@ import {
   AUTH_ROLE_COOKIE,
   AUTH_SESSION_COOKIE,
 } from './constants';
-import { validateManagedAuthSessionFromCookieValues } from '@/lib/server/authSessions';
+import {
+  createManagedAuthSession,
+  validateManagedAuthSessionFromCookieValues,
+} from '@/lib/server/authSessions';
+import { resolveEffectiveSubscriptionState } from '@/lib/server/subscriptions';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import type { AuthInvalidReason } from '@/types/authSessions';
 import { resolveUserAvatar } from '@/lib/avatarPresets';
@@ -46,6 +50,16 @@ export type AuthSession = {
 export type AuthSessionValidationResult = {
   session: AuthSession | null;
   reason?: AuthInvalidReason;
+};
+
+export type RecoveredManagedAuthSession = {
+  deviceCookieValue: string;
+  sessionCookieValue: string;
+};
+
+export type AuthSessionRecoveryResult = AuthSessionValidationResult & {
+  recovered: boolean;
+  managedSession?: RecoveredManagedAuthSession;
 };
 
 function buildFallbackUserRecord(
@@ -191,7 +205,7 @@ async function resolveAuthSessionValidation(options: {
       if (!validation.valid) {
         return {
           session: null,
-          reason: 'reason' in validation ? validation.reason : 'session_missing',
+          reason: validation.reason,
         };
       }
     }
@@ -208,6 +222,74 @@ async function resolveAuthSessionValidation(options: {
   } catch {
     return { session: null, reason: 'session_missing' };
   }
+}
+
+async function resolveSessionFromVerifiedCookie(options: {
+  uid: string;
+  email: string;
+  name: string;
+  roleHint?: string;
+  request?: Request | NextRequest;
+  hydrateUserRecord?: boolean;
+  recoverManagedSession?: boolean;
+}): Promise<AuthSessionRecoveryResult> {
+  const hintedRole = normalizeUserRole(options.roleHint);
+  const resolvedRole = hintedRole === 'admin' || isAdminEmail(options.email) ? 'admin' : 'user';
+  const shouldSkipFirestoreProfileRead =
+    options.hydrateUserRecord === false || resolvedRole === 'admin';
+  const userRecord = shouldSkipFirestoreProfileRead
+    ? buildFallbackUserRecord(options.uid, {
+        email: options.email,
+        name: options.name,
+        role: resolvedRole,
+      })
+    : await fetchUserRecord(options.uid, {
+        email: options.email,
+        name: options.name,
+      });
+
+  if (!userRecord.isActive) {
+    return {
+      session: null,
+      reason: 'session_revoked',
+      recovered: false,
+    };
+  }
+
+  let managedSession: RecoveredManagedAuthSession | undefined;
+
+  if (options.recoverManagedSession && options.request) {
+    const effectiveSubscriptionSnapshot =
+      (await resolveEffectiveSubscriptionState(options.uid).then((state) => state.effectiveSnapshot)) ||
+      userRecord.subscription ||
+      null;
+
+    userRecord.subscription = effectiveSubscriptionSnapshot || undefined;
+
+    const createdManagedSession = await createManagedAuthSession({
+      request: options.request,
+      userId: options.uid,
+      role: userRecord.role,
+      subscriptionSnapshot: effectiveSubscriptionSnapshot,
+    });
+
+    managedSession = {
+      deviceCookieValue: createdManagedSession.deviceCookieValue,
+      sessionCookieValue: createdManagedSession.sessionCookieValue,
+    };
+  }
+
+  return {
+    session: {
+      uid: options.uid,
+      email: userRecord.email,
+      name: userRecord.name,
+      role: userRecord.role,
+      userRecord,
+    },
+    recovered: Boolean(managedSession),
+    managedSession,
+  };
 }
 
 export async function getAuthSessionFromSessionCookie(
@@ -244,6 +326,49 @@ export async function getRequestAuthSessionValidation(request: Request | NextReq
 export async function getRequestAuthSession(request: Request | NextRequest) {
   const result = await getRequestAuthSessionValidation(request);
   return result.session;
+}
+
+export async function recoverManagedAuthSessionFromRequest(
+  request: Request | NextRequest,
+  options?: { hydrateUserRecord?: boolean }
+) {
+  const sessionCookie = getCookieValueFromRequest(request, AUTH_SESSION_COOKIE);
+
+  if (!sessionCookie) {
+    return {
+      session: null,
+      reason: 'session_missing',
+      recovered: false,
+    } satisfies AuthSessionRecoveryResult;
+  }
+
+  try {
+    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
+    const email = decoded.email || '';
+    const name = typeof decoded.name === 'string' ? decoded.name : '';
+    const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
+    const decodedRole = normalizeUserRole((decoded as { role?: string }).role);
+    const roleHint =
+      normalizeUserRole(roleCookie) === 'admin' || decodedRole === 'admin' || isAdminEmail(email)
+        ? 'admin'
+        : 'user';
+
+    return resolveSessionFromVerifiedCookie({
+      uid: decoded.uid,
+      email,
+      name,
+      roleHint,
+      request,
+      hydrateUserRecord: options?.hydrateUserRecord,
+      recoverManagedSession: true,
+    });
+  } catch {
+    return {
+      session: null,
+      reason: 'session_missing',
+      recovered: false,
+    } satisfies AuthSessionRecoveryResult;
+  }
 }
 
 export async function getCurrentAuthSessionValidation(options?: { hydrateUserRecord?: boolean }) {
