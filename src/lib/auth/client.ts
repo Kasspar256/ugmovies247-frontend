@@ -7,7 +7,8 @@ import {
   primeAuthStatusCache,
   type ClientAuthStatus,
 } from './status-client';
-import { clearPublicMovieCache } from '@/lib/publicMovies';
+import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import {
   GoogleAuthProvider,
   getRedirectResult,
@@ -81,6 +82,22 @@ async function confirmServerAuthSession(fallbackUser: {
 
   primeAuthStatusCache(normalizedStatus);
   return normalizedStatus;
+}
+
+async function warmPostLoginAppData(role: 'user' | 'admin') {
+  if (role === 'admin') {
+    return;
+  }
+
+  try {
+    const [movies] = await Promise.all([
+      fetchPublicMovies({ force: true, refreshEntitlement: true }),
+      fetchHomePageCategories({ force: true }),
+    ]);
+    warmHomePageArtwork(movies, 18);
+  } catch {
+    // Keep sign-in fast even if background warming fails.
+  }
 }
 
 async function parseAuthResponse(response: Response) {
@@ -208,6 +225,7 @@ async function createSessionFromIdToken(options: {
     email: options.email || '',
     role: session.role,
   });
+  await warmPostLoginAppData(session.role);
 
   return session;
 }
@@ -269,6 +287,7 @@ export async function loginWithEmailPassword(
     email,
     role: session.role,
   });
+  await warmPostLoginAppData(session.role);
   return { credential: null, session };
 }
 
@@ -291,6 +310,7 @@ export async function signupWithEmailPassword(options: {
     email: options.email,
     role: session.role,
   });
+  await warmPostLoginAppData(session.role);
   return { credential: null, session };
 }
 

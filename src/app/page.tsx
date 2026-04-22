@@ -8,6 +8,11 @@ import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
+import {
+  fetchHomePageCategories,
+  readCachedHomePageCategories,
+  warmHomePageArtwork,
+} from '@/lib/homePageClient';
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
@@ -89,11 +94,13 @@ function HomeCardImage({
   alt,
   imageClassName,
   logoClassName = 'h-16 w-16 scale-[1.9] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20',
+  priority = false,
 }: {
   src?: string;
   alt: string;
   imageClassName: string;
   logoClassName?: string;
+  priority?: boolean;
 }) {
   const normalizedSrc = src?.trim() || '';
   const [isLoaded, setIsLoaded] = useState(false);
@@ -124,7 +131,8 @@ function HomeCardImage({
           src={normalizedSrc}
           alt={alt}
           className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
-          loading="lazy"
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
           onLoad={() => {
             setHasError(false);
             setIsLoaded(true);
@@ -152,55 +160,75 @@ export default function Home() {
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
+  const homeLoadRequestRef = useRef(0);
 
   useEffect(() => {
+    let mounted = true;
+    const requestId = ++homeLoadRequestRef.current;
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
+    const cachedCategories = readCachedHomePageCategories();
+    const cachedStatus = readCachedAuthStatus();
 
     if (cachedMovies.length) {
       setMovies(cachedMovies);
       setLoading(false);
+      warmHomePageArtwork(cachedMovies, 18);
     }
 
-    const fetchMovies = async () => {
+    if (cachedCategories.length) {
+      setHomePageCategories(cachedCategories);
+    }
+
+    if (cachedStatus?.authenticated) {
+      setSessionUser({
+        role: cachedStatus.user?.role === 'admin' ? 'admin' : 'user',
+        name: cachedStatus.user?.name || 'User',
+      });
+    }
+
+    const bootstrapHomePage = async () => {
       try {
-        const data = dedupeSeriesMovies(await fetchPublicMovies({ force: true }));
-        setMovies(data);
-      } catch (err) {
-        console.error("Error fetching movies:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMovies();
-  }, []);
+        const status = cachedStatus || (await fetchAuthStatus({ force: true }));
 
-  useEffect(() => {
-    let mounted = true;
-
-    const loadHomePageCategories = async () => {
-      try {
-        const response = await fetch('/api/categories/home', {
-          cache: 'no-store',
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          categories?: HomePageCategoryRecord[];
-        };
-
-        if (!mounted || !response.ok || !Array.isArray(payload.categories)) {
+        if (!mounted || requestId !== homeLoadRequestRef.current) {
           return;
         }
 
-        setHomePageCategories(
-          payload.categories.length ? payload.categories : DEFAULT_HOME_PAGE_CATEGORIES
+        setSessionUser(
+          status.authenticated
+            ? {
+                role: status.user?.role === 'admin' ? 'admin' : 'user',
+                name: status.user?.name || 'User',
+              }
+            : null
         );
-      } catch {
-        if (mounted) {
-          setHomePageCategories(DEFAULT_HOME_PAGE_CATEGORIES);
+
+        const [movieData, categories] = await Promise.all([
+          fetchPublicMovies({ force: true, refreshEntitlement: true }),
+          fetchHomePageCategories({ force: true }),
+        ]);
+
+        if (!mounted || requestId !== homeLoadRequestRef.current) {
+          return;
+        }
+
+        const normalizedMovies = dedupeSeriesMovies(movieData);
+
+        setMovies(normalizedMovies);
+        setHomePageCategories(
+          categories.length ? categories : DEFAULT_HOME_PAGE_CATEGORIES
+        );
+        warmHomePageArtwork(normalizedMovies, 18);
+      } catch (error) {
+        console.error('[home] failed to bootstrap home page', error);
+      } finally {
+        if (mounted && requestId === homeLoadRequestRef.current) {
+          setLoading(false);
         }
       }
     };
 
-    void loadHomePageCategories();
+    void bootstrapHomePage();
 
     return () => {
       mounted = false;
@@ -222,48 +250,6 @@ export default function Home() {
 
     return () => {
       window.removeEventListener('resize', updateAndroidMobileState);
-    };
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadSessionUser = async () => {
-      const cachedStatus = readCachedAuthStatus();
-
-      if (mounted && cachedStatus?.authenticated) {
-        setSessionUser({
-          role: cachedStatus.user?.role === 'admin' ? 'admin' : 'user',
-          name: cachedStatus.user?.name || 'User',
-        });
-      }
-
-      try {
-        const status = await fetchAuthStatus();
-
-        if (!mounted || !status.authenticated) {
-          return;
-        }
-
-        if (!mounted) {
-          return;
-        }
-
-        setSessionUser({
-          role: status.user?.role === 'admin' ? 'admin' : 'user',
-          name: status.user?.name || 'User',
-        });
-      } catch (error) {
-        if (mounted) {
-          setSessionUser(null);
-        }
-      }
-    };
-
-    loadSessionUser();
-
-    return () => {
-      mounted = false;
     };
   }, []);
 
@@ -705,7 +691,7 @@ export default function Home() {
           </section>
         )}
         
-        {homeRows.map((row) => (
+        {homeRows.map((row, rowIndex) => (
           <MovieRow
             key={row.categoryKey}
             title={row.title}
@@ -713,6 +699,9 @@ export default function Home() {
             categoryKey={row.categoryKey}
             usesSeriesBackdropCards={row.usesSeriesBackdropCards}
             androidMobileLayout={isAndroidMobile}
+            priorityImageCount={
+              rowIndex < 3 ? (row.usesSeriesBackdropCards ? 2 : 4) : 0
+            }
           />
         ))}
 
@@ -722,6 +711,7 @@ export default function Home() {
             movies={unmatchedMovies}
             categoryKey="more-movies"
             androidMobileLayout={isAndroidMobile}
+            priorityImageCount={0}
           />
         )}
 
@@ -740,12 +730,14 @@ function MovieRow({
   categoryKey,
   usesSeriesBackdropCards = false,
   androidMobileLayout = false,
+  priorityImageCount = 0,
 }: {
   title: string,
   movies: Movie[],
   categoryKey?: string,
   usesSeriesBackdropCards?: boolean,
   androidMobileLayout?: boolean,
+  priorityImageCount?: number,
 }) {
   const rowMovies = dedupeSeriesMovies(movies || []);
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -767,7 +759,7 @@ function MovieRow({
     });
   };
 
-  const renderPosterCard = (m: Movie) => (
+  const renderPosterCard = (m: Movie, index: number) => (
     <Link
       href={`/movie/${m.id}`}
       key={m.id}
@@ -786,6 +778,7 @@ function MovieRow({
             src={m.poster}
             alt={m.title}
             imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-110"
+            priority={index < priorityImageCount}
           />
 
         {isSeriesMovie(m) && (
@@ -823,7 +816,7 @@ function MovieRow({
     </Link>
   );
 
-  const renderSeriesBackdropCard = (m: Movie) => (
+  const renderSeriesBackdropCard = (m: Movie, index: number) => (
     <Link
       href={`/movie/${m.id}`}
       key={m.id}
@@ -835,6 +828,7 @@ function MovieRow({
             alt={m.title}
             imageClassName="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
             logoClassName="h-14 w-14 scale-[1.95] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20"
+            priority={index < priorityImageCount}
           />
         <div className="absolute inset-0 bg-gradient-to-t from-[#06070B] via-[#06070B]/40 to-[#06070B]/10" />
         <div className="absolute inset-0 bg-black/10 transition-colors duration-300 md:group-hover/card:bg-black/0" />
@@ -864,8 +858,10 @@ function MovieRow({
     </Link>
   );
 
-  const renderCard = (movie: Movie) =>
-    usesSeriesBackdropCards ? renderSeriesBackdropCard(movie) : renderPosterCard(movie);
+  const renderCard = (movie: Movie, index: number) =>
+    usesSeriesBackdropCards
+      ? renderSeriesBackdropCard(movie, index)
+      : renderPosterCard(movie, index);
 
   return (
     <section className="relative mx-auto w-full max-w-[1440px] px-4 md:px-8 lg:px-10">
@@ -922,7 +918,7 @@ function MovieRow({
                     : 'gap-3 md:gap-5'
               }`}
             >
-              {rowMovies.map((m) => renderCard(m))}
+              {rowMovies.map((m, index) => renderCard(m, index))}
             </div>
           </>
         ) : (
