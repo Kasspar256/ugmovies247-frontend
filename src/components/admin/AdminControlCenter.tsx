@@ -322,8 +322,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
       if (
         Object.keys(nextPayload).length === 0 &&
-        activeTab !== 'processing' &&
-        activeTab !== 'subscription_overrides'
+        activeTab !== 'processing'
       ) {
         throw new Error(
           issues[0] || 'Failed to load admin data for this section.'
