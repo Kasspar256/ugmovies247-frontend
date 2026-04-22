@@ -8,7 +8,7 @@ import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
-import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download } from 'lucide-react';
+import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
@@ -95,6 +95,7 @@ export default function Home() {
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
+  const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -148,6 +149,24 @@ export default function Home() {
 
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const updateAndroidMobileState = () => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      const userAgent = navigator.userAgent.toLowerCase();
+      setIsAndroidMobile(/android/.test(userAgent) && window.innerWidth < 768);
+    };
+
+    updateAndroidMobileState();
+    window.addEventListener('resize', updateAndroidMobileState);
+
+    return () => {
+      window.removeEventListener('resize', updateAndroidMobileState);
     };
   }, []);
 
@@ -240,6 +259,11 @@ export default function Home() {
   const heroPlaybackType =
     heroMovie?.masterPlaylistUrl && heroMovie?.playbackType === 'hls' ? 'hls' : 'mp4';
   const heroRuntimeLabel = formatRuntimeLabel(heroMovie);
+  const heroPlayHref = heroMovie
+    ? heroMovie.isLocked
+      ? `/subscribe?returnTo=${encodeURIComponent(`/movie/${heroMovie.id}`)}`
+      : `/movie/${heroMovie.id}?autoplay=1`
+    : '/';
   const unreadLatestUploadCount = countUnreadLatestUploads(movies);
 
   const handleHeaderCast = async () => {
@@ -370,8 +394,8 @@ export default function Home() {
               alt="Hero Backdrop"
               className="w-full h-full object-cover object-top transition-opacity duration-1000"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/80 to-transparent h-[60%] bottom-0 mt-auto"></div>
-            <div className="absolute inset-0 bg-black/30"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/70 to-transparent h-[60%] bottom-0 mt-auto"></div>
+            <div className="absolute inset-0 bg-black/20"></div>
           </div>
 
           <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
@@ -399,11 +423,11 @@ export default function Home() {
 
             <div className="flex flex-row w-full gap-3 justify-center px-2">
               <Link
-                href={`/movie/${heroMovie.id}`}
+                href={heroPlayHref}
                 className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
               >
                 <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <span className="text-[11px]">{heroMovie.isLocked ? 'UNLOCK TO WATCH' : 'PLAY NOW'}</span>
+                <span className="text-[11px]">PLAY NOW</span>
               </Link>
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
@@ -437,7 +461,7 @@ export default function Home() {
               className="absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(90deg, rgba(5,7,12,0.88) 0%, rgba(5,7,12,0.58) 24%, rgba(5,7,12,0.22) 50%, rgba(5,7,12,0.16) 100%), linear-gradient(180deg, rgba(11,12,16,0.03) 0%, rgba(11,12,16,0.02) 42%, rgba(11,12,16,0.08) 62%, rgba(11,12,16,0.72) 100%)',
+                  'linear-gradient(90deg, rgba(5,7,12,0.8) 0%, rgba(5,7,12,0.46) 24%, rgba(5,7,12,0.14) 50%, rgba(5,7,12,0.1) 100%), linear-gradient(180deg, rgba(11,12,16,0.02) 0%, rgba(11,12,16,0.02) 42%, rgba(11,12,16,0.06) 62%, rgba(11,12,16,0.6) 100%)',
               }}
             />
 
@@ -478,11 +502,11 @@ export default function Home() {
 
                 <div className="mt-10 flex items-center gap-4">
                   <Link
-                    href={`/movie/${heroMovie.id}`}
+                    href={heroPlayHref}
                     className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
                   >
                     <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    <span>{heroMovie.isLocked ? 'UNLOCK TO WATCH' : 'PLAY NOW'}</span>
+                    <span>PLAY NOW</span>
                   </Link>
                   <button
                     onClick={() => setShowHeroDetails((prev) => !prev)}
@@ -633,6 +657,7 @@ export default function Home() {
             movies={row.movies}
             categoryKey={row.categoryKey}
             usesSeriesBackdropCards={row.usesSeriesBackdropCards}
+            androidMobileLayout={isAndroidMobile}
           />
         ))}
 
@@ -641,6 +666,7 @@ export default function Home() {
             title="MORE MOVIES"
             movies={unmatchedMovies}
             categoryKey="more-movies"
+            androidMobileLayout={isAndroidMobile}
           />
         )}
 
@@ -658,11 +684,13 @@ function MovieRow({
   movies,
   categoryKey,
   usesSeriesBackdropCards = false,
+  androidMobileLayout = false,
 }: {
   title: string,
   movies: Movie[],
   categoryKey?: string,
   usesSeriesBackdropCards?: boolean,
+  androidMobileLayout?: boolean,
 }) {
   const rowMovies = dedupeSeriesMovies(movies || []);
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -685,7 +713,19 @@ function MovieRow({
   };
 
   const renderPosterCard = (m: Movie) => (
-    <Link href={`/movie/${m.id}`} key={m.id} className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]">
+    <Link
+      href={`/movie/${m.id}`}
+      key={m.id}
+      className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]"
+      style={
+        androidMobileLayout
+          ? {
+              width: 'clamp(92px, calc((100vw - 3rem) / 3.4), 100px)',
+              minWidth: 'clamp(92px, calc((100vw - 3rem) / 3.4), 100px)',
+            }
+          : undefined
+      }
+    >
       <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
         <img
           src={m.poster || 'https://via.placeholder.com/300x450/1F2833/888888?text=NO+POSTER'}
@@ -701,9 +741,12 @@ function MovieRow({
         )}
 
         {m.isLocked && (
-          <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[7px] md:text-[9px] font-black px-2 py-1 rounded-full z-10 tracking-widest border border-white/10">
-            LOCKED
-          </div>
+          <Lock
+            size={18}
+            strokeWidth={1.9}
+            className="absolute bottom-2 right-2 z-10 h-[18px] w-[18px] text-[#C0C0C0] opacity-90 drop-shadow-[0_0_6px_rgba(255,255,255,0.14)] md:bottom-3 md:right-3 md:h-5 md:w-5"
+            aria-label="Locked movie"
+          />
         )}
 
         <div className="absolute top-0 left-0 bg-[#D90429] text-white text-[7px] md:text-[9px] font-bold px-1.5 py-0.5 rounded-br-lg z-10 shadow-[2px_2px_10px_rgba(0,0,0,0.5)]">
@@ -741,6 +784,14 @@ function MovieRow({
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#06070B] via-[#06070B]/40 to-[#06070B]/10" />
         <div className="absolute inset-0 bg-black/10 transition-colors duration-300 md:group-hover/card:bg-black/0" />
+        {m.isLocked && (
+          <Lock
+            size={20}
+            strokeWidth={1.9}
+            className="absolute bottom-3 right-3 z-20 h-5 w-5 text-[#C0C0C0] opacity-90 drop-shadow-[0_0_6px_rgba(255,255,255,0.14)] md:bottom-4 md:right-4 md:h-[22px] md:w-[22px]"
+            aria-label="Locked movie"
+          />
+        )}
         <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 transition-opacity duration-300 pointer-events-none group-hover/card:opacity-100">
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-red-300/25 bg-[#D90429]/90 pl-1 backdrop-blur-md shadow-[0_0_22px_rgba(217,4,41,0.72)] md:h-14 md:w-14 md:shadow-[0_0_28px_rgba(217,4,41,0.85)]">
             <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -809,8 +860,12 @@ function MovieRow({
           <>
             <div
               ref={railRef}
-              className={`flex overflow-x-auto pb-4 snap-x style-hide-scrollbar ${
-                usesSeriesBackdropCards ? 'gap-4 md:gap-6' : 'gap-3 md:gap-5'
+              className={`flex overflow-x-auto overscroll-x-contain pb-4 snap-x style-hide-scrollbar ${
+                usesSeriesBackdropCards
+                  ? 'gap-4 md:gap-6'
+                  : androidMobileLayout
+                    ? 'gap-2 md:gap-5'
+                    : 'gap-3 md:gap-5'
               }`}
             >
               {rowMovies.map((m) => renderCard(m))}

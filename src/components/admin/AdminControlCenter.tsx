@@ -881,6 +881,41 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     }
   };
 
+  const handleRepairMissingGenres = async () => {
+    setActionBusy(true);
+    setErrorMessage('');
+    setStatusMessage('');
+
+    try {
+      const response = await fetch('/api/admin/movies/repair-missing-genres', {
+        method: 'POST',
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to repair missing movie genres.');
+      }
+
+      await loadControlCenter(false, true);
+
+      const updatedMovies = Number(result.payload.updatedMovies || 0);
+      const candidateMovies = Number(result.payload.candidateMovies || 0);
+      const unresolvedMovies = Number(result.payload.unresolvedMovies || 0);
+
+      setStatusMessage(
+        candidateMovies
+          ? `Repaired genres for ${updatedMovies} movie${updatedMovies === 1 ? '' : 's'}${unresolvedMovies ? `. ${unresolvedMovies} still need review.` : '.'}`
+          : 'No movies with missing genres were found.'
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to repair missing movie genres.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const handleDeleteStoredPart = async (movieId: string, part: { id: string; label: string }) => {
     setActionBusy(true);
     setErrorMessage('');
@@ -1428,6 +1463,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 search={movieSearch}
                 actionBusy={actionBusy}
                 onSearchChange={setMovieSearch}
+                onRepairMissingGenres={handleRepairMissingGenres}
                 onDeleteMovie={handleDeleteMovie}
               />
             )}

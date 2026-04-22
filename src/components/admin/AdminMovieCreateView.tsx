@@ -29,6 +29,19 @@ type TmdbResult = {
   release_date?: string;
 };
 
+type TmdbMovieDetails = {
+  id: number;
+  title: string;
+  original_title?: string;
+  overview?: string;
+  poster_path?: string | null;
+  release_date?: string;
+  genres?: Array<{
+    id: number;
+    name: string;
+  }>;
+};
+
 const TRENDING_CATEGORY = 'Trending on tiktok';
 const MANUAL_CATEGORY_ORDER = [
   'Trending on tiktok',
@@ -278,12 +291,53 @@ export function AdminMovieCreateView() {
     }
   };
 
-  const handlePickTmdb = (result: TmdbResult) => {
-    setSelectedTmdb(result);
-    setTitle(result.title || title);
-    setDescription(result.overview || description);
-    setReleaseYear(result.release_date?.slice(0, 4) || releaseYear);
+  const applyMovieTmdbDetails = (
+    details: TmdbMovieDetails,
+    result?: TmdbResult | null
+  ) => {
+    setSelectedTmdb(result || null);
+    setTitle(details.title || result?.title || title);
+    setDescription(details.overview || result?.overview || description);
+    setReleaseYear(details.release_date?.slice(0, 4) || result?.release_date?.slice(0, 4) || releaseYear);
+    setGenres(
+      details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || genres
+    );
     setShowTmdbResults(false);
+  };
+
+  const handlePickTmdb = async (result: TmdbResult) => {
+    setTmdbLoading(true);
+    setErrorMessage('');
+    setSelectedTmdb(result);
+    setShowTmdbResults(false);
+
+    try {
+      const response = await fetch(
+        `/api/admin/tmdb?tmdbId=${encodeURIComponent(String(result.id))}`,
+        {
+          credentials: 'include',
+          cache: 'no-store',
+        }
+      );
+      const payload = (await response.json()) as TmdbMovieDetails | { error?: string };
+
+      if (!response.ok || 'error' in payload) {
+        throw new Error(
+          'error' in payload && payload.error ? payload.error : 'Failed to load TMDb movie details.'
+        );
+      }
+
+      applyMovieTmdbDetails(payload as TmdbMovieDetails, result);
+    } catch (error) {
+      setTitle(result.title || title);
+      setDescription(result.overview || description);
+      setReleaseYear(result.release_date?.slice(0, 4) || releaseYear);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to load TMDb movie details.'
+      );
+    } finally {
+      setTmdbLoading(false);
+    }
   };
 
   const toggleCategory = (name: string) => {

@@ -62,6 +62,7 @@ export type PlaybackSource = {
   fallbackUrl?: string;
   castUrl?: string;
   playbackType?: 'mp4' | 'hls';
+  autoplay?: boolean;
   poster?: string;
   title: string;
   description?: string;
@@ -178,6 +179,7 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
     (current.fallbackUrl || '') === (next.fallbackUrl || '') &&
     (current.castUrl || '') === (next.castUrl || '') &&
     (current.playbackType || 'mp4') === (next.playbackType || 'mp4') &&
+    Boolean(current.autoplay) === Boolean(next.autoplay) &&
     current.poster === next.poster &&
     current.title === next.title &&
     current.description === next.description &&
@@ -420,6 +422,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [desktopSeekFeedback, setDesktopSeekFeedback] = useState('');
   const [desktopSeekFeedbackSide, setDesktopSeekFeedbackSide] = useState<'left' | 'right'>('right');
@@ -691,6 +694,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         clearFatalError();
         setCurrentTime(nextSnapshot.currentTime || 0);
         setDuration(nextSnapshot.duration || 0);
+        setHasStartedPlayback(true);
         setPlaybackPhaseSafe(nextSnapshot.isPaused ? 'paused' : 'playing');
 
         if (videoRef.current && !videoRef.current.paused) {
@@ -739,6 +743,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     fallbackSourceRef.current = '';
     startupGraceUntilRef.current = 0;
     lastAssignedSourceKeyRef.current = '';
+    setHasStartedPlayback(false);
     setActiveSourceState(null);
     setCurrentTime(0);
     setDuration(0);
@@ -807,7 +812,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     const shouldResumePlayback =
-      playbackPhaseRef.current === 'playing' || playbackPhaseRef.current === 'buffering';
+      Boolean(activeSource.autoplay) ||
+      playbackPhaseRef.current === 'playing' ||
+      playbackPhaseRef.current === 'buffering';
 
     clearFatalError();
     startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
@@ -815,6 +822,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     retriedCurrentSourceRef.current = false;
     fallbackSourceRef.current = '';
     lastAssignedSourceKeyRef.current = nextSourceKey;
+    setHasStartedPlayback(false);
     setCurrentTime(0);
     setDuration(0);
     setBufferedUntil(0);
@@ -823,7 +831,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     videoElement.pause();
     videoElement.src = activeSource.sourceUrl;
     videoElement.load();
-  }, [activeSource?.sessionKey, activeSource?.sourceUrl, clearFatalError, setPlaybackPhaseSafe]);
+  }, [
+    activeSource?.autoplay,
+    activeSource?.sessionKey,
+    activeSource?.sourceUrl,
+    clearFatalError,
+    setPlaybackPhaseSafe,
+  ]);
 
   useEffect(() => {
     if (!activeSource || castSnapshot.transport !== 'google-cast' || !castSnapshot.connected) {
@@ -1139,7 +1153,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   const hasInlineHost = Boolean(inlineHost);
   const isInlineMode = Boolean(activeSource && hasInlineHost);
-  const isMiniMode = Boolean(activeSource && !hasInlineHost);
+  const isMiniMode = Boolean(activeSource && !hasInlineHost && hasStartedPlayback);
   const isMobileInlineMode = isInlineMode && !isDesktop;
   const isDesktopInlineMode = isInlineMode && isDesktop;
 
@@ -1323,6 +1337,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     clearFatalError();
+    setHasStartedPlayback(true);
     setPlaybackPhaseSafe('playing');
   }, [clearFatalError, setPlaybackPhaseSafe]);
 
@@ -1753,6 +1768,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               poster={activeSource.poster || ''}
               preload="metadata"
               playsInline
+              autoPlay={Boolean(activeSource.autoplay)}
               controls={false}
               style={{ WebkitTapHighlightColor: 'transparent' }}
               className="h-full w-full object-contain bg-black"
