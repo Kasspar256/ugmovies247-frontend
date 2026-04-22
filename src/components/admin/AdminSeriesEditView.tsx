@@ -67,6 +67,15 @@ function clampLogLines(lines: string[]) {
   return lines.slice(-20);
 }
 
+function formatSaveStatus(baseMessage: string, queuedNormalizationCount: number) {
+  return queuedNormalizationCount > 0
+    ? `${baseMessage} The changed video is now being processed into an iPhone-safe MP4 before it goes live.`
+    : baseMessage;
+}
+
+const SERIES_EDIT_LINK_QUEUE_HELP =
+  'Uploads and pasted MP4 links both go through the same browser-safe processing queue before the episode goes live.';
+
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return '0 MB';
@@ -253,10 +262,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
   }, [categories]);
 
   const categoryLabelMap = useMemo(
-    () =>
-      new Map<string, string>(
-        SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])
-      ),
+    () => new Map(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
     []
   );
 
@@ -407,6 +413,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
         sourceFileName: uploadedAsset.fileName,
         fileSizeBytes: uploadedAsset.fileSizeBytes,
         sourceType: 'direct_upload' as const,
+        sourcePipeline: 'direct_upload' as const,
       };
     }
 
@@ -417,7 +424,8 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
       sourceUrl: url,
       sourceFileName: url.split('/').pop() || '',
       fileSizeBytes: 0,
-      sourceType: 'remote_link' as const,
+      sourceType: 'direct_upload' as const,
+      sourcePipeline: 'direct_upload' as const,
     };
   };
 
@@ -542,7 +550,12 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
         setDraft(seriesToDraft(refreshedSeries));
       }
 
-      setStatusMessage(`Saved changes for "${draft.title.trim()}".`);
+      setStatusMessage(
+        formatSaveStatus(
+          `Saved changes for "${draft.title.trim()}".`,
+          Number(result.payload.queuedNormalizationCount || 0)
+        )
+      );
       router.refresh();
     } catch (error) {
       setErrorMessage(
@@ -611,7 +624,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
                 Edit Series
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/68">
-                Update the series details, fix any season metadata, replace episode MP4s, and keep
+                Update the series details, fix any season metadata, replace episode video sources, and keep
                 every season and episode exactly how you want it.
               </p>
             </div>
@@ -1052,7 +1065,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
 
                                 <div className="mt-4">
                                   <SourceEditor
-                                    title="Episode MP4 Source"
+                                    title="Episode Video Source"
                                     source={episode.source}
                                     onChange={(source) =>
                                       updateDraftEpisode(season.id, episode.id, (entry) => ({
@@ -1061,7 +1074,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
                                       }))
                                     }
                                     libraryAssets={libraryAssets}
-                                    helpText={`Current source: ${resolveEpisodeSourceLabel(episode.source)}`}
+                                    helpText={`${SERIES_EDIT_LINK_QUEUE_HELP} Current source: ${resolveEpisodeSourceLabel(episode.source)}`}
                                   />
                                 </div>
 
@@ -1170,7 +1183,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
 
         <Card
           title="Upload Activity"
-          description="Episode replacements use the same direct MP4 uploader, so you can keep an eye on progress and diagnostics here."
+          description="Episode replacements from uploads or pasted MP4 links use the same browser-safe processing queue, so you can keep an eye on progress and diagnostics here."
         >
           <div className="space-y-4">
             {uploadStats ? (

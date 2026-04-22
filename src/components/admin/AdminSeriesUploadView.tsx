@@ -261,6 +261,15 @@ function clampLogLines(lines: string[]) {
   return lines.slice(-20);
 }
 
+function formatPublishStatus(baseMessage: string, queuedNormalizationCount: number) {
+  return queuedNormalizationCount > 0
+    ? `${baseMessage} The video is uploaded and now being processed into an iPhone-safe MP4 before it goes live.`
+    : baseMessage;
+}
+
+const SERIES_LINK_QUEUE_HELP =
+  'This MP4 link will be queued through the same browser-safe processing pipeline used for movie uploads before it goes live.';
+
 function getTmdbLanguageLabel(details: TmdbTvDetails | null) {
   if (!details) {
     return '';
@@ -558,10 +567,7 @@ export function AdminSeriesUploadView() {
   }, [categories]);
 
   const categoryLabelMap = useMemo(
-    () =>
-      new Map<string, string>(
-        SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])
-      ),
+    () => new Map(SERIES_CATEGORY_OPTIONS.map((entry) => [entry.name, entry.label])),
     []
   );
 
@@ -927,9 +933,9 @@ export function AdminSeriesUploadView() {
   };
 
   const resolveEpisodeSource = async (source: EpisodeSourceDraft) => {
-    if (source.mode === 'upload') {
-      if (!source.file) {
-        throw new Error('Choose an MP4 file before publishing.');
+      if (source.mode === 'upload') {
+        if (!source.file) {
+          throw new Error('Choose a video file before publishing.');
       }
 
       const uploadedAsset = await uploadMultipartFileToAdmin({
@@ -959,8 +965,8 @@ export function AdminSeriesUploadView() {
       video_url: trimmedUrl,
       sourceUrl: trimmedUrl,
       sourceFileName: trimmedUrl.split('/').pop() || '',
-      sourceType: 'remote_link' as const,
-      sourcePipeline: 'remote_mp4_ingest' as const,
+      sourceType: 'direct_upload' as const,
+      sourcePipeline: 'direct_upload' as const,
     };
   };
 
@@ -1095,7 +1101,7 @@ export function AdminSeriesUploadView() {
               }
         );
 
-        await publishExistingSeries(selectedSeries.id, nextSeasons);
+        const publishResult = await publishExistingSeries(selectedSeries.id, nextSeasons);
         const refreshedSeries = await loadControlCenter(false, true);
         const updatedSeries =
           refreshedSeries?.find((series) => series.id === selectedSeries.id) || null;
@@ -1106,9 +1112,12 @@ export function AdminSeriesUploadView() {
         }
 
         setStatusMessage(
-          `Added ${episodePayload.title} to ${selectedSeries.title} / ${
-            targetSeason.title || `Season ${targetSeason.seasonNumber}`
-          }.`
+          formatPublishStatus(
+            `Added ${episodePayload.title} to ${selectedSeries.title} / ${
+              targetSeason.title || `Season ${targetSeason.seasonNumber}`
+            }.`,
+            Number(publishResult.queuedNormalizationCount || 0)
+          )
         );
       }
 
@@ -1157,7 +1166,7 @@ export function AdminSeriesUploadView() {
           (left, right) => left.seasonNumber - right.seasonNumber
         );
 
-        await publishExistingSeries(selectedSeries.id, nextSeasons);
+        const publishResult = await publishExistingSeries(selectedSeries.id, nextSeasons);
         const refreshedSeries = await loadControlCenter(false, true);
         const updatedSeries =
           refreshedSeries?.find((series) => series.id === selectedSeries.id) || null;
@@ -1168,7 +1177,10 @@ export function AdminSeriesUploadView() {
         }
 
         setStatusMessage(
-          `Created ${nextSeason.title} and published ${episodePayload.title} on ${selectedSeries.title}.`
+          formatPublishStatus(
+            `Created ${nextSeason.title} and published ${episodePayload.title} on ${selectedSeries.title}.`,
+            Number(publishResult.queuedNormalizationCount || 0)
+          )
         );
       }
 
@@ -1253,7 +1265,12 @@ export function AdminSeriesUploadView() {
         }
 
         setMode('upload-episode');
-        setStatusMessage(`Created series "${createdSeriesTitle}".`);
+        setStatusMessage(
+          formatPublishStatus(
+            `Created series "${createdSeriesTitle}".`,
+            Number(result.payload.queuedNormalizationCount || 0)
+          )
+        );
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to publish series.');
@@ -1520,7 +1537,7 @@ export function AdminSeriesUploadView() {
             {mode === 'upload-episode' && (
               <Card
                 title="Upload Episode"
-                description="Pick the existing season, confirm the next episode details, and upload one direct MP4."
+                description="Pick the existing season, confirm the next episode details, and upload one local MP4 or MKV file, or use a direct MP4 link."
                 className="border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(23,9,13,0.94),rgba(17,20,28,0.94))] shadow-[0_24px_70px_rgba(0,0,0,0.42)]"
                 headerClassName="rounded-[26px] border border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(217,4,41,0.12),rgba(255,255,255,0.01))] px-4 py-4 md:px-5"
                 titleClassName="text-lg tracking-[0.2em] text-white"
@@ -1689,7 +1706,7 @@ export function AdminSeriesUploadView() {
                               : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                           }`}
                         >
-                          Upload MP4
+                          Upload Video
                         </button>
                         <button
                           type="button"
@@ -1705,17 +1722,17 @@ export function AdminSeriesUploadView() {
                               : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                           }`}
                         >
-                          Use Existing Cloud Link
+                          Use MP4 Link
                         </button>
                       </div>
 
                       {uploadEpisodeDraft.source.mode === 'upload' ? (
                         <div>
-                          <FieldLabel>Episode MP4</FieldLabel>
+                          <FieldLabel>Episode Video File</FieldLabel>
                           <input
                             key={episodeFileKey}
                             type="file"
-                            accept="video/mp4"
+                            accept=".mp4,.mkv,video/mp4,video/x-matroska,video/mkv"
                             onChange={(event) =>
                               setUploadEpisodeDraft((current) => ({
                                 ...current,
@@ -1741,6 +1758,9 @@ export function AdminSeriesUploadView() {
                             }
                             placeholder="https://your-r2-public-url-or-existing-mp4-link.mp4"
                           />
+                          <p className="mt-2 text-xs leading-6 text-white/45">
+                            {SERIES_LINK_QUEUE_HELP}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1957,7 +1977,7 @@ export function AdminSeriesUploadView() {
                               : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                           }`}
                         >
-                          Upload MP4
+                          Upload Video
                         </button>
                         <button
                           type="button"
@@ -1973,17 +1993,17 @@ export function AdminSeriesUploadView() {
                               : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                           }`}
                         >
-                          Use Existing Cloud Link
+                          Use MP4 Link
                         </button>
                       </div>
 
                       {addSeasonDraft.source.mode === 'upload' ? (
                         <div>
-                          <FieldLabel>Season Premiere MP4</FieldLabel>
+                          <FieldLabel>Season Premiere Video File</FieldLabel>
                           <input
                             key={newSeasonFileKey}
                             type="file"
-                            accept="video/mp4"
+                            accept=".mp4,.mkv,video/mp4,video/x-matroska,video/mkv"
                             onChange={(event) =>
                               setAddSeasonDraft((current) => ({
                                 ...current,
@@ -2009,6 +2029,9 @@ export function AdminSeriesUploadView() {
                             }
                             placeholder="https://your-r2-public-url-or-existing-mp4-link.mp4"
                           />
+                          <p className="mt-2 text-xs leading-6 text-white/45">
+                            {SERIES_LINK_QUEUE_HELP}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -2357,7 +2380,7 @@ export function AdminSeriesUploadView() {
                 {createSeriesFormVisible && (
                   <Card
                     title="Season 1 / Episode 1"
-                    description="Create the first season and publish the opening episode with a single direct MP4."
+                    description="Create the first season and publish the opening episode with a local MP4 or MKV file, or use a direct MP4 link."
                   >
                     <div className="space-y-5">
                       <div className="grid gap-4 md:grid-cols-2">
@@ -2515,7 +2538,7 @@ export function AdminSeriesUploadView() {
                                 : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                             }`}
                           >
-                            Upload MP4
+                            Upload Video
                           </button>
                           <button
                             type="button"
@@ -2531,17 +2554,17 @@ export function AdminSeriesUploadView() {
                                 : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                             }`}
                           >
-                            Use Existing Cloud Link
+                          Use MP4 Link
                           </button>
                         </div>
 
                         {createSeriesDraft.source.mode === 'upload' ? (
                           <div>
-                            <FieldLabel>Episode 1 MP4</FieldLabel>
+                            <FieldLabel>Episode 1 Video File</FieldLabel>
                             <input
                               key={newSeriesEpisodeFileKey}
                               type="file"
-                              accept="video/mp4"
+                              accept=".mp4,.mkv,video/mp4,video/x-matroska,video/mkv"
                               onChange={(event) =>
                                 setCreateSeriesDraft((current) => ({
                                   ...current,
@@ -2567,6 +2590,9 @@ export function AdminSeriesUploadView() {
                               }
                               placeholder="https://your-r2-public-url-or-existing-mp4-link.mp4"
                             />
+                            <p className="mt-2 text-xs leading-6 text-white/45">
+                              {SERIES_LINK_QUEUE_HELP}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -2590,7 +2616,7 @@ export function AdminSeriesUploadView() {
 
             <Card
               title="Upload Activity"
-              description="Direct MP4 progress, upload speed, and the latest uploader diagnostics."
+              description="Direct upload progress, upload speed, and the latest uploader diagnostics."
             >
               <div className="space-y-4">
                 {uploadStats && (

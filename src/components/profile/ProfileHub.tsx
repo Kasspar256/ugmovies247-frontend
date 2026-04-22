@@ -15,6 +15,7 @@ import {
   PencilLine,
   ReceiptText,
   Shield,
+  Tv2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
@@ -332,6 +333,12 @@ export default function ProfileHub() {
                   icon: Bookmark,
                   label: 'My List',
                   description: 'Saved titles you want to come back to.',
+                },
+                {
+                  href: '/series',
+                  icon: Tv2,
+                  label: 'Series',
+                  description: 'Browse all series currently available in the app.',
                 },
                 {
                   href: '/likes',

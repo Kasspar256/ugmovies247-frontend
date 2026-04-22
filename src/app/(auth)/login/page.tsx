@@ -107,10 +107,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#0B0C10] relative overflow-hidden">
       <div
-        className="absolute inset-0 bg-cover bg-center opacity-20 blur-sm scale-105"
+        className="absolute inset-0 bg-cover bg-center opacity-[0.14] blur-sm scale-105"
         style={{ backgroundImage: 'url(https://image.tmdb.org/t/p/original/1E5baAaEse26fej7uHcjOgEE2t2.jpg)' }}
       />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#0B0C10]/85 via-[#0B0C10] to-[#0B0C10]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,12,16,0.9),rgba(11,12,16,0.82)_28%,rgba(11,12,16,0.88)_58%,rgba(11,12,16,0.95))]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(11,12,16,0.2)_58%,rgba(11,12,16,0.38)_100%)]" />
 
       <div className="relative z-10 min-h-screen flex flex-col px-4 py-6 md:px-8">
         <div className="flex items-center justify-between">
@@ -127,14 +128,16 @@ export default function LoginPage() {
         </div>
 
         <div className="flex flex-1 items-center justify-center py-8">
-          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#11141C]/85 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl md:p-8">
-            <div className="mb-8 text-center">
-              <img
-                src="/logow.png"
-                alt="UG Movies 247"
-                className="mx-auto h-28 w-auto object-contain drop-shadow-[0_0_35px_rgba(217,4,41,0.45)]"
-              />
-              <h1 className="mt-4 text-3xl font-black uppercase tracking-tight text-white">
+          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#11141C]/86 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl md:p-8">
+            <div className="mb-5 text-center">
+              <div className="m-0 flex h-[120px] items-center justify-center overflow-hidden py-1 sm:h-[138px]">
+                <img
+                  src="/logow.png"
+                  alt="UG Movies 247"
+                  className="h-[116px] w-auto max-w-none scale-[2.1] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.42)] sm:h-[136px] sm:scale-[2.25]"
+                />
+              </div>
+              <h1 className="mt-2 text-3xl font-black uppercase tracking-tight text-white">
                 Welcome Back
               </h1>
               <p className="mt-2 text-sm text-[#9AA4B2]">

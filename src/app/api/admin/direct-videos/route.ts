@@ -10,7 +10,6 @@ import {
 import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { createVideoJob } from '@/lib/server/videoJobs';
-import type { SourcePipeline } from '@/types/videoJobs';
 import type { MovieDocument, Season } from '@/types/movie';
 
 export const runtime = 'nodejs';
@@ -49,14 +48,6 @@ type SeriesSeasonInput = {
 
 function isoNow() {
   return new Date().toISOString();
-}
-
-function inferRemoteSourcePipeline(_remoteUrl: string): SourcePipeline {
-  return 'remote_mp4_ingest';
-}
-
-async function validateRemoteVideoUrl(remoteUrl: string) {
-  await validateDirectMp4ImportSource(remoteUrl);
 }
 
 function normalizeImportedSourceFileName(fileName: string, fallback: string) {
@@ -167,8 +158,8 @@ async function createDirectSeriesDocument(options: {
       poster: episode.poster || '',
       thumbnail: episode.thumbnail || '',
       video_url: episode.video_url,
-      sourceType: 'remote_link',
-      sourcePipeline: inferRemoteSourcePipeline(episode.video_url),
+      sourceType: 'direct_upload',
+      sourcePipeline: 'direct_upload',
       sourceUrl: episode.video_url,
       sourceFileName:
         episode.video_url.split('/').pop() ||
@@ -177,31 +168,39 @@ async function createDirectSeriesDocument(options: {
       accessTier: 'premium',
       masterPlaylistUrl: '',
       availableRenditions: [],
-      jobStatus: 'ready',
-      processingProgress: 100,
+      jobStatus: 'queued',
+      processingProgress: 0,
       errorMessage: '',
-      processedAt: timestamp,
+      processedAt: '',
       createdAt: timestamp,
       updatedAt: timestamp,
     })),
   }));
 
-  const moviePayload = {
+  const rawMoviePayload: MovieDocument = {
     movieId: movieRef.id,
     ...normalizeDirectMetadata({ ...options.metadata, contentType: 'series' }),
-    sourceType: 'remote_link',
-    sourcePipeline: 'remote_mp4_ingest',
+    sourceType: 'direct_upload',
+    sourcePipeline: 'direct_upload',
     video_url: '',
     sourceUrl: '',
     seasons: normalizedSeasons,
-    processedAt: timestamp,
+    processedAt: '',
     updatedAt: timestamp,
   };
+  const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(
+    rawMoviePayload,
+    movieRef.id
+  );
 
-  await movieRef.set(moviePayload);
-  await upsertMovieInCatalogCache({ id: movieRef.id, ...moviePayload });
+  await movieRef.set(preparedMovie.movie);
+  await upsertMovieInCatalogCache({ id: movieRef.id, ...preparedMovie.movie });
+  await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
 
-  return movieRef.id;
+  return {
+    movieId: movieRef.id,
+    queuedNormalizationCount: preparedMovie.queuedJobs.length,
+  };
 }
 
 export async function POST(request: Request) {
@@ -305,23 +304,50 @@ export async function POST(request: Request) {
     if (mode === 'series_links') {
       const metadata = body.metadata || {};
       const seasons: SeriesSeasonInput[] = Array.isArray(body.seasons) ? body.seasons : [];
+      const warningMessages = new Set<string>();
 
       if (!seasons.length) {
         return NextResponse.json({ error: 'Add at least one episode link first.' }, { status: 400 });
       }
 
+      const validatedSeasons: SeriesSeasonInput[] = [];
+
       for (const season of seasons) {
+        const validatedEpisodes: SeriesEpisodeInput[] = [];
+
         for (const episode of season.episodes || []) {
-          await validateRemoteVideoUrl(String(episode.video_url || '').trim());
+          const validation = await validateDirectMp4ImportSource(
+            String(episode.video_url || '').trim()
+          );
+
+          if (validation.warningMessage) {
+            warningMessages.add(validation.warningMessage);
+          }
+
+          validatedEpisodes.push({
+            ...episode,
+            video_url: validation.finalUrl,
+          });
         }
+
+        validatedSeasons.push({
+          ...season,
+          episodes: validatedEpisodes,
+        });
       }
 
-      const movieId = await createDirectSeriesDocument({
+      const result = await createDirectSeriesDocument({
         metadata,
-        seasons,
+        seasons: validatedSeasons,
       });
 
-      return NextResponse.json({ success: true, movieId });
+      return NextResponse.json({
+        success: true,
+        movieId: result.movieId,
+        queuedNormalizationCount: result.queuedNormalizationCount,
+        status: 'queued',
+        warningMessage: Array.from(warningMessages).join(' '),
+      });
     }
 
     return NextResponse.json(
