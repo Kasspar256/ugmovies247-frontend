@@ -15,7 +15,11 @@ import {
 } from '@/lib/homePageClient';
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
-import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
+import {
+  fetchAuthStatus,
+  readCachedAuthStatus,
+  type ClientAuthStatus,
+} from '@/lib/auth/status-client';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
 import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 import { startCasting } from '@/lib/cast';
@@ -219,11 +223,11 @@ export default function Home() {
 
     const bootstrapHomePage = async () => {
       try {
-        const statusPromise = cachedStatus
+        const statusPromise: Promise<ClientAuthStatus> = cachedStatus
           ? Promise.resolve(cachedStatus)
           : fetchAuthStatus({ force: true }).catch(() => ({
               authenticated: false,
-            }));
+            } satisfies ClientAuthStatus));
 
         const moviesPromise = fetchPublicMovies({
           force: !hasCachedMovies,
