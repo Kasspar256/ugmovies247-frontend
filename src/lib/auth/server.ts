@@ -205,7 +205,7 @@ async function resolveAuthSessionValidation(options: {
       if (!validation.valid) {
         return {
           session: null,
-          reason: validation.reason,
+          reason: 'reason' in validation ? validation.reason : 'session_missing',
         };
       }
     }
