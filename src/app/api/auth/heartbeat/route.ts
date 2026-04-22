@@ -7,7 +7,12 @@ import {
   recoverManagedAuthSessionFromRequest,
 } from '@/lib/auth/server';
 import { AUTH_DEVICE_COOKIE_MAX_AGE_MS } from '@/lib/auth/constants';
-import { touchManagedAuthSession } from '@/lib/server/authSessions';
+import {
+  AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
+  AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
+  DeviceLimitExceededError,
+  touchManagedAuthSession,
+} from '@/lib/server/authSessions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,6 +77,21 @@ export async function POST(request: Request) {
       lastActivityAt: touched.record.lastActivityAt,
     });
   } catch (error) {
+    if (
+      error instanceof DeviceLimitExceededError ||
+      (error as { code?: string })?.code === AUTH_DEVICE_LIMIT_EXCEEDED_CODE
+    ) {
+      return NextResponse.json(
+        {
+          authenticated: false,
+          reason: 'session_missing',
+          code: AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
+          error: AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
+        },
+        { status: 409 }
+      );
+    }
+
     console.error('[auth] heartbeat failed', error);
     return NextResponse.json(
       { error: 'Could not refresh the active session.' },

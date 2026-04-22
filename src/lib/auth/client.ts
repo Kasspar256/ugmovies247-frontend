@@ -56,6 +56,16 @@ async function confirmServerAuthSession(fallbackUser: {
 
   if (!status.authenticated) {
     clearAuthStatusCache();
+
+    if (status.code === 'auth/device-limit-exceeded') {
+      const error = new Error(
+        status.error ||
+          'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.'
+      ) as Error & { code?: string };
+      error.code = 'auth/device-limit-exceeded';
+      throw error;
+    }
+
     throw buildSessionValidationError(status.reason);
   }
 

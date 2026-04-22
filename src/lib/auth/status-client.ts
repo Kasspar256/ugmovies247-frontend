@@ -1,6 +1,8 @@
 export type ClientAuthStatus = {
   authenticated: boolean;
   reason?: 'session_replaced' | 'session_revoked' | 'session_missing';
+  code?: string;
+  error?: string;
   user?: {
     id: string;
     name: string;
@@ -57,7 +59,10 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
     cache: 'no-store',
   })
     .then(async (response) => {
-      const payload = (await response.json().catch(() => ({}))) as Partial<ClientAuthStatus>;
+      const payload = (await response.json().catch(() => ({}))) as Partial<ClientAuthStatus> & {
+        code?: string;
+        error?: string;
+      };
 
       if (!response.ok) {
         return {
@@ -68,6 +73,8 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
             payload.reason === 'session_missing'
               ? payload.reason
               : 'session_missing',
+          code: typeof payload.code === 'string' ? payload.code : undefined,
+          error: typeof payload.error === 'string' ? payload.error : undefined,
         } satisfies ClientAuthStatus;
       }
 
@@ -79,6 +86,8 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
           payload.reason === 'session_missing'
             ? payload.reason
             : undefined,
+        code: typeof payload.code === 'string' ? payload.code : undefined,
+        error: typeof payload.error === 'string' ? payload.error : undefined,
         user: payload.user
           ? {
               id: payload.user.id || '',
@@ -96,7 +105,13 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
 
       return value;
     })
-    .catch(() => ({ authenticated: false, reason: 'session_missing' } satisfies ClientAuthStatus))
+    .catch(
+      () =>
+        ({
+          authenticated: false,
+          reason: 'session_missing',
+        }) satisfies ClientAuthStatus
+    )
     .finally(() => {
       inFlightAuthStatusRequest = null;
     });
