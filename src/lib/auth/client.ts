@@ -32,6 +32,10 @@ const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
 const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 5000;
 
+function canUseLocalStorage() {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
 function buildOptimisticAuthStatus(fallbackUser: {
   name: string;
   email: string;
@@ -218,7 +222,23 @@ function rememberGooglePreference(value: boolean) {
     return;
   }
 
-  window.sessionStorage.setItem(GOOGLE_REMEMBER_ME_KEY, value ? '1' : '0');
+  const serializedValue = value ? '1' : '0';
+
+  try {
+    window.sessionStorage.setItem(GOOGLE_REMEMBER_ME_KEY, serializedValue);
+  } catch {
+    // Ignore storage failures and fall back to local storage below.
+  }
+
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(GOOGLE_REMEMBER_ME_KEY, serializedValue);
+  } catch {
+    // Ignore storage failures and let the auth flow continue.
+  }
 }
 
 function consumeGooglePreference(defaultValue = true) {
@@ -226,8 +246,29 @@ function consumeGooglePreference(defaultValue = true) {
     return defaultValue;
   }
 
-  const stored = window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY);
-  window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+  let stored: string | null = null;
+
+  try {
+    stored = window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY);
+    window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+  } catch {
+    stored = null;
+  }
+
+  if (stored === null && canUseLocalStorage()) {
+    try {
+      stored = window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY);
+      window.localStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+    } catch {
+      stored = null;
+    }
+  } else if (canUseLocalStorage()) {
+    try {
+      window.localStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+    } catch {
+      // Ignore cleanup failures.
+    }
+  }
 
   if (stored === '0') {
     return false;
@@ -245,7 +286,21 @@ function clearGooglePreference() {
     return;
   }
 
-  window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+  try {
+    window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+  } catch {
+    // Ignore cleanup failures.
+  }
+
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
+  } catch {
+    // Ignore cleanup failures.
+  }
 }
 
 function isGoogleUser(user: User | null | undefined) {
@@ -301,7 +356,23 @@ export function hasPendingGoogleRedirectSignIn() {
     return false;
   }
 
-  return window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null;
+  try {
+    if (window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null) {
+      return true;
+    }
+  } catch {
+    // Ignore session storage failures and check local storage below.
+  }
+
+  if (!canUseLocalStorage()) {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function shouldPreferGoogleRedirect() {
@@ -452,9 +523,7 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
 }
 
 export async function completeGoogleRedirectSignIn() {
-  if (!hasPendingGoogleRedirectSignIn()) {
-    return null;
-  }
+  const hasPendingMarker = hasPendingGoogleRedirectSignIn();
 
   const rememberMe = consumeGooglePreference(true);
 
@@ -463,6 +532,14 @@ export async function completeGoogleRedirectSignIn() {
 
     if (result?.user) {
       return syncGoogleUserToSession(result.user, rememberMe);
+    }
+
+    if (isGoogleUser(auth.currentUser)) {
+      return syncGoogleUserToSession(auth.currentUser, rememberMe);
+    }
+
+    if (!hasPendingMarker) {
+      return null;
     }
 
     const redirectedUser = await waitForGoogleRedirectUser();

@@ -11,18 +11,9 @@ import {
   continueWithGoogle,
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
+  hasPendingGoogleRedirectSignIn,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
-
-const GOOGLE_REDIRECT_MARKER_KEY = 'ugmovies247_google_auth_remember_me';
-
-function hasPendingGoogleRedirectMarker() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return window.sessionStorage.getItem(GOOGLE_REDIRECT_MARKER_KEY) !== null;
-}
 
 export default function SignupPage() {
   const searchParams = useSearchParams();
@@ -52,7 +43,7 @@ export default function SignupPage() {
     let active = true;
 
     const finishRedirectSignup = async () => {
-      if (!hasPendingGoogleRedirectMarker()) {
+      if (!hasPendingGoogleRedirectSignIn()) {
         return;
       }
 
@@ -339,4 +330,3 @@ export default function SignupPage() {
     </div>
   );
 }
-

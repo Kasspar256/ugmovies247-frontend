@@ -11,18 +11,9 @@ import {
   continueWithGoogle,
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
+  hasPendingGoogleRedirectSignIn,
   loginWithEmailPassword,
 } from '@/lib/auth/client';
-
-const GOOGLE_REDIRECT_MARKER_KEY = 'ugmovies247_google_auth_remember_me';
-
-function hasPendingGoogleRedirectMarker() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return window.sessionStorage.getItem(GOOGLE_REDIRECT_MARKER_KEY) !== null;
-}
 
 function getSessionNoticeFromReason(reason: string) {
   if (reason === 'session-replaced') {
@@ -72,7 +63,7 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
-      if (!hasPendingGoogleRedirectMarker()) {
+      if (!hasPendingGoogleRedirectSignIn()) {
         return;
       }
 
