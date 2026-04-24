@@ -57,7 +57,7 @@ export default function RequestPage() {
         </div>
       )}
 
-      <MobilePageHeader title="Request a Movie" fallbackHref="/" />
+      <MobilePageHeader title="Request a Movie" fallbackHref="/browse" />
 
       {/* Main Content */}
       <div className="px-4 pt-24 md:mx-auto md:max-w-3xl md:px-0 md:pt-[138px]">

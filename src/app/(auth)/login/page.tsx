@@ -38,7 +38,7 @@ function getSessionNoticeFromReason(reason: string) {
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
-  const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
+  const redirectTarget = useMemo(() => searchParams.get('redirect') || '/browse', [searchParams]);
   const sessionReason = useMemo(() => searchParams.get('reason') || '', [searchParams]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

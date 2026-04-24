@@ -8,6 +8,7 @@ const HIDDEN_PREFIXES = ['/admin'];
 
 function shouldHideFooter(pathname: string) {
   return (
+    pathname === '/' ||
     isLegalRoute(pathname) ||
     HIDDEN_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
   );

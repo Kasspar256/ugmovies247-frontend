@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/server/rateLimit';
-import { createAuthSessionResponse, signInWithPasswordServer } from '@/lib/server/firebaseIdentity';
+import {
+  createAuthSessionResponse,
+  normalizeAuthRouteError,
+  signInWithPasswordServer,
+} from '@/lib/server/firebaseIdentity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,17 +48,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing Firebase authentication token.' }, { status: 502 });
     }
 
-    return createAuthSessionResponse({ idToken, rememberMe });
+    return createAuthSessionResponse({ request, idToken, rememberMe });
   } catch (error) {
     console.error('[auth] login failed', error);
-    const authError = error as Error & { code?: string; status?: number };
+    const authError = normalizeAuthRouteError(error, {
+      message: 'We could not sign you in right now. Please try again.',
+      status: 401,
+    });
+
     return NextResponse.json(
       {
-        error: authError.message || 'Authentication failed.',
-        code: authError.code || 'auth/request-failed',
+        error: authError.error,
+        code: authError.code,
       },
-      { status: authError.status || 401 }
+      { status: authError.status }
     );
   }
 }
-

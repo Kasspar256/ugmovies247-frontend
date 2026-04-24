@@ -14,6 +14,7 @@ import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import {
   GoogleAuthProvider,
   getRedirectResult,
+  onAuthStateChanged,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -29,6 +30,7 @@ type SessionResponse = {
 
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
+const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 5000;
 
 function buildOptimisticAuthStatus(fallbackUser: {
   name: string;
@@ -246,6 +248,54 @@ function clearGooglePreference() {
   window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
 }
 
+function isGoogleUser(user: User | null | undefined) {
+  return Boolean(
+    user &&
+      user.providerData?.some((provider) => provider.providerId === GoogleAuthProvider.PROVIDER_ID)
+  );
+}
+
+async function waitForGoogleRedirectUser(timeoutMs = GOOGLE_REDIRECT_USER_TIMEOUT_MS) {
+  if (isGoogleUser(auth.currentUser)) {
+    return auth.currentUser;
+  }
+
+  return new Promise<User | null>((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
+    let unsubscribe = () => undefined;
+
+    const finish = (user: User | null | undefined) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+
+      unsubscribe();
+      resolve(isGoogleUser(user) ? user : null);
+    };
+
+    unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (isGoogleUser(user)) {
+          finish(user);
+        }
+      },
+      () => finish(null)
+    );
+
+    timeoutId = window.setTimeout(() => {
+      finish(auth.currentUser);
+    }, timeoutMs);
+  });
+}
+
 export function hasPendingGoogleRedirectSignIn() {
   if (typeof window === 'undefined') {
     return false;
@@ -411,11 +461,17 @@ export async function completeGoogleRedirectSignIn() {
   try {
     const result = await getRedirectResult(auth);
 
-    if (!result?.user) {
+    if (result?.user) {
+      return syncGoogleUserToSession(result.user, rememberMe);
+    }
+
+    const redirectedUser = await waitForGoogleRedirectUser();
+
+    if (!redirectedUser) {
       return null;
     }
 
-    return syncGoogleUserToSession(result.user, rememberMe);
+    return syncGoogleUserToSession(redirectedUser, rememberMe);
   } catch (error) {
     const code = getFirebaseErrorCode(error);
 

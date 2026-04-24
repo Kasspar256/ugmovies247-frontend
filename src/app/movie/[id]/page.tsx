@@ -817,11 +817,11 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
     <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-2">
         <MobileBackButton
-          fallbackHref="/"
+          fallbackHref="/browse"
           className="pointer-events-auto h-[38px] w-[38px] rounded-[22px] border border-white/10 bg-[#1B2230]/62 p-0 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
         />
         <Link
-          href="/"
+          href="/browse"
           className="pointer-events-auto h-[38px] w-[68px] rounded-[22px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center overflow-hidden"
         >
           <img

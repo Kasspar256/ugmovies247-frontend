@@ -11,7 +11,7 @@ export default function VJsDirectory() {
       <MobilePageHeader
         title="VJs"
         subtitle="Browse translators"
-        fallbackHref="/"
+        fallbackHref="/browse"
         actionHref="/search"
         actionIcon={<SearchIcon size={18} />}
         actionAriaLabel="Search movies"

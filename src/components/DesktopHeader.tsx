@@ -11,6 +11,10 @@ function shouldShowDesktopHeader(pathname: string) {
     return false;
   }
 
+  if (pathname === '/') {
+    return false;
+  }
+
   if (
     pathname === '/login' ||
     pathname === '/signup' ||
@@ -39,7 +43,7 @@ function isActivePath(pathname: string, href: string) {
 }
 
 const PRIMARY_LINKS = [
-  { href: '/', label: 'Home' },
+  { href: '/browse', label: 'Home' },
   { href: '/vjs', label: 'VJs' },
   { href: '/genres', label: 'Genres' },
   { href: '/search', label: 'Search' },
@@ -49,7 +53,7 @@ const QUICK_ACTIONS = [
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/downloads', label: 'Downloads', icon: Download },
 ];
-const DESKTOP_PREFETCH_ROUTES = ['/', '/vjs', '/genres', '/search', '/profile', '/notifications', '/downloads'];
+const DESKTOP_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/notifications', '/downloads'];
 
 type SubscriptionSnapshot = {
   status?: string;
@@ -155,7 +159,7 @@ export default function DesktopHeader() {
         <div className="flex h-[88px] items-center justify-between gap-6">
           <div className="flex min-w-0 items-center gap-3 lg:gap-6">
             <Link
-              href="/"
+              href="/browse"
               className="flex h-12 items-center justify-center overflow-hidden rounded-full bg-[#111723] px-1 transition-transform duration-200 hover:scale-[1.02]"
             >
               <img

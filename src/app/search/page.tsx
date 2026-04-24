@@ -57,7 +57,7 @@ export default function SearchPage() {
       <div className="md:hidden fixed top-4 left-4 right-4 z-50">
         <div className="flex items-center gap-3">
           <Link
-            href="/"
+            href="/browse"
             className="flex h-[46px] w-[68px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-[#1B2230]/62 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
             aria-label="Go home"
           >

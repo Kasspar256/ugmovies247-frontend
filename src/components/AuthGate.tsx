@@ -21,6 +21,7 @@ const AUTH_FREE_PREFIXES = [
 
 function isAuthFreePath(pathname: string) {
   return (
+    pathname === '/' ||
     isLegalRoute(pathname) ||
     AUTH_FREE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
   );

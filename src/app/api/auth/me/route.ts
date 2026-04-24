@@ -12,7 +12,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const session = await getCurrentAuthSession();
+  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -41,7 +41,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getCurrentAuthSession();
+  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

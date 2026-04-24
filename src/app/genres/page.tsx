@@ -60,7 +60,7 @@ export default function GenresDirectory() {
       <MobilePageHeader
         title="Movie Genres"
         subtitle="Browse by category"
-        fallbackHref="/"
+        fallbackHref="/browse"
         actionHref="/search"
         actionIcon={<SearchIcon size={18} />}
         actionAriaLabel="Search movies"

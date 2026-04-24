@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/server/rateLimit';
-import { createAuthSessionResponse, signUpWithPasswordServer } from '@/lib/server/firebaseIdentity';
+import {
+  createAuthSessionResponse,
+  normalizeAuthRouteError,
+  signUpWithPasswordServer,
+} from '@/lib/server/firebaseIdentity';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -55,17 +59,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing Firebase authentication token.' }, { status: 502 });
     }
 
-    return createAuthSessionResponse({ idToken, requestedName: name, rememberMe: true });
+    return createAuthSessionResponse({ request, idToken, requestedName: name, rememberMe: true });
   } catch (error) {
     console.error('[auth] signup failed', error);
-    const authError = error as Error & { code?: string; status?: number };
+    const authError = normalizeAuthRouteError(error, {
+      message: 'We could not create your account right now. Please try again.',
+      status: 400,
+    });
+
     return NextResponse.json(
       {
-        error: authError.message || 'Authentication failed.',
-        code: authError.code || 'auth/request-failed',
+        error: authError.error,
+        code: authError.code,
       },
-      { status: authError.status || 400 }
+      { status: authError.status }
     );
   }
 }
-

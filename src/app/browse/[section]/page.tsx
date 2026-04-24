@@ -85,7 +85,7 @@ export default function BrowseSectionPage() {
 
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
-      <MobilePageHeader title={collection?.title || 'Browse'} fallbackHref="/" />
+      <MobilePageHeader title={collection?.title || 'Browse'} fallbackHref="/browse" />
 
       <div className="mx-auto max-w-6xl">
         <div className="hidden md:block">

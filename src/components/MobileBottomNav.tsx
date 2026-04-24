@@ -7,10 +7,14 @@ import { useEffect, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
 
 const MOBILE_NAV_HEIGHT_PX = 64;
-const MOBILE_NAV_PREFETCH_ROUTES = ['/', '/vjs', '/genres', '/search', '/profile', '/downloads', '/notifications'];
+const MOBILE_NAV_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/downloads', '/notifications'];
 
 function shouldShowMobileNav(pathname: string) {
   if (!pathname) {
+    return false;
+  }
+
+  if (pathname === '/') {
     return false;
   }
 
@@ -122,7 +126,7 @@ export default function MobileBottomNav() {
       }}
       aria-label="Mobile navigation"
     >
-      <NavItem href="/" label="Home" active={activeTab === 'home'}>
+      <NavItem href="/browse" label="Home" active={activeTab === 'home'}>
         <Home className="h-6 w-6" />
       </NavItem>
       <NavItem href="/vjs" label="VJs" active={activeTab === 'vjs'}>

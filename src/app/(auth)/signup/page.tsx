@@ -26,7 +26,7 @@ function hasPendingGoogleRedirectMarker() {
 
 export default function SignupPage() {
   const searchParams = useSearchParams();
-  const redirectTarget = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
+  const redirectTarget = useMemo(() => searchParams.get('redirect') || '/browse', [searchParams]);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -339,3 +339,4 @@ export default function SignupPage() {
     </div>
   );
 }
+

@@ -92,7 +92,7 @@ export default function MobilePageHeader({
           </Link>
         ) : (
           <Link
-            href="/"
+            href="/browse"
             aria-label="Go home"
             className="flex h-[46px] w-[68px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-[#1B2230]/62 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
           >

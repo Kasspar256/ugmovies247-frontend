@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
-import { AUTH_SESSION_MAX_AGE_MS } from '@/lib/auth/constants';
+import {
+  AUTH_DEVICE_COOKIE,
+  AUTH_DEVICE_COOKIE_MAX_AGE_MS,
+  AUTH_DEVICE_SESSION_COOKIE,
+  AUTH_SESSION_MAX_AGE_MS,
+} from '@/lib/auth/constants';
 import {
   AUTH_ROLE_COOKIE,
   AUTH_SESSION_COOKIE,
@@ -8,7 +13,18 @@ import {
   isAdminEmail,
 } from '@/lib/auth/server';
 import { adminAuth, adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
-import { getSubscriptionSnapshotFromData } from '@/lib/server/subscriptions';
+import {
+  AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
+  AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
+  DeviceLimitExceededError,
+  createManagedAuthSession,
+} from '@/lib/server/authSessions';
+import {
+  getDeviceLimitForSubscriptionSnapshot,
+  getSubscriptionSnapshotFromData,
+  resolveEffectiveSubscriptionState,
+} from '@/lib/server/subscriptions';
+import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import {
   getDefaultAvatarPresetId,
 } from '@/lib/avatarPresets';
@@ -38,6 +54,12 @@ type FirebasePasswordResetSuccess = FirebaseIdentitySuccess & {
 type FirebaseIdentityError = Error & {
   code?: string;
   status?: number;
+};
+
+type NormalizedAuthRouteError = {
+  error: string;
+  code: string;
+  status: number;
 };
 
 function getFirebaseWebApiKey() {
@@ -159,7 +181,38 @@ async function readExistingUserState(uid: string) {
   }
 }
 
+export function normalizeAuthRouteError(
+  error: unknown,
+  fallback: {
+    message: string;
+    status: number;
+    code?: string;
+  }
+): NormalizedAuthRouteError {
+  const authError = error as Error & { code?: string; status?: number };
+  const authMessage = String(authError.message || '');
+
+  if (
+    error instanceof DeviceLimitExceededError ||
+    authError.code === AUTH_DEVICE_LIMIT_EXCEEDED_CODE ||
+    /maximum number of allowed devices|maximum number of devices/i.test(authMessage)
+  ) {
+    return {
+      error: AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
+      code: AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
+      status: 409,
+    };
+  }
+
+  return {
+    error: authMessage || fallback.message,
+    code: authError.code || fallback.code || 'auth/request-failed',
+    status: authError.status || fallback.status,
+  };
+}
+
 export async function createAuthSessionResponse(options: {
+  request: Request;
   idToken: string;
   requestedName?: string;
   rememberMe?: boolean;
@@ -201,6 +254,15 @@ export async function createAuthSessionResponse(options: {
     typeof existing?.avatarPresetId === 'string' && existing.avatarPresetId
       ? existing.avatarPresetId
       : getDefaultAvatarPresetId(decoded.uid || email);
+  const storedEffectiveSubscriptionSnapshot =
+    existing?.subscription && typeof existing.subscription === 'object'
+      ? getSubscriptionSnapshotFromData(
+          existing.subscription as Partial<SubscriptionSnapshot>
+        )
+      : null;
+  const sessionCookiePromise = adminAuth.createSessionCookie(options.idToken, {
+    expiresIn: AUTH_SESSION_MAX_AGE_MS,
+  });
 
   try {
     if (existing?.role !== role) {
@@ -236,23 +298,52 @@ export async function createAuthSessionResponse(options: {
       { merge: true }
     );
 
-    await adminAuth.updateUser(decoded.uid, {
-      displayName: resolvedName,
-    }).catch((error) => {
-      console.warn('[auth] failed to sync display name to Firebase Auth user', error);
-    });
+    if ((typeof decoded.name === 'string' ? decoded.name : '') !== resolvedName) {
+      await adminAuth.updateUser(decoded.uid, {
+        displayName: resolvedName,
+      }).catch((error) => {
+        console.warn('[auth] failed to sync display name to Firebase Auth user', error);
+      });
+    }
   } catch (userRecordError) {
     console.warn('[auth] user record sync failed', userRecordError);
   }
 
-  const sessionCookie = await adminAuth.createSessionCookie(options.idToken, {
-    expiresIn: AUTH_SESSION_MAX_AGE_MS,
-  });
+  const [sessionCookie, effectiveSubscriptionSnapshot] = await Promise.all([
+    sessionCookiePromise,
+    storedEffectiveSubscriptionSnapshot
+      ? Promise.resolve(storedEffectiveSubscriptionSnapshot)
+      : resolveEffectiveSubscriptionState(decoded.uid).then((state) => state.effectiveSnapshot),
+  ]);
+  let managedSession: Awaited<ReturnType<typeof createManagedAuthSession>>;
+
+  try {
+    managedSession = await createManagedAuthSession({
+      request: options.request,
+      userId: decoded.uid,
+      role,
+      subscriptionSnapshot: effectiveSubscriptionSnapshot,
+      deviceLimit: getDeviceLimitForSubscriptionSnapshot(effectiveSubscriptionSnapshot, role),
+    });
+  } catch (error) {
+    const normalizedError = normalizeAuthRouteError(error, {
+      message: 'Could not create a secure session.',
+      status: 401,
+    });
+
+    return NextResponse.json(
+      {
+        error: normalizedError.error,
+        code: normalizedError.code,
+      },
+      { status: normalizedError.status }
+    );
+  }
 
   const response = NextResponse.json({
     success: true,
     role,
-    redirectTo: role === 'admin' ? '/admin' : '/',
+    redirectTo: role === 'admin' ? '/admin' : '/browse',
   });
 
   const cookieConfig = getAuthCookieConfig();
@@ -263,6 +354,14 @@ export async function createAuthSessionResponse(options: {
     ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
   });
   response.cookies.set(AUTH_ROLE_COOKIE, getRoleCookieValue(role), {
+    ...cookieConfig,
+    ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+  });
+  response.cookies.set(AUTH_DEVICE_COOKIE, managedSession.deviceCookieValue, {
+    ...cookieConfig,
+    maxAge: AUTH_DEVICE_COOKIE_MAX_AGE_MS / 1000,
+  });
+  response.cookies.set(AUTH_DEVICE_SESSION_COOKIE, managedSession.sessionCookieValue, {
     ...cookieConfig,
     ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
   });

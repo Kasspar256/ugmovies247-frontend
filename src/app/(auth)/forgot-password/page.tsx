@@ -9,7 +9,7 @@ import { getAuthDevDiagnostics, getFirebaseAuthErrorMessage, sendResetPasswordEm
 
 export default function ForgotPasswordPage() {
   const searchParams = useSearchParams();
-  const redirectTarget = searchParams.get('redirect') || '/';
+  const redirectTarget = searchParams.get('redirect') || '/browse';
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');

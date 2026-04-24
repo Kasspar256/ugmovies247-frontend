@@ -1334,7 +1334,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 Refresh
               </button>
               <Link
-                href="/"
+                href="/browse"
                 className="inline-flex items-center gap-2 rounded-full border border-[#D90429]/20 bg-[#D90429]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.22em] text-[#FFD7DF]"
               >
                 Back To App

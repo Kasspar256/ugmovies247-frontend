@@ -1,4 +1,4 @@
-export const LEGAL_ROUTE_PREFIXES = ['/terms', '/privacy', '/privacy-policy', '/dmca', '/dcma'];
+export const LEGAL_ROUTE_PREFIXES = ['/help', '/terms', '/privacy', '/privacy-policy', '/dmca', '/dcma'];
 
 export function isLegalRoute(pathname: string) {
   if (!pathname) {
