@@ -167,6 +167,20 @@ export default function LandingPage() {
                   <ArrowRight size={18} strokeWidth={2.6} />
                 </Link>
               </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.82rem] font-semibold text-white/68">
+                <Link href="/privacy" className="transition-colors hover:text-white">
+                  Privacy Policy
+                </Link>
+                <span className="hidden h-1 w-1 rounded-full bg-white/30 sm:block" aria-hidden="true" />
+                <Link href="/terms" className="transition-colors hover:text-white">
+                  Terms of Use
+                </Link>
+                <span className="hidden h-1 w-1 rounded-full bg-white/30 sm:block" aria-hidden="true" />
+                <Link href="/help" className="transition-colors hover:text-white">
+                  Help
+                </Link>
+              </div>
             </div>
           </div>
         </div>
