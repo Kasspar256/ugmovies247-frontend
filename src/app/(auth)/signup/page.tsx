@@ -11,7 +11,6 @@ import {
   continueWithGoogle,
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
-  hasPendingGoogleRedirectSignIn,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
 
@@ -43,10 +42,6 @@ export default function SignupPage() {
     let active = true;
 
     const finishRedirectSignup = async () => {
-      if (!hasPendingGoogleRedirectSignIn()) {
-        return;
-      }
-
       setGoogleLoading(true);
 
       try {

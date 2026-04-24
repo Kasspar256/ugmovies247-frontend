@@ -375,14 +375,6 @@ export function hasPendingGoogleRedirectSignIn() {
   }
 }
 
-function shouldPreferGoogleRedirect() {
-  if (typeof navigator === 'undefined') {
-    return false;
-  }
-
-  return /android|iphone|ipad|mobile/i.test(navigator.userAgent || '');
-}
-
 async function createSessionFromIdToken(options: {
   idToken: string;
   name?: string;
@@ -501,11 +493,6 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const provider = createGoogleProvider();
 
   rememberGooglePreference(rememberMe);
-
-  if (shouldPreferGoogleRedirect()) {
-    await signInWithRedirect(auth, provider);
-    return { redirected: true as const };
-  }
 
   try {
     const result = await signInWithPopup(auth, provider);
