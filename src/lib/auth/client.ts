@@ -262,7 +262,7 @@ async function waitForGoogleRedirectUser(timeoutMs = GOOGLE_REDIRECT_USER_TIMEOU
 
   return new Promise<User | null>((resolve) => {
     let settled = false;
-    let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
+    let timeoutId: number | undefined;
     let unsubscribe = () => undefined;
 
     const finish = (user: User | null | undefined) => {
