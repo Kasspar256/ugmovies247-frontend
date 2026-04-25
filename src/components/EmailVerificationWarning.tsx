@@ -40,7 +40,7 @@ export default function EmailVerificationWarning({
     <section
       className={`rounded-[24px] border border-amber-400/25 bg-amber-400/10 p-4 text-amber-50 shadow-[0_16px_34px_rgba(0,0,0,0.22)] ${className}`}
     >
-      <div className="text-sm font-bold">⚠️ Your email is not verified.</div>
+      <div className="text-sm font-bold">Your email is not verified.</div>
       <p className="mt-2 text-sm leading-6 text-amber-50/82">
         Verify to receive payment receipts, subscription updates, and account recovery support.
       </p>
@@ -63,4 +63,3 @@ export default function EmailVerificationWarning({
     </section>
   );
 }
-
