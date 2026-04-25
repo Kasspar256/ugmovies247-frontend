@@ -30,6 +30,12 @@ function getGenreMovies(genreId: string, allMovies: Movie[]) {
   );
 }
 
+function getGenreIntro(genreId: string, count: number) {
+  const normalizedGenre = genreId.replace(/[-_]+/g, ' ').trim();
+  const readableGenre = normalizedGenre || 'movie';
+  return `Watch ${count} ${readableGenre} titles on UG Movies 247, including Ugandan movies, Luganda translated movies, VJ translated movies, and online entertainment selected for Uganda and East Africa.`;
+}
+
 export default function GenreDetail({ params }: { params: { id: string } }) {
   const genreId = decodeURIComponent(params.id);
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -65,6 +71,8 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
     );
   }
 
+  const genreIntro = getGenreIntro(genreId, movies.length);
+
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
 
@@ -73,11 +81,17 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
         subtitle={`${movies.length} Vaulted Files`}
         fallbackHref="/genres"
       />
+      <p className="mx-4 mt-3 text-sm leading-6 text-white/64 md:hidden">
+        {genreIntro}
+      </p>
 
       {/* Desktop Info */}
       <div className="hidden md:block mb-8 max-w-[1380px] mx-auto">
         <h1 className="text-5xl font-black text-white uppercase tracking-widest mb-2 border-l-4 border-[#D90429] pl-6">{genreId}</h1>
         <p className="text-[#888888] pl-6 font-bold uppercase tracking-widest">{movies.length} Encrypted Files</p>
+        <p className="mt-4 max-w-3xl pl-6 text-sm leading-7 text-white/62">
+          {genreIntro}
+        </p>
       </div>
 
       {/* Grid of Movies */}
@@ -87,7 +101,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
             <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">
               <img
                 src={getOptimizedArtworkUrl(movie.poster, 'card')}
-                alt={movie.title}
+                alt={`Watch ${movie.title} on UG Movies 247`}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 loading={index < 6 ? 'eager' : 'lazy'}
                 decoding="async"

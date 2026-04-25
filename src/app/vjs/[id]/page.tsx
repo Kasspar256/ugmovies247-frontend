@@ -21,6 +21,10 @@ function getMoviesForVj(vjName: string, allMovies: Movie[]) {
   });
 }
 
+function getVjIntro(vjName: string, count: number) {
+  return `Watch ${count} ${vjName} movies on UG Movies 247, including Luganda translated movies, Uganda translated movies, VJ translated action movies, series, and Hollywood entertainment for Uganda.`;
+}
+
 export default function VJDetail({ params }: { params: { id: string } }) {
   const vjId = params.id;
   const vjInfo = VJ_DIRECTORY.find(v => v.id === vjId) || { name: 'Unknown VJ' };
@@ -57,6 +61,8 @@ export default function VJDetail({ params }: { params: { id: string } }) {
     );
   }
 
+  const vjIntro = getVjIntro(vjInfo.name, movies.length);
+
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
@@ -64,6 +70,9 @@ export default function VJDetail({ params }: { params: { id: string } }) {
         subtitle={`${movies.length} Dubbed Movies`}
         fallbackHref="/vjs"
       />
+      <p className="mx-4 mt-3 text-sm leading-6 text-white/64 md:hidden">
+        {vjIntro}
+      </p>
 
       <div className="hidden md:flex mx-auto w-full max-w-[1380px] items-center gap-4">
         <Link href="/vjs" className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1F2833]/70 text-white transition-colors hover:bg-[#D90429]">
@@ -72,6 +81,9 @@ export default function VJDetail({ params }: { params: { id: string } }) {
         <div>
           <h1 className="text-2xl font-black uppercase tracking-[0.18em] text-white">{vjInfo.name}</h1>
           <p className="mt-1 text-[11px] font-black uppercase tracking-[0.26em] text-[#D90429]">{movies.length} Dubbed Movies</p>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/62">
+            {vjIntro}
+          </p>
         </div>
       </div>
 
@@ -80,7 +92,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
         {movies.map(movie => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group">
             <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2">
-              <img src={movie.poster} alt={movie.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+              <img src={movie.poster} alt={`${movie.title} ${vjInfo.name} translated movie on UG Movies 247`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
               {isSeriesMovie(movie) && (
                 <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
                   EPS

@@ -869,7 +869,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           <>
             <img
               src={playbackPoster}
-              alt={playbackTitle || movie.title || movie.name || 'Locked movie poster'}
+              alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UG Movies 247`}
               className="absolute inset-0 h-full w-full object-contain object-top"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/18 to-black/36" />
@@ -1024,6 +1024,10 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
       {playbackDescription}
     </p>
 
+    <p className="mb-6 text-sm leading-7 text-white/62">
+      Watch {playbackTitle} on UG Movies 247, featuring {playbackGenreLabel} entertainment and {playbackVjLabel} translation for Uganda movie fans, Luganda translated movie lovers, and VJ movie audiences.
+    </p>
+
     {movie.contentType !== 'series' && movie.parts && movie.parts.length > 0 && (
       <section className="mb-6 rounded-2xl border border-white/10 bg-[#11141C]/80 p-4 md:p-5 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
         <div className="mb-3">
@@ -1168,7 +1172,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 )}
                 <img
                   src={relatedMovie.poster}
-                  alt={relatedMovie.title}
+                  alt={`Watch ${relatedMovie.title} on UG Movies 247`}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
               </div>
