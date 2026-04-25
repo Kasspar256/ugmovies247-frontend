@@ -56,6 +56,7 @@ export async function fetchAccountProfile() {
 
   return {
     ...payload.user,
+    emailVerified: payload.user.emailVerified === true,
     ...resolveUserAvatar({
       avatarPresetId: payload.user.avatarPresetId,
       avatarUrl: payload.user.avatarUrl,

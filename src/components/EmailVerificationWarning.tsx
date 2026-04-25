@@ -17,7 +17,7 @@ export default function EmailVerificationWarning({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  if (emailVerified) {
+  if (emailVerified === true) {
     return null;
   }
 

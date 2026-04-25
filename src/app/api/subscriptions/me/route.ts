@@ -79,6 +79,6 @@ export async function GET() {
     entitlement,
     payments: paymentHistory,
     recurringAgreement: summarizeRecurringAgreement(recurringAgreement),
-    emailVerified: session.userRecord.emailVerified,
+    emailVerified: session.userRecord.emailVerified === true,
   });
 }

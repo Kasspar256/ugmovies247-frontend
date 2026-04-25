@@ -28,7 +28,7 @@ export async function GET() {
       id: session.uid,
       name: session.userRecord.name,
       email: session.userRecord.email,
-      emailVerified: session.userRecord.emailVerified,
+      emailVerified: session.userRecord.emailVerified === true,
       emailVerifiedAt: session.userRecord.emailVerifiedAt,
       emailVerificationSentAt: session.userRecord.emailVerificationSentAt,
       role: session.userRecord.role,

@@ -297,7 +297,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
     setCardGateway(payload.cardGateway || EMPTY_CARD_GATEWAY);
     setRecurringAgreement(payload.recurringAgreement || EMPTY_RECURRING_AGREEMENT);
-    setEmailVerified(payload.emailVerified !== false);
+    setEmailVerified(payload.emailVerified === true);
 
     if (payload.entitlement) {
       void refreshUnlockedCatalog();
