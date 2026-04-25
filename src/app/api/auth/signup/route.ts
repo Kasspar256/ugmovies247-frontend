@@ -5,6 +5,7 @@ import {
   normalizeAuthRouteError,
   signUpWithPasswordServer,
 } from '@/lib/server/firebaseIdentity';
+import { sendWelcomeVerifyEmail } from '@/lib/server/transactionalEmails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,11 +64,7 @@ export async function POST(request: Request) {
     const response = await createAuthSessionResponse({ request, idToken, requestedName: name, rememberMe: true });
 
     if (userId && email) {
-      void import('@/lib/server/transactionalEmails').then(({ sendWelcomeVerifyEmail }) =>
-        sendWelcomeVerifyEmail({ id: userId, name, email }, { dedupeSignup: true })
-      ).catch((emailError) => {
-        console.warn('[auth] welcome verification email failed', emailError);
-      });
+      await sendWelcomeVerifyEmail({ id: userId, name, email }, { dedupeSignup: true });
     }
 
     return response;
