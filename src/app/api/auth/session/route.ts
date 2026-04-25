@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { createAuthSessionResponse, normalizeAuthRouteError } from '@/lib/server/firebaseIdentity';
+import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { sendProviderWelcomeEmail } from '@/lib/server/transactionalEmails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,12 +35,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing authentication token.' }, { status: 400 });
     }
 
-    return createAuthSessionResponse({
+    const decoded = await adminAuth.verifyIdToken(idToken);
+    const email = String(decoded.email || '').trim().toLowerCase();
+    const provider = decoded.firebase.sign_in_provider || 'password';
+    const existingUserSnapshot = await adminDb.collection('users').doc(decoded.uid).get();
+    const shouldSendProviderWelcome = Boolean(email && provider !== 'password' && !existingUserSnapshot.exists);
+
+    const response = await createAuthSessionResponse({
       request,
       idToken,
       requestedName,
       rememberMe,
     });
+
+    if (response.status < 400 && shouldSendProviderWelcome) {
+      await sendProviderWelcomeEmail({
+        id: decoded.uid,
+        name: requestedName || (typeof decoded.name === 'string' ? decoded.name : '') || 'User',
+        email,
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error('[auth] session creation failed', error);
     const authError = normalizeAuthRouteError(error, {

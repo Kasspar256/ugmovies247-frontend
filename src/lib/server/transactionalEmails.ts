@@ -212,6 +212,23 @@ export async function sendWelcomeVerifyEmail(user: EmailUser, options?: { dedupe
   });
 }
 
+export async function sendProviderWelcomeEmail(user: EmailUser) {
+  return sendBrandedEmail({
+    user,
+    type: 'welcome_verify',
+    subject: 'Welcome to UG Movies 247',
+    title: 'Welcome to UG Movies 247',
+    intro: `Hi ${user.name || 'there'}, your account was created successfully.`,
+    lines: [
+      'Your email is already trusted because you signed in with Google.',
+      'We will use this email for payment receipts, subscription updates, and account recovery support.',
+    ],
+    ctaLabel: 'Start Watching',
+    ctaHref: `${getBaseUrl()}/browse`,
+    dedupeKey: `welcome_provider:${user.id}`,
+  });
+}
+
 export async function sendVerificationEmailForUser(userId: string) {
   const user = await getUser(userId);
 
