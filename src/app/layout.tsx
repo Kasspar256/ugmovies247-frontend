@@ -4,10 +4,30 @@ import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
+import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
 
 export const metadata = {
-  title: 'UgMovies247 | Premium VJ Translated Movies',
-  description: 'The ultimate VJ translated movie streaming platform in Uganda.'
+  ...buildPageMetadata({
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    path: '/',
+  }),
+  applicationName: SITE_NAME,
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: 'black-translucent',
+  },
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [
+      { url: '/favicon.png', type: 'image/png' },
+      { url: '/siteicon.png', type: 'image/png', sizes: '512x512' },
+    ],
+    shortcut: ['/favicon.png'],
+    apple: [{ url: '/siteicon.png', sizes: '512x512', type: 'image/png' }],
+  },
+  category: 'entertainment',
 };
 
 export const viewport = {

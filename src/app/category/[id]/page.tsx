@@ -23,6 +23,24 @@ function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
   return catalog;
 }
 
+function getCategoryIntro(categoryTitle: string) {
+  const normalized = categoryTitle.toLowerCase();
+
+  if (normalized.includes('luganda')) {
+    return 'Watch Luganda translated movies online, including VJ translated action, drama, comedy, and Hollywood movies on UG Movies 247.';
+  }
+
+  if (normalized.includes('vj')) {
+    return 'Browse Ugandan VJ movies online from popular translators and discover the latest translated movies added to UG Movies 247.';
+  }
+
+  if (normalized.includes('uganda')) {
+    return 'Explore Uganda movies online, Ugandan films, series, comedy, action, and trending East African entertainment.';
+  }
+
+  return `Watch ${categoryTitle.toLowerCase()} online on UG Movies 247 with latest movies, series, and translated entertainment.`;
+}
+
 export default function CategoryDetail({ params }: { params: { id: string } }) {
   const categorySlug = decodeURIComponent(params.id);
   const displayTitle = categorySlug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
@@ -72,8 +90,13 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
         <div>
            <h1 className="text-4xl lg:text-5xl font-black text-white uppercase tracking-widest drop-shadow-md">{displayTitle}</h1>
            <p className="text-[#D90429] font-bold uppercase tracking-widest mt-2">{movies.length} Vaulted Files</p>
+           <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-white/58">{getCategoryIntro(displayTitle)}</p>
         </div>
       </div>
+
+      <p className="mx-auto mb-4 max-w-[1380px] px-4 text-sm leading-6 text-white/58 md:hidden">
+        {getCategoryIntro(displayTitle)}
+      </p>
 
       {/* Massive Cinematic Grid of Category Movies */}
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 md:gap-5 mt-4 md:mt-0 max-w-[1380px] mx-auto">

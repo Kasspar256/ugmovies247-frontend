@@ -4,6 +4,13 @@ import { Manrope, Sora } from 'next/font/google';
 import { ArrowRight, Check } from 'lucide-react';
 import { getArtworkImageProps } from '@/lib/artwork';
 import PublicLandingMenu from '@/components/public/PublicLandingMenu';
+import {
+  buildPageMetadata,
+  organizationJsonLd,
+  SITE_DESCRIPTION,
+  SITE_TITLE,
+  websiteJsonLd,
+} from '@/lib/seo';
 
 const headingFont = Sora({
   subsets: ['latin'],
@@ -16,9 +23,17 @@ const bodyFont = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'UG Movies 247 | Premium Streaming',
-  description:
-    'UG Movies 247 is a premium mobile-first streaming platform for movies, series, and fast account access.',
+  ...buildPageMetadata({
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    path: '/',
+    keywords: [
+      'watch Ugandan movies online',
+      'Luganda translated movies',
+      'VJ movies Uganda',
+      'Uganda movie streaming',
+    ],
+  }),
 };
 
 const browseRedirect = encodeURIComponent('/browse');
@@ -94,8 +109,14 @@ function BulletItem({ text }: { text: string }) {
 }
 
 export default function LandingPage() {
+  const homepageSchemas = [websiteJsonLd(), organizationJsonLd()];
+
   return (
     <main className={`${bodyFont.className} relative min-h-screen overflow-hidden bg-[#08090D] text-white`}>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageSchemas) }}
+      />
       <div className="absolute inset-0">
         <div className="mx-auto grid h-full max-w-7xl grid-cols-3 gap-3 px-4 pb-20 pt-28 opacity-[0.97] sm:gap-4 sm:px-6 sm:pt-32 md:grid-cols-6 lg:px-10 lg:pb-24 lg:pt-24">
           {posterWall.map((poster, index) => (
@@ -169,6 +190,14 @@ export default function LandingPage() {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.82rem] font-semibold text-white/68">
+                <Link href="/category/luganda-translated-movies" className="transition-colors hover:text-white">
+                  Luganda Movies
+                </Link>
+                <span className="hidden h-1 w-1 rounded-full bg-white/30 sm:block" aria-hidden="true" />
+                <Link href="/vjs" className="transition-colors hover:text-white">
+                  VJ Movies
+                </Link>
+                <span className="hidden h-1 w-1 rounded-full bg-white/30 sm:block" aria-hidden="true" />
                 <Link href="/privacy" className="transition-colors hover:text-white">
                   Privacy Policy
                 </Link>
