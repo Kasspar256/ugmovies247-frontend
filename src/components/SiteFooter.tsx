@@ -24,15 +24,30 @@ export default function SiteFooter() {
   return (
     <footer className="hidden border-t border-white/8 bg-[#0B0C10] md:block">
       <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 pb-8 pt-6 text-white/70 md:flex-row md:items-center md:justify-between md:px-8 lg:px-10">
-        <div>
+        <div className="space-y-4">
           <div className="text-sm font-black uppercase tracking-[0.24em] text-white">UG Movies 247</div>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-white/55">
-            Premium VJ-translated entertainment with clear legal access links for users, rights
-            holders, and platform support.
-          </p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div className="text-[11px] font-black uppercase tracking-[0.22em] text-white/42">
+              Contact Details
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-white/72">
+              <a href="mailto:info@ugmovies247.com" className="transition-colors hover:text-white">
+                info@ugmovies247.com
+              </a>
+              <a
+                href="https://wa.me/256727261375"
+                target="_blank"
+                rel="noreferrer"
+                className="transition-colors hover:text-white"
+              >
+                WhatsApp: +256 727 261375
+              </a>
+            </div>
+          </div>
+          <div className="text-xs font-semibold text-white/45">2026 © All Rights Reserved.</div>
         </div>
 
-        <div className="flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-white/72">
+        <div className="flex flex-wrap gap-x-5 gap-y-3 text-sm font-semibold text-white/72 md:justify-end">
           <Link href="/terms" className="transition-colors hover:text-white">
             Terms &amp; Conditions
           </Link>
