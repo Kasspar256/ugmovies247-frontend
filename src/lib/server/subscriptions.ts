@@ -909,6 +909,12 @@ export async function cancelRecurringAgreementForUser(userId: string) {
     nextChargeAt: '',
   });
 
+  void import('@/lib/server/transactionalEmails').then(({ sendSubscriptionCancelledEmail }) =>
+    sendSubscriptionCancelledEmail(userId, updated)
+  ).catch((error) => {
+    console.warn('[subscriptions] subscription cancelled email hook failed', error);
+  });
+
   return updated;
 }
 
@@ -1079,6 +1085,10 @@ export async function applySuccessfulSubscriptionPayment(options: {
       return {
         alreadyApplied: true,
         subscription: currentSubscription,
+        payment: {
+          id: options.paymentId,
+          ...payment,
+        },
       };
     }
 
@@ -1143,11 +1153,39 @@ export async function applySuccessfulSubscriptionPayment(options: {
     return {
       alreadyApplied: false,
       subscription: subscriptionDoc,
+      payment: {
+        id: options.paymentId,
+        ...payment,
+        status: 'completed' as PaymentAttemptStatus,
+        providerStatus: options.providerStatus,
+        providerTransactionId: options.providerTransactionId,
+        providerMessage: options.providerMessage || '',
+        providerCallbackPayload: options.rawPayload || {},
+        activationAppliedAt: timestamp,
+        startsAt: newStartsAt,
+        expiresAt,
+        isActive: true,
+        webhookReceivedAt: options.source === 'webhook' ? timestamp : payment.webhookReceivedAt || '',
+        lastCheckedAt: options.source === 'poll' ? timestamp : payment.lastCheckedAt || '',
+        updatedAt: timestamp,
+      } as PaymentAttemptDocument,
     };
   });
 
   if (result.subscription?.userId) {
     await syncUserSubscriptionSnapshot(result.subscription.userId, result.subscription);
+  }
+
+  if (!result.alreadyApplied && result.payment) {
+    void import('@/lib/server/transactionalEmails').then(
+      ({ sendPaymentSuccessEmail, sendSubscriptionActivatedEmail }) =>
+        Promise.all([
+          sendPaymentSuccessEmail(result.payment as PaymentAttemptDocument),
+          sendSubscriptionActivatedEmail(result.payment as PaymentAttemptDocument),
+        ])
+    ).catch((error) => {
+      console.warn('[subscriptions] payment success email hook failed', error);
+    });
   }
 
   return result;
@@ -1176,6 +1214,16 @@ export async function markPaymentAttemptFailed(options: {
     },
     { merge: true }
   );
+
+  const payment = await getPaymentAttempt(options.paymentId).catch(() => null);
+
+  if (payment) {
+    void import('@/lib/server/transactionalEmails').then(({ sendPaymentFailedEmail }) =>
+      sendPaymentFailedEmail(payment)
+    ).catch((error) => {
+      console.warn('[subscriptions] payment failure email hook failed', error);
+    });
+  }
 }
 
 export async function appendPaymentLog(paymentId: string, message: string) {

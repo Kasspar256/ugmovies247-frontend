@@ -54,12 +54,23 @@ export async function POST(request: Request) {
 
     const payload = await signUpWithPasswordServer({ name, email, password });
     const idToken = String(payload.idToken || '');
+    const userId = String(payload.localId || '');
 
     if (!idToken) {
       return NextResponse.json({ error: 'Missing Firebase authentication token.' }, { status: 502 });
     }
 
-    return createAuthSessionResponse({ request, idToken, requestedName: name, rememberMe: true });
+    const response = await createAuthSessionResponse({ request, idToken, requestedName: name, rememberMe: true });
+
+    if (userId && email) {
+      void import('@/lib/server/transactionalEmails').then(({ sendWelcomeVerifyEmail }) =>
+        sendWelcomeVerifyEmail({ id: userId, name, email }, { dedupeSignup: true })
+      ).catch((emailError) => {
+        console.warn('[auth] welcome verification email failed', emailError);
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error('[auth] signup failed', error);
     const authError = normalizeAuthRouteError(error, {

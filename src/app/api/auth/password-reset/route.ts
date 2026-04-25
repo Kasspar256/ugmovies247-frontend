@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/server/rateLimit';
-import { sendPasswordResetEmailServer } from '@/lib/server/firebaseIdentity';
+import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
+import { sendPasswordResetTransactionalEmail } from '@/lib/server/transactionalEmails';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,34 @@ export async function POST(request: Request) {
       );
     }
 
-    await sendPasswordResetEmailServer(email);
+    const firebaseUser = await adminAuth.getUserByEmail(email).catch(() => null);
+
+    if (!firebaseUser) {
+      return NextResponse.json({
+        success: true,
+        message: 'Password reset email sent. Check your inbox and spam folder.',
+      });
+    }
+
+    const userSnapshot = await adminDb.collection('users').doc(firebaseUser.uid).get();
+    const userData = userSnapshot.data() as { name?: string; emailVerified?: boolean } | undefined;
+    const emailVerified = firebaseUser.emailVerified === true || userData?.emailVerified === true;
+
+    if (!emailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Please verify your email before resetting your password.',
+          code: 'auth/email-not-verified',
+        },
+        { status: 403 }
+      );
+    }
+
+    await sendPasswordResetTransactionalEmail({
+      id: firebaseUser.uid,
+      name: userData?.name || firebaseUser.displayName || 'User',
+      email,
+    });
 
     return NextResponse.json({
       success: true,
@@ -53,4 +81,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

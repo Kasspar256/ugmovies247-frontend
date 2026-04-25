@@ -27,6 +27,7 @@ import {
   type AccountProfile,
 } from '@/lib/accountProfile';
 import { logoutCurrentUser } from '@/lib/auth/client';
+import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 
 function getTimeLeftLabel(profile: AccountProfile) {
   if (profile.role === 'admin') {
@@ -318,6 +319,7 @@ export default function ProfileHub() {
         ) : (
           <div className="space-y-4">
             <ProfileSummary profile={profile} />
+            <EmailVerificationWarning emailVerified={profile.emailVerified} />
 
             <NavigationGroup
               title="Account"

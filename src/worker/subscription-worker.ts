@@ -28,6 +28,9 @@ async function processRecurringCharges() {
       upsertRecurringAgreementForUser,
     },
     {
+      processScheduledTransactionalEmails,
+    },
+    {
       buildNextChargeAtFromExpiry,
       buildRecurringChargeItemName,
       chargePayFastTokenizedAgreement,
@@ -38,6 +41,7 @@ async function processRecurringCharges() {
   ] = await Promise.all([
     import('@/lib/server/env'),
     import('@/lib/server/subscriptions'),
+    import('@/lib/server/transactionalEmails'),
     import('@/lib/server/payfastRecurring'),
   ]);
 
@@ -237,6 +241,9 @@ async function processRecurringCharges() {
   };
 
   await reconcilePendingRecurringCharges();
+  await processScheduledTransactionalEmails(SUBSCRIPTION_WORKER_BATCH_SIZE).catch((error) => {
+    console.warn('[subscription-worker] scheduled email processing failed', error);
+  });
 
   const dueAgreements = await listDueRecurringAgreements(SUBSCRIPTION_WORKER_BATCH_SIZE);
 

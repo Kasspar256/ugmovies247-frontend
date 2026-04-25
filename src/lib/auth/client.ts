@@ -29,11 +29,49 @@ type SessionResponse = {
 };
 
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
+const GOOGLE_REDIRECT_COOKIE = 'ugmovies247_google_redirect';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
-const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 5000;
+const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 12000;
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function setGoogleRedirectCookie(value: string, maxAgeSeconds = 10 * 60) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const secureAttribute =
+    typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+
+  document.cookie = `${GOOGLE_REDIRECT_COOKIE}=${value}; Path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax${secureAttribute}`;
+}
+
+function readGoogleRedirectCookie() {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const cookies = document.cookie ? document.cookie.split('; ') : [];
+  const entry = cookies.find((cookie) => cookie.startsWith(`${GOOGLE_REDIRECT_COOKIE}=`));
+
+  if (!entry) {
+    return null;
+  }
+
+  return entry.slice(`${GOOGLE_REDIRECT_COOKIE}=`.length) || null;
+}
+
+function clearGoogleRedirectCookie() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const secureAttribute =
+    typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
+
+  document.cookie = `${GOOGLE_REDIRECT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secureAttribute}`;
 }
 
 function buildOptimisticAuthStatus(fallbackUser: {
@@ -223,6 +261,7 @@ function rememberGooglePreference(value: boolean) {
   }
 
   const serializedValue = value ? '1' : '0';
+  setGoogleRedirectCookie(serializedValue);
 
   try {
     window.sessionStorage.setItem(GOOGLE_REMEMBER_ME_KEY, serializedValue);
@@ -270,6 +309,12 @@ function consumeGooglePreference(defaultValue = true) {
     }
   }
 
+  if (stored === null) {
+    stored = readGoogleRedirectCookie();
+  }
+
+  clearGoogleRedirectCookie();
+
   if (stored === '0') {
     return false;
   }
@@ -293,6 +338,7 @@ function clearGooglePreference() {
   }
 
   if (!canUseLocalStorage()) {
+    clearGoogleRedirectCookie();
     return;
   }
 
@@ -301,6 +347,8 @@ function clearGooglePreference() {
   } catch {
     // Ignore cleanup failures.
   }
+
+  clearGoogleRedirectCookie();
 }
 
 function isGoogleUser(user: User | null | undefined) {
@@ -365,13 +413,16 @@ export function hasPendingGoogleRedirectSignIn() {
   }
 
   if (!canUseLocalStorage()) {
-    return false;
+    return readGoogleRedirectCookie() !== null;
   }
 
   try {
-    return window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null;
+    return (
+      window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null ||
+      readGoogleRedirectCookie() !== null
+    );
   } catch {
-    return false;
+    return readGoogleRedirectCookie() !== null;
   }
 }
 
@@ -571,6 +622,26 @@ export async function sendResetPasswordEmail(email: string) {
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ email }),
+  });
+
+  return parseAuthResponse(response);
+}
+
+export async function confirmPasswordReset(options: { token: string; password: string }) {
+  const response = await fetch('/api/auth/password-reset/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(options),
+  });
+
+  return parseAuthResponse(response);
+}
+
+export async function resendVerificationEmail() {
+  const response = await fetch('/api/auth/verification-email', {
+    method: 'POST',
+    credentials: 'include',
   });
 
   return parseAuthResponse(response);

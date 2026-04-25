@@ -30,8 +30,8 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      await sendResetPasswordEmail(email.trim());
-      setMessage('Password reset email sent. Check your inbox and spam folder.');
+      const result = (await sendResetPasswordEmail(email.trim())) as { message?: string };
+      setMessage(result.message || 'Password reset email sent. Check your inbox and spam folder.');
     } catch (resetError) {
       setError(getFirebaseAuthErrorMessage(resetError));
       setDevDiagnostics(getAuthDevDiagnostics(resetError));

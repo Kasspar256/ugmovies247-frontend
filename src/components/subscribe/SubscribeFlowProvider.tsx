@@ -39,6 +39,7 @@ type SubscriptionResponse = {
   cardGateway: CardPaymentGateway;
   entitlement: SubscriptionEntitlement;
   recurringAgreement: RecurringAgreementSummary;
+  emailVerified?: boolean;
 };
 
 type PaymentState = {
@@ -97,6 +98,7 @@ type SubscribeFlowContextValue = {
   activePayment: PaymentState | null;
   error: string;
   message: string;
+  emailVerified: boolean;
   clearFeedback: () => void;
   startMobileMoneyCheckout: () => Promise<boolean>;
   startCardCheckout: () => Promise<boolean>;
@@ -244,6 +246,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const [provider, setProvider] = useState<PaymentMethodProvider>('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [message, setMessage] = useState('');
+  const [emailVerified, setEmailVerified] = useState(true);
   const [error, setError] = useState('');
   const [activePayment, setActivePayment] = useState<PaymentState | null>(null);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
@@ -294,6 +297,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
     setCardGateway(payload.cardGateway || EMPTY_CARD_GATEWAY);
     setRecurringAgreement(payload.recurringAgreement || EMPTY_RECURRING_AGREEMENT);
+    setEmailVerified(payload.emailVerified !== false);
 
     if (payload.entitlement) {
       void refreshUnlockedCatalog();
@@ -731,6 +735,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       activePayment,
       error,
       message,
+      emailVerified,
       clearFeedback,
       startMobileMoneyCheckout,
       startCardCheckout,
@@ -744,6 +749,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       clearFeedback,
       draftReady,
       entitlement,
+      emailVerified,
       error,
       hasActiveSubscription,
       hasPendingCardUpdate,

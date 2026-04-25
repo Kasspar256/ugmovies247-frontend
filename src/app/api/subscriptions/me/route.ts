@@ -30,7 +30,7 @@ function getDaysLeft(expiresAt?: string) {
 }
 
 export async function GET() {
-  const session = await getCurrentAuthSession();
+  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -79,5 +79,6 @@ export async function GET() {
     entitlement,
     payments: paymentHistory,
     recurringAgreement: summarizeRecurringAgreement(recurringAgreement),
+    emailVerified: session.userRecord.emailVerified,
   });
 }

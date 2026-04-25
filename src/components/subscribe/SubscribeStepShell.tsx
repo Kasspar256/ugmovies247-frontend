@@ -4,6 +4,8 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import EmailVerificationWarning from '@/components/EmailVerificationWarning';
+import { useSubscribeFlow } from '@/components/subscribe/SubscribeFlowProvider';
 
 type SubscribeStepShellProps = {
   title: string;
@@ -29,6 +31,7 @@ export default function SubscribeStepShell({
   children,
 }: SubscribeStepShellProps) {
   const isLight = tone === 'light';
+  const { emailVerified } = useSubscribeFlow();
 
   return (
     <div
@@ -76,7 +79,10 @@ export default function SubscribeStepShell({
           )}
         </div>
 
-        <div className="mt-6">{children}</div>
+        <div className="mt-6 space-y-6">
+          <EmailVerificationWarning emailVerified={emailVerified} />
+          {children}
+        </div>
       </div>
     </div>
   );

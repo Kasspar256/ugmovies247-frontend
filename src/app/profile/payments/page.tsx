@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronRight, CreditCard, ReceiptText } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 import type {
   SubscriptionEntitlement,
   UserPaymentHistoryEntry,
@@ -12,6 +13,7 @@ import type {
 type PaymentsPayload = {
   entitlement: SubscriptionEntitlement;
   payments: UserPaymentHistoryEntry[];
+  emailVerified?: boolean;
 };
 
 const EMPTY_ENTITLEMENT: SubscriptionEntitlement = {
@@ -96,6 +98,7 @@ export default function PaymentsPage() {
         setPayload({
           entitlement: data.entitlement || EMPTY_ENTITLEMENT,
           payments: data.payments || [],
+          emailVerified: data.emailVerified !== false,
         });
       } catch (loadError) {
         if (mounted) {
@@ -155,6 +158,8 @@ export default function PaymentsPage() {
           </div>
         ) : (
           <div className="mt-6 space-y-4">
+            <EmailVerificationWarning emailVerified={payload?.emailVerified !== false} />
+
             <section className="rounded-[28px] border border-white/10 bg-[#11141C]/82 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.32)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>

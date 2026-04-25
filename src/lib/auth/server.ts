@@ -24,6 +24,9 @@ export type AppUserRecord = {
   id: string;
   name: string;
   email: string;
+  emailVerified: boolean;
+  emailVerifiedAt: string;
+  emailVerificationSentAt: string;
   authProvider: string;
   role: UserRole;
   createdAt: string;
@@ -76,6 +79,9 @@ function buildFallbackUserRecord(
     id: uid,
     name: fallback.name || 'User',
     email: fallback.email || '',
+    emailVerified: fallbackRole === 'admin',
+    emailVerifiedAt: fallbackRole === 'admin' ? now : '',
+    emailVerificationSentAt: '',
     authProvider: 'password',
     role: fallbackRole,
     createdAt: now,
@@ -137,6 +143,10 @@ async function fetchUserRecord(uid: string, fallback: { email?: string; name?: s
       id: uid,
       name: data?.name || fallback.name || 'User',
       email: data?.email || fallback.email || '',
+      emailVerified: data?.emailVerified === true,
+      emailVerifiedAt: typeof data?.emailVerifiedAt === 'string' ? data.emailVerifiedAt : '',
+      emailVerificationSentAt:
+        typeof data?.emailVerificationSentAt === 'string' ? data.emailVerificationSentAt : '',
       authProvider: data?.authProvider || 'password',
       role: normalizeUserRole(data?.role || fallbackRole),
       createdAt: data?.createdAt || now,

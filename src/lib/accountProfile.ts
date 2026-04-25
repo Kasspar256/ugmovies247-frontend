@@ -10,6 +10,9 @@ export type AccountProfile = {
   id: string;
   name: string;
   email: string;
+  emailVerified: boolean;
+  emailVerifiedAt: string;
+  emailVerificationSentAt: string;
   role: 'user' | 'admin';
   createdAt: string;
   updatedAt: string;

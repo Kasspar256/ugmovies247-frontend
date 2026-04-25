@@ -245,6 +245,17 @@ export async function createAuthSessionResponse(options: {
   }
 
   const timestamp = nowIso();
+  const authProvider = decoded.firebase.sign_in_provider || 'password';
+  const providerVerifiedEmail =
+    authProvider !== 'password' || (decoded as { email_verified?: boolean }).email_verified === true;
+  const emailVerified =
+    typeof existing?.emailVerified === 'boolean' ? existing.emailVerified : providerVerifiedEmail;
+  const emailVerifiedAt =
+    emailVerified && typeof existing?.emailVerifiedAt === 'string' && existing.emailVerifiedAt
+      ? existing.emailVerifiedAt
+      : emailVerified
+        ? timestamp
+        : '';
   const resolvedName =
     options.requestedName?.trim() ||
     (typeof decoded.name === 'string' ? decoded.name : '') ||
@@ -278,7 +289,10 @@ export async function createAuthSessionResponse(options: {
         id: decoded.uid,
         name: resolvedName,
         email,
-        authProvider: decoded.firebase.sign_in_provider || 'password',
+        emailVerified,
+        emailVerifiedAt,
+        emailVerificationSentAt: String(existing?.emailVerificationSentAt || ''),
+        authProvider,
         role,
         createdAt: existing?.createdAt || timestamp,
         updatedAt: timestamp,
