@@ -13,6 +13,7 @@ import {
   getFirebaseAuthErrorMessage,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 export default function SignupPage() {
   const searchParams = useSearchParams();
@@ -25,8 +26,13 @@ export default function SignupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [nativeApp, setNativeApp] = useState(false);
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  useEffect(() => {
+    setNativeApp(isNativeAndroidApp());
+  }, []);
 
   const clearFeedback = () => {
     if (error) {
@@ -42,6 +48,10 @@ export default function SignupPage() {
     let active = true;
 
     const finishRedirectSignup = async () => {
+      if (isNativeAndroidApp()) {
+        return;
+      }
+
       setGoogleLoading(true);
 
       try {
@@ -120,6 +130,12 @@ export default function SignupPage() {
     clearFeedback();
     setError('');
     setDevDiagnostics([]);
+
+    if (isNativeAndroidApp()) {
+      setError('Google signup is being prepared for the Android app. Please create your account with email and password for now.');
+      return;
+    }
+
     setGoogleLoading(true);
 
     try {
@@ -179,13 +195,19 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-4">
-              <GoogleAuthButton
-                onClick={handleGoogleSignup}
-                disabled={loading}
-                loading={googleLoading}
-                idleLabel="Sign up with Google"
-                loadingLabel="Connecting with Google..."
-              />
+              {nativeApp ? (
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold leading-6 text-white/78">
+                  Google signup is coming to the Android app. Please create your account with email and password for now.
+                </div>
+              ) : (
+                <GoogleAuthButton
+                  onClick={handleGoogleSignup}
+                  disabled={loading}
+                  loading={googleLoading}
+                  idleLabel="Sign up with Google"
+                  loadingLabel="Connecting with Google..."
+                />
+              )}
 
               <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.26em] text-white/35">
                 <div className="h-px flex-1 bg-white/10" />
