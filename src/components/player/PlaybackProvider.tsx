@@ -96,6 +96,11 @@ type IOSVideoElement = HTMLVideoElement & {
   webkitDisplayingFullscreen?: boolean;
 };
 
+type ScreenOrientationWithLock = ScreenOrientation & {
+  lock?: (orientation: OrientationLockType) => Promise<void>;
+  unlock?: () => void;
+};
+
 type MiniPlayerPosition = {
   x: number;
   y: number;
@@ -380,6 +385,34 @@ function useIsIOSDevice() {
   return isIOSDevice;
 }
 
+async function lockLandscapeOrientation() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const orientation = window.screen?.orientation as ScreenOrientationWithLock | undefined;
+
+  if (typeof orientation?.lock !== 'function') {
+    return;
+  }
+
+  await orientation.lock('landscape').catch(() => {
+    // Some browsers/WebViews only allow orientation lock after fullscreen starts.
+  });
+}
+
+function unlockScreenOrientation() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const orientation = window.screen?.orientation as ScreenOrientationWithLock | undefined;
+
+  if (typeof orientation?.unlock === 'function') {
+    orientation.unlock();
+  }
+}
+
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const isDesktop = useIsDesktopViewport();
@@ -597,13 +630,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const handleFullscreenChange = () => {
       const doc = document as WebkitDocument;
       const inlineVideo = videoRef.current as IOSVideoElement | null;
-      setIsFullscreen(
-        Boolean(
-          document.fullscreenElement ||
-            doc.webkitFullscreenElement ||
-            inlineVideo?.webkitDisplayingFullscreen
-        )
+      const nextIsFullscreen = Boolean(
+        document.fullscreenElement ||
+          doc.webkitFullscreenElement ||
+          inlineVideo?.webkitDisplayingFullscreen
       );
+
+      setIsFullscreen(nextIsFullscreen);
+
+      if (nextIsFullscreen && !isDesktop) {
+        void lockLandscapeOrientation();
+      } else if (!nextIsFullscreen) {
+        unlockScreenOrientation();
+      }
     };
 
     const currentVideo = videoElementState as IOSVideoElement | null;
@@ -623,7 +662,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         handleFullscreenChange as EventListener
       );
     };
-  }, [videoElementState]);
+  }, [isDesktop, videoElementState]);
 
   useEffect(() => {
     const storedVolume = clamp(readStoredNumber(VOLUME_STORAGE_KEY, 1), 0, 1);
@@ -943,13 +982,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     if (shellElement && typeof shellElement.requestFullscreen === 'function') {
       await shellElement.requestFullscreen();
+      if (!isDesktop) {
+        await lockLandscapeOrientation();
+      }
       return;
     }
 
     if (typeof videoElement.requestFullscreen === 'function') {
       await videoElement.requestFullscreen();
+      if (!isDesktop) {
+        await lockLandscapeOrientation();
+      }
     }
-  }, [isIOSDevice, showControls]);
+  }, [isDesktop, isIOSDevice, showControls]);
 
   const openWatchView = useCallback(() => {
     if (!activeSource?.watchHref) {
@@ -1239,7 +1284,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [isDesktop, isDraggingMiniPlayer, miniPlayerSize]);
 
   const playerShellStyle: CSSProperties = isInlineMode
-    ? inlineRect
+    ? isFullscreen
+      ? {
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '100vh',
+          zIndex: 10030,
+        }
+      : inlineRect
       ? {
           position: 'fixed',
           top: inlineRect.top,
@@ -1604,6 +1657,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     showControls();
+
+    if (isMobileInlineMode) {
+      return;
+    }
+
     clearClickIntentTimer();
     clickIntentTimerRef.current = setTimeout(() => {
       togglePlayPause();
