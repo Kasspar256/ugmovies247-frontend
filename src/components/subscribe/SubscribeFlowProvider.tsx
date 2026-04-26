@@ -19,6 +19,8 @@ import {
   useSearchParams,
 } from 'next/navigation';
 import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
+import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
 import type {
   CardPaymentGateway,
   PaymentMethodProvider,
@@ -63,6 +65,7 @@ type CheckoutResponse = {
     method: 'POST';
     fields: Record<string, string>;
   };
+  checkoutUrl?: string;
 };
 
 type FlowPaymentMethod = '' | 'mobile_money' | 'card';
@@ -316,6 +319,11 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
     setShowUpgradeSuccess(true);
     setRedirectCountdown(4);
+  }, [loadSubscriptionData]);
+
+  const refreshNativeCheckoutState = useCallback(async () => {
+    await loadSubscriptionData();
+    await refreshUnlockedCatalog();
   }, [loadSubscriptionData]);
 
   const applyPaymentResult = useCallback(
@@ -614,6 +622,30 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setRedirectCountdown(null);
 
     try {
+      if (isNativeAndroidApp()) {
+        const response = await fetch('/api/subscriptions/external-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            planType: selectedPlanDefinition.type,
+            paymentMethod: 'mobile_money',
+            provider,
+            phoneNumber,
+            returnTo: safeReturnTo,
+          }),
+        });
+        const payload = await readJsonResponse<CheckoutResponse>(response);
+
+        if (!response.ok || !payload.checkoutUrl) {
+          throw new Error(payload.detail || payload.error || 'Failed to open payment checkout.');
+        }
+
+        setMessage('Opening secure payment checkout...');
+        await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
+        return true;
+      }
+
       const response = await fetch('/api/subscriptions/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -649,7 +681,14 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [phoneNumber, provider, safeReturnTo, selectedPlanDefinition, selectedProviderOption]);
+  }, [
+    phoneNumber,
+    provider,
+    refreshNativeCheckoutState,
+    safeReturnTo,
+    selectedPlanDefinition,
+    selectedProviderOption,
+  ]);
 
   const startCardCheckout = useCallback(async () => {
     if (!selectedPlanDefinition || !selectedCardAmount || !cardAvailable) {
@@ -663,6 +702,28 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setRedirectCountdown(null);
 
     try {
+      if (isNativeAndroidApp()) {
+        const response = await fetch('/api/subscriptions/external-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            planType: selectedPlanDefinition.type,
+            paymentMethod: 'card',
+            returnTo: safeReturnTo,
+          }),
+        });
+        const payload = await readJsonResponse<CheckoutResponse>(response);
+
+        if (!response.ok || !payload.checkoutUrl) {
+          throw new Error(payload.detail || payload.error || 'Failed to open payment checkout.');
+        }
+
+        setMessage('Opening secure card checkout...');
+        await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
+        return true;
+      }
+
       const response = await fetch('/api/subscriptions/auto-renew', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -701,7 +762,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  }, [cardAvailable, safeReturnTo, selectedCardAmount, selectedPlanDefinition]);
+  }, [cardAvailable, refreshNativeCheckoutState, safeReturnTo, selectedCardAmount, selectedPlanDefinition]);
 
   const contextValue = useMemo<SubscribeFlowContextValue>(
     () => ({

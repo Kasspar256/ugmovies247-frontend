@@ -17,6 +17,7 @@ const AUTH_FREE_PREFIXES = [
   '/signup',
   '/forgot-password',
   '/admin',
+  '/mobile-checkout',
 ];
 
 function isAuthFreePath(pathname: string) {

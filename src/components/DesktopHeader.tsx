@@ -18,7 +18,8 @@ function shouldShowDesktopHeader(pathname: string) {
   if (
     pathname === '/login' ||
     pathname === '/signup' ||
-    pathname === '/forgot-password'
+    pathname === '/forgot-password' ||
+    pathname.startsWith('/mobile-checkout')
   ) {
     return false;
   }

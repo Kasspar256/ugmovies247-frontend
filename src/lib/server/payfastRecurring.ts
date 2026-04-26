@@ -14,6 +14,8 @@ type PayFastTokenizationCheckoutInput = {
   amount: number;
   session: AuthSession;
   returnTo?: string;
+  returnUrlOverride?: string;
+  cancelUrlOverride?: string;
 };
 
 type PayFastRecurringChargeInput = {
@@ -473,7 +475,7 @@ export function getPayFastRecurringConfigError() {
 }
 
 export function buildPayFastTokenizationCheckout(options: PayFastTokenizationCheckoutInput) {
-  const returnUrl = new URL(getReturnUrl('return'));
+  const returnUrl = new URL(options.returnUrlOverride || getReturnUrl('return'));
   returnUrl.searchParams.set('paymentId', options.paymentId);
   returnUrl.searchParams.set('payment', 'card');
   returnUrl.searchParams.set('mode', 'recurring');
@@ -483,7 +485,7 @@ export function buildPayFastTokenizationCheckout(options: PayFastTokenizationChe
     returnUrl.searchParams.set('returnTo', options.returnTo);
   }
 
-  const cancelUrl = new URL(getReturnUrl('cancel'));
+  const cancelUrl = new URL(options.cancelUrlOverride || getReturnUrl('cancel'));
   cancelUrl.searchParams.set('paymentId', options.paymentId);
   cancelUrl.searchParams.set('payment', 'card');
   cancelUrl.searchParams.set('mode', 'recurring');
