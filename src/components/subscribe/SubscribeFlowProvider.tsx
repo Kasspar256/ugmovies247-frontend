@@ -643,6 +643,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
         setMessage('Opening secure payment checkout...');
         await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
+        setMessage('Checkout closed. If you cancelled, no charge was made. If you paid, your subscription will refresh shortly.');
         return true;
       }
 
@@ -721,6 +722,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
         setMessage('Opening secure card checkout...');
         await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
+        setMessage('Checkout closed. If you cancelled, no charge was made. If you paid, your subscription will refresh shortly.');
         return true;
       }
 
