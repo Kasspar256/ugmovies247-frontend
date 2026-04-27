@@ -30,6 +30,9 @@ const R2_MULTIPART_UPLOAD_THRESHOLD_BYTES = Number(
 export const R2_PRESIGNED_UPLOAD_EXPIRES_SECONDS = Number(
   process.env.R2_PRESIGNED_UPLOAD_EXPIRES_SECONDS || 60 * 60 * 4
 );
+export const R2_PRESIGNED_DOWNLOAD_EXPIRES_SECONDS = Number(
+  process.env.R2_PRESIGNED_DOWNLOAD_EXPIRES_SECONDS || 60 * 15
+);
 const rawR2EndpointUrl = (process.env.R2_ENDPOINT_URL || '').trim();
 
 function getValidatedR2EndpointUrl() {
@@ -150,6 +153,37 @@ export function getR2ObjectKeyFromPublicUrl(url: string) {
   }
 
   return '';
+}
+
+function sanitizeDownloadFileName(value: string) {
+  return value
+    .replace(/[\\/:"*?<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140) || 'ugmovies247-video.mp4';
+}
+
+export async function createPresignedR2Download(options: {
+  key: string;
+  filename?: string;
+}) {
+  const filename = sanitizeDownloadFileName(options.filename || 'ugmovies247-video.mp4');
+  const command = new GetObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: options.key,
+    ResponseContentDisposition: `attachment; filename="${filename}"`,
+  });
+
+  const downloadUrl = await getSignedUrl(s3Client, command, {
+    expiresIn: R2_PRESIGNED_DOWNLOAD_EXPIRES_SECONDS,
+  });
+
+  return {
+    key: options.key,
+    downloadUrl,
+    expiresIn: R2_PRESIGNED_DOWNLOAD_EXPIRES_SECONDS,
+    expiresAt: new Date(Date.now() + R2_PRESIGNED_DOWNLOAD_EXPIRES_SECONDS * 1000).toISOString(),
+  };
 }
 
 export async function createPresignedR2Upload(options: {

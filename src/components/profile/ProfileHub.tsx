@@ -28,6 +28,7 @@ import {
 } from '@/lib/accountProfile';
 import { logoutCurrentUser } from '@/lib/auth/client';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
+import { fetchUserNotifications } from '@/lib/userNotifications';
 
 function getTimeLeftLabel(profile: AccountProfile) {
   if (profile.role === 'admin') {
@@ -214,6 +215,7 @@ function NavigationGroup({
     icon: ComponentType<{ className?: string; size?: number }>;
     label: string;
     description: string;
+    badgeCount?: number;
   }>;
 }) {
   return (
@@ -235,7 +237,14 @@ function NavigationGroup({
                 <Icon size={18} />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-base font-semibold text-white">{item.label}</div>
+                <div className="flex items-center gap-2 text-base font-semibold text-white">
+                  {item.label}
+                  {item.badgeCount ? (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#D90429] px-1.5 py-0.5 text-[10px] font-black leading-none text-white">
+                      {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="mt-1 text-sm leading-6 text-white/56">{item.description}</div>
               </div>
               <ChevronRight className="shrink-0 text-white/35" size={18} />
@@ -254,6 +263,7 @@ export default function ProfileHub() {
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -282,6 +292,32 @@ export default function ProfileHub() {
 
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadUnreadNotifications = async () => {
+      try {
+        const payload = await fetchUserNotifications();
+
+        if (mounted) {
+          setUnreadNotificationCount(payload.unreadCount);
+        }
+      } catch {
+        if (mounted) {
+          setUnreadNotificationCount(0);
+        }
+      }
+    };
+
+    void loadUnreadNotifications();
+    window.addEventListener('focus', loadUnreadNotifications);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('focus', loadUnreadNotifications);
     };
   }, []);
 
@@ -371,6 +407,7 @@ export default function ProfileHub() {
                   icon: Bell,
                   label: 'Notifications',
                   description: 'Open your app updates and latest upload alerts.',
+                  badgeCount: unreadNotificationCount,
                 },
                 {
                   href: '/profile/security',

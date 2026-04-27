@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
+import { createPresignedR2Download, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
 
-export async function GET(req: NextRequest) {
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function sanitizeFilename(value: string) {
+  const base = value
+    .replace(/[\\/:"*?<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || 'ugmovies247-video';
+
+  return base.toLowerCase().endsWith('.mp4') ? base : `${base}.mp4`;
+}
+
+async function requirePremiumDownloadAccess() {
   const session = await getCurrentAuthSession();
 
   if (!session) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    return { session: null, error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
   }
 
   const entitlement = await getViewerEntitlement(session.uid, {
@@ -15,35 +29,60 @@ export async function GET(req: NextRequest) {
   });
 
   if (!entitlement.hasPremiumAccess) {
-    return new NextResponse('Subscription required', { status: 403 });
+    return {
+      session: null,
+      error: NextResponse.json({ error: 'Subscription required' }, { status: 403 }),
+    };
   }
 
-  const url = req.nextUrl.searchParams.get('url');
-  const filename = req.nextUrl.searchParams.get('filename') || 'movie.mp4';
+  return { session, error: null };
+}
 
-  if (!url) {
-    return new NextResponse('Missing url', { status: 400 });
+export async function POST(request: Request) {
+  const access = await requirePremiumDownloadAccess();
+
+  if (access.error) {
+    return access.error;
   }
 
-  try {
-    const response = await fetch(url);
+  const body = await request.json().catch(() => ({}));
+  const sourceUrl = String(body.sourceUrl || body.video_url || '').trim();
+  const title = String(body.title || 'UG Movies 247').trim();
+  const movieId = String(body.movieId || '').trim();
 
-    if (!response.ok) {
-      return new NextResponse('Failed to fetch source file', { status: 502 });
-    }
-
-    const contentType = response.headers.get('content-type') || 'video/mp4';
-    const arrayBuffer = await response.arrayBuffer();
-
-    return new NextResponse(arrayBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'no-store',
-      },
-    });
-  } catch (error) {
-    return new NextResponse('Download proxy failed', { status: 500 });
+  if (!movieId || !sourceUrl) {
+    return NextResponse.json({ error: 'movieId and sourceUrl are required.' }, { status: 400 });
   }
+
+  const objectKey = getR2ObjectKeyFromPublicUrl(sourceUrl);
+
+  if (!objectKey) {
+    return NextResponse.json(
+      { error: 'This video source is not available for protected offline download yet.' },
+      { status: 400 }
+    );
+  }
+
+  const filename = sanitizeFilename(`${title}-${movieId}`);
+  const ticket = await createPresignedR2Download({
+    key: objectKey,
+    filename,
+  });
+
+  return NextResponse.json({
+    movieId,
+    filename,
+    downloadUrl: ticket.downloadUrl,
+    expiresAt: ticket.expiresAt,
+    expiresIn: ticket.expiresIn,
+  });
+}
+
+export async function GET(req: NextRequest) {
+  return NextResponse.json(
+    {
+      error: 'Use POST /api/download to request a protected native download ticket.',
+    },
+    { status: 405 }
+  );
 }

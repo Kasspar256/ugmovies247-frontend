@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
+import { downloadMovieOffline, supportsNativeOfflineDownloads } from '@/lib/mobile/offlineDownloads';
 import type { FirebaseError } from 'firebase/app';
 import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
@@ -626,7 +627,7 @@ const handleDownload = async () => {
   setIsDownloading(true);
 
   try {
-    const result = await saveMovieDownload({
+    const downloadInput = {
       movieId: movie.movieId || movie.id,
       title:
         activeEpisode
@@ -636,7 +637,11 @@ const handleDownload = async () => {
             : (movie.title || movie.name || 'Untitled movie'),
       video_url: playbackVideoUrl,
       poster: playbackPoster,
-    });
+    };
+
+    const result = supportsNativeOfflineDownloads()
+      ? await downloadMovieOffline(downloadInput)
+      : await saveMovieDownload(downloadInput);
 
     if (result.alreadyExists) {
       setIsSavedToDownloads(true);
@@ -645,7 +650,7 @@ const handleDownload = async () => {
     }
 
     setIsSavedToDownloads(true);
-    setActionMessage('Movie saved to your downloads.');
+    setActionMessage(supportsNativeOfflineDownloads() ? 'Movie downloaded for offline playback.' : 'Movie saved to your downloads.');
   } catch (err) {
     const firebaseError = err as FirebaseError;
     console.error('[movie-page] download save failed', {
