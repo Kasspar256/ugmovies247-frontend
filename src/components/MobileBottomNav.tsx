@@ -3,20 +3,17 @@
 import Link from 'next/link';
 import { Home, Search, User, Mic2, Film } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
+import { fetchUserNotifications } from '@/lib/userNotifications';
 
 const MOBILE_NAV_HEIGHT_PX = 64;
 const MOBILE_NAV_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/downloads', '/notifications'];
 
 function shouldShowMobileNav(pathname: string) {
-  if (!pathname) {
-    return false;
-  }
+  if (!pathname) return false;
 
-  if (pathname === '/') {
-    return false;
-  }
+  if (pathname === '/') return false;
 
   if (
     pathname === '/login' ||
@@ -27,29 +24,17 @@ function shouldShowMobileNav(pathname: string) {
     return false;
   }
 
-  if (pathname.startsWith('/admin')) {
-    return false;
-  }
+  if (pathname.startsWith('/admin')) return false;
 
-  if (isLegalRoute(pathname)) {
-    return false;
-  }
+  if (isLegalRoute(pathname)) return false;
 
   return true;
 }
 
 function getActiveTab(pathname: string) {
-  if (pathname.startsWith('/vjs')) {
-    return 'vjs';
-  }
-
-  if (pathname.startsWith('/genres')) {
-    return 'genres';
-  }
-
-  if (pathname.startsWith('/search')) {
-    return 'search';
-  }
+  if (pathname.startsWith('/vjs')) return 'vjs';
+  if (pathname.startsWith('/genres')) return 'genres';
+  if (pathname.startsWith('/search')) return 'search';
 
   if (
     pathname.startsWith('/profile') ||
@@ -71,11 +56,13 @@ function NavItem({
   label,
   active,
   children,
+  badgeCount = 0,
 }: {
   href: string;
   label: string;
   active: boolean;
   children: ReactNode;
+  badgeCount?: number;
 }) {
   return (
     <Link
@@ -84,7 +71,14 @@ function NavItem({
         active ? 'text-[#D90429]' : 'text-gray-500 hover:text-[#D90429]'
       }`}
     >
-      {children}
+      <span className="relative">
+        {children}
+        {badgeCount > 0 ? (
+          <span className="absolute -right-2 -top-2 inline-flex min-w-4 items-center justify-center rounded-full bg-[#D90429] px-1 text-[9px] font-black leading-4 text-white ring-2 ring-[#0B0C10]">
+            {badgeCount > 9 ? '9+' : badgeCount}
+          </span>
+        ) : null}
+      </span>
       <span className="text-[10px] font-bold">{label}</span>
     </Link>
   );
@@ -95,16 +89,46 @@ export default function MobileBottomNav() {
   const router = useRouter();
   const shouldShow = shouldShowMobileNav(pathname);
   const activeTab = getActiveTab(pathname);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
-    if (!shouldShow) {
-      return;
-    }
+    if (!shouldShow) return;
 
     MOBILE_NAV_PREFETCH_ROUTES.forEach((href) => {
       router.prefetch(href);
     });
   }, [router, shouldShow]);
+
+  useEffect(() => {
+    if (!shouldShow) {
+      setUnreadNotificationCount(0);
+      return;
+    }
+
+    let active = true;
+
+    const loadUnreadNotifications = async () => {
+      try {
+        const payload = await fetchUserNotifications();
+
+        if (active) {
+          setUnreadNotificationCount(payload.unreadCount);
+        }
+      } catch {
+        if (active) {
+          setUnreadNotificationCount(0);
+        }
+      }
+    };
+
+    void loadUnreadNotifications();
+    window.addEventListener('focus', loadUnreadNotifications);
+
+    return () => {
+      active = false;
+      window.removeEventListener('focus', loadUnreadNotifications);
+    };
+  }, [shouldShow, pathname]);
 
   if (!shouldShow) {
     return null;
@@ -139,7 +163,12 @@ export default function MobileBottomNav() {
       <NavItem href="/search" label="Search" active={activeTab === 'search'}>
         <Search className="h-6 w-6" />
       </NavItem>
-      <NavItem href="/profile" label="Profile" active={activeTab === 'profile'}>
+      <NavItem
+        href="/profile"
+        label="Profile"
+        active={activeTab === 'profile'}
+        badgeCount={unreadNotificationCount}
+      >
         <User className="h-6 w-6" />
       </NavItem>
     </nav>
