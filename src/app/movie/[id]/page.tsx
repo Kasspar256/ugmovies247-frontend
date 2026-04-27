@@ -3,18 +3,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
-import {
-  cancelOfflineDownload,
-  createOfflineDownloadKey,
-  findOfflineDownload,
-  formatDownloadProgressLabel,
-  getActiveOfflineDownload,
-  isOfflineDownloadActive,
-  startOfflineDownload,
-  subscribeOfflineDownloads,
-  supportsNativeOfflineDownloads,
-  type ActiveOfflineDownload,
-} from '@/lib/mobile/offlineDownloads';
+import { createOfflineDownloadKey, downloadMovieOffline, findOfflineDownload, supportsNativeOfflineDownloads } from '@/lib/mobile/offlineDownloads';
 import type { FirebaseError } from 'firebase/app';
 import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
@@ -118,7 +107,6 @@ const [isDownloading, setIsDownloading] = useState(false);
 const [isSavingToList, setIsSavingToList] = useState(false);
 const [isLiking, setIsLiking] = useState(false);
 const [isSavedToDownloads, setIsSavedToDownloads] = useState(false);
-const [offlineDownloadJob, setOfflineDownloadJob] = useState<ActiveOfflineDownload | null>(null);
 const [isSavedToWatchlist, setIsSavedToWatchlist] = useState(false);
 const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
@@ -210,7 +198,11 @@ return;
 }
 
 try {
+if (supportsNativeOfflineDownloads() && downloadInput?.downloadKey) {
+setIsSavedToDownloads(Boolean(await findOfflineDownload(downloadInput.downloadKey)));
+} else {
 setIsSavedToDownloads(Boolean(await getUserDownloadByMovieId(movie.movieId || movie.id)));
+}
 } catch (downloadStateError) {
 console.error('[movie-page] failed to load download state', downloadStateError);
 setIsSavedToDownloads(false);
@@ -587,9 +579,6 @@ const downloadInput = downloadBaseInput
       downloadKey: createOfflineDownloadKey(downloadBaseInput),
     }
   : null;
-const activeDownloadLabel = formatDownloadProgressLabel(offlineDownloadJob);
-const isNativeDownloadActive = isOfflineDownloadActive(offlineDownloadJob);
-const hasFailedNativeDownload = offlineDownloadJob?.status === 'failed';
 const playbackSessionKey = activeEpisode
   ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
   : selectedPart
@@ -643,59 +632,6 @@ useLayoutEffect(() => {
     setPlaybackSource,
   ]);
 
-useEffect(() => {
-  if (!supportsNativeOfflineDownloads()) {
-    return;
-  }
-
-  let active = true;
-
-  const refreshOfflineDownloadState = async () => {
-    if (!downloadInput?.downloadKey) {
-      if (active) {
-        setOfflineDownloadJob(null);
-        setIsSavedToDownloads(false);
-      }
-
-      return;
-    }
-
-    const job = getActiveOfflineDownload(downloadInput.downloadKey);
-    const savedDownload = await findOfflineDownload(downloadInput.downloadKey);
-
-    if (!active) {
-      return;
-    }
-
-    setOfflineDownloadJob(job);
-    setIsSavedToDownloads(Boolean(savedDownload));
-  };
-
-  void refreshOfflineDownloadState();
-
-  const unsubscribe = subscribeOfflineDownloads(() => {
-    void refreshOfflineDownloadState();
-  });
-
-  window.addEventListener('focus', refreshOfflineDownloadState);
-
-  return () => {
-    active = false;
-    unsubscribe();
-    window.removeEventListener('focus', refreshOfflineDownloadState);
-  };
-}, [downloadInput?.downloadKey]);
-
-const handleCancelDownload = async () => {
-  if (!downloadInput?.downloadKey) {
-    return;
-  }
-
-  await cancelOfflineDownload(downloadInput.downloadKey);
-  setOfflineDownloadJob(null);
-  setActionMessage('Download cancelled. Partial file will be cleaned up safely.');
-};
-
 const handleDownload = async () => {
   if (!movie) {
     return;
@@ -706,51 +642,27 @@ const handleDownload = async () => {
     return;
   }
 
-  if (!downloadInput) {
-    setActionMessage('No in-app download data was found for this movie yet.');
-    return;
-  }
-
-  if (supportsNativeOfflineDownloads()) {
-    if (isSavedToDownloads) {
-      setActionMessage('Already saved to your downloads.');
-      return;
-    }
-
-    try {
-      const result = await startOfflineDownload(downloadInput);
-
-      if (result.alreadyExists) {
-        setIsSavedToDownloads(true);
-        setActionMessage('Already saved to your downloads.');
-        return;
-      }
-
-      setOfflineDownloadJob(getActiveOfflineDownload(downloadInput.downloadKey));
-      setActionMessage('Download started. You can leave this page and continue using the app.');
-    } catch (err) {
-      const firebaseError = err as FirebaseError;
-      console.error('[movie-page] native offline download failed to start', {
-        movieId: movie.movieId || movie.id,
-        title: movie.title || movie.name || 'Untitled movie',
-        message: firebaseError?.message || String(err),
-        fullError: err,
-      });
-      setActionMessage(firebaseError?.message || 'We could not start this download right now.');
-    }
-
-    return;
-  }
-
   if (isSavedToDownloads) {
     setActionMessage('Already saved to your downloads.');
+    return;
+  }
+
+  if (!playbackVideoUrl) {
+    setActionMessage('No in-app download data was found for this movie yet.');
     return;
   }
 
   setIsDownloading(true);
 
   try {
-    const result = await saveMovieDownload(downloadInput);
+    if (!downloadInput) {
+      setActionMessage('No in-app download data was found for this movie yet.');
+      return;
+    }
+
+    const result = supportsNativeOfflineDownloads()
+      ? await downloadMovieOffline(downloadInput)
+      : await saveMovieDownload(downloadInput);
 
     if (result.alreadyExists) {
       setIsSavedToDownloads(true);
@@ -759,7 +671,7 @@ const handleDownload = async () => {
     }
 
     setIsSavedToDownloads(true);
-    setActionMessage('Movie saved to your downloads.');
+    setActionMessage(supportsNativeOfflineDownloads() ? 'Movie downloaded for offline playback.' : 'Movie saved to your downloads.');
   } catch (err) {
     const firebaseError = err as FirebaseError;
     console.error('[movie-page] download save failed', {
@@ -1040,32 +952,16 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
 
         <button
           onClick={handleDownload}
-          disabled={isNativeDownloadActive || isDownloading || isSavedToDownloads}
+          disabled={isDownloading || isSavedToDownloads}
           className="relative flex w-full max-w-[620px] items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-r from-[#24344A] via-[#1E2A3B] to-[#131B28] px-5 py-4 text-sm font-black tracking-[0.18em] text-white shadow-[0_18px_35px_rgba(0,0,0,0.28)] transition-colors duration-200 hover:from-[#2D4059] hover:to-[#182334] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#2B2F38] disabled:text-white/45"
         >
           <span className="text-center">
-            {isNativeDownloadActive ? activeDownloadLabel : isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : hasFailedNativeDownload ? 'Download failed — Retry' : 'Download'}
+            {isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : 'Download'}
           </span>
           <span className="pointer-events-none absolute right-5">
             {isPlaybackLocked ? <LockedDownloadIcon /> : <DownloadIcon />}
           </span>
         </button>
-
-        {isNativeDownloadActive ? (
-          <button
-            type="button"
-            onClick={handleCancelDownload}
-            className="w-full max-w-[620px] rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-red-100 transition hover:border-red-300/60"
-          >
-            Cancel Download
-          </button>
-        ) : null}
-
-        {offlineDownloadJob?.status === 'downloading' && offlineDownloadJob.totalBytes ? (
-          <div className="w-full max-w-[620px] rounded-2xl border border-white/10 bg-[#101824]/90 px-4 py-3 text-xs font-bold text-white/78">
-            Remaining: {formatDownloadProgressLabel(offlineDownloadJob)}
-          </div>
-        ) : null}
 
         {actionMessage && (
           <div className="w-full max-w-[620px] rounded-2xl border border-[#7AA2D6]/20 bg-[#182334]/88 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-[#D9E7FF] shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
