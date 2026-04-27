@@ -5,7 +5,8 @@ import { PushNotifications } from '@capacitor/push-notifications';
 
 type PushRouteHandler = (path: string) => void;
 
-let initialized = false;
+let listenersInitialized = false;
+let registerInFlight = false;
 let registeredToken = '';
 
 function resolveNotificationPath(data: Record<string, unknown> | undefined) {
@@ -28,9 +29,7 @@ async function savePushToken(token: string) {
     return;
   }
 
-  registeredToken = token;
-
-  await fetch('/api/notifications/register', {
+  const response = await fetch('/api/notifications/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -39,14 +38,20 @@ async function savePushToken(token: string) {
       platform: Capacitor.getPlatform(),
     }),
   });
+
+  if (!response.ok) {
+    throw new Error('Push token could not be saved.');
+  }
+
+  registeredToken = token;
 }
 
-export async function initializeNativePushNotifications(onRoute: PushRouteHandler) {
-  if (initialized || !Capacitor.isNativePlatform()) {
+async function ensurePushListeners(onRoute: PushRouteHandler) {
+  if (listenersInitialized) {
     return;
   }
 
-  initialized = true;
+  listenersInitialized = true;
 
   await PushNotifications.addListener('registration', (token) => {
     void savePushToken(token.value).catch((error) => {
@@ -69,26 +74,40 @@ export async function initializeNativePushNotifications(onRoute: PushRouteHandle
       onRoute(path);
     }
   });
+}
 
-  await PushNotifications.createChannel({
-    id: 'movie_updates',
-    name: 'Movie updates',
-    description: 'New movie, subscription, and account alerts',
-    importance: 4,
-    visibility: 1,
-    sound: 'default',
-    vibration: true,
-  }).catch(() => undefined);
-
-  let permission = await PushNotifications.checkPermissions();
-
-  if (permission.receive === 'prompt') {
-    permission = await PushNotifications.requestPermissions();
-  }
-
-  if (permission.receive !== 'granted') {
+export async function initializeNativePushNotifications(onRoute: PushRouteHandler) {
+  if (!Capacitor.isNativePlatform() || registerInFlight) {
     return;
   }
 
-  await PushNotifications.register();
+  registerInFlight = true;
+
+  try {
+    await ensurePushListeners(onRoute);
+
+    await PushNotifications.createChannel({
+      id: 'movie_updates',
+      name: 'Movie updates',
+      description: 'New movie, subscription, and account alerts',
+      importance: 4,
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+    }).catch(() => undefined);
+
+    let permission = await PushNotifications.checkPermissions();
+
+    if (permission.receive === 'prompt') {
+      permission = await PushNotifications.requestPermissions();
+    }
+
+    if (permission.receive !== 'granted') {
+      return;
+    }
+
+    await PushNotifications.register();
+  } finally {
+    registerInFlight = false;
+  }
 }
