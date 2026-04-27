@@ -1,15 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Mail, Shield } from 'lucide-react';
+import { Loader2, Mail, Shield, Trash2 } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import { fetchAccountProfile, formatAccountDate, type AccountProfile } from '@/lib/accountProfile';
+import {
+  deleteAccount,
+  fetchAccountProfile,
+  formatAccountDate,
+  type AccountProfile,
+} from '@/lib/accountProfile';
 import { sendResetPasswordEmail } from '@/lib/auth/client';
 
 export default function SecurityPage() {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -59,6 +66,27 @@ export default function SecurityPage() {
       setError(resetError instanceof Error ? resetError.message : 'Password reset could not be started.');
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm.trim() !== 'DELETE') {
+      setError('Type DELETE to confirm account deletion.');
+      setMessage('');
+      return;
+    }
+
+    setDeleting(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await deleteAccount(deleteConfirm.trim());
+      window.location.href = '/signup?accountDeleted=1';
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Account deletion failed.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -122,6 +150,43 @@ export default function SecurityPage() {
                   {resetting ? <Loader2 size={18} className="animate-spin text-white/60" /> : <Mail size={18} className="text-[#D90429]" />}
                 </button>
               </div>
+            </section>
+
+            <section className="rounded-[28px] border border-red-500/20 bg-red-500/10 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
+              <div className="text-[11px] font-black uppercase tracking-[0.24em] text-red-200/70">
+                Danger Zone
+              </div>
+              <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">
+                Delete account
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-red-50/72">
+                This permanently deletes your profile, watchlist, likes, downloads, subscription
+                records, and login sessions. This cannot be undone.
+              </p>
+              <label
+                htmlFor="delete-account-confirm"
+                className="mt-4 block text-xs font-black uppercase tracking-[0.22em] text-red-100/70"
+              >
+                Type DELETE to confirm
+              </label>
+              <input
+                id="delete-account-confirm"
+                type="text"
+                value={deleteConfirm}
+                onChange={(event) => setDeleteConfirm(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-red-300/20 bg-black/20 px-4 py-4 text-white outline-none transition-colors placeholder:text-white/25 focus:border-red-300/50"
+                placeholder="DELETE"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting || deleteConfirm.trim() !== 'DELETE'}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-950 disabled:text-red-100/50"
+              >
+                {deleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                {deleting ? 'Deleting...' : 'Delete My Account'}
+              </button>
             </section>
             {(message || error) && (
               <div

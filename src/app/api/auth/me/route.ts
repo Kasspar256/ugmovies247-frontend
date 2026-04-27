@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import {
+  AUTH_DEVICE_COOKIE,
+  AUTH_DEVICE_SESSION_COOKIE,
+  AUTH_ROLE_COOKIE,
+  AUTH_SESSION_COOKIE,
+  getAuthCookieConfig,
+  getCurrentAuthSession,
+} from '@/lib/auth/server';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
 import {
   getDefaultAvatarPresetId,
@@ -104,5 +111,91 @@ export async function PATCH(request: Request) {
   } catch (error) {
     console.error('[auth] profile update failed', error);
     return NextResponse.json({ error: 'Failed to update profile.' }, { status: 500 });
+  }
+}
+
+async function deleteCollectionDocumentsForUser(collectionName: string, userId: string) {
+  const { adminDb } = await import('@/lib/firebaseAdmin');
+
+  while (true) {
+    const snapshot = await adminDb
+      .collection(collectionName)
+      .where('userId', '==', userId)
+      .limit(450)
+      .get();
+
+    if (snapshot.empty) {
+      return;
+    }
+
+    const batch = adminDb.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
+}
+
+export async function DELETE(request: Request) {
+  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  if (session.role === 'admin') {
+    return NextResponse.json({ error: 'Admin accounts cannot be deleted here.' }, { status: 403 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+
+  if (String(body.confirm || '').trim() !== 'DELETE') {
+    return NextResponse.json({ error: 'Type DELETE to confirm account deletion.' }, { status: 400 });
+  }
+
+  try {
+    const { adminAuth, adminDb } = await import('@/lib/firebaseAdmin');
+    const userId = session.uid;
+
+    await Promise.all([
+      deleteCollectionDocumentsForUser('downloads', userId),
+      deleteCollectionDocumentsForUser('watchlist', userId),
+      deleteCollectionDocumentsForUser('likes', userId),
+      deleteCollectionDocumentsForUser('subscription_payments', userId),
+      deleteCollectionDocumentsForUser('subscription_override_audit_logs', userId),
+      deleteCollectionDocumentsForUser('auth_sessions', userId),
+    ]);
+
+    await Promise.all([
+      adminDb.collection('users').doc(userId).delete(),
+      adminDb.collection('user_subscriptions').doc(userId).delete(),
+      adminDb.collection('subscription_recurring_agreements').doc(userId).delete(),
+      adminDb.collection('subscription_overrides').doc(userId).delete(),
+      adminDb.collection('user_auth_session_state').doc(userId).delete(),
+    ]);
+
+    await adminAuth.deleteUser(userId).catch((error) => {
+      if (error?.code !== 'auth/user-not-found') {
+        throw error;
+      }
+    });
+
+    const response = NextResponse.json({ success: true });
+    for (const cookieName of [
+      AUTH_SESSION_COOKIE,
+      AUTH_ROLE_COOKIE,
+      AUTH_DEVICE_COOKIE,
+      AUTH_DEVICE_SESSION_COOKIE,
+      'ugm_session',
+      'ugm_role',
+    ]) {
+      response.cookies.set(cookieName, '', {
+        ...getAuthCookieConfig(),
+        maxAge: 0,
+      });
+    }
+
+    return response;
+  } catch (error) {
+    console.error('[auth] account deletion failed', error);
+    return NextResponse.json({ error: 'Account deletion failed. Please contact support.' }, { status: 500 });
   }
 }

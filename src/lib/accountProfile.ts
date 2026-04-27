@@ -84,6 +84,17 @@ export async function updateAccountProfile(input: {
   return parseResponse<{ success: boolean }>(response);
 }
 
+export async function deleteAccount(confirm: string) {
+  const response = await fetch('/api/auth/me', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ confirm }),
+  });
+
+  return parseResponse<{ success: boolean }>(response);
+}
+
 export function getAccountInitials(name?: string, email?: string) {
   const source = (name || email || 'UG').trim();
 
