@@ -224,7 +224,7 @@ setIsLiked(false);
 };
 
 loadUserMovieState();
-}, [movie?.id, movie?.movieId]);
+}, [movie?.id, movie?.movieId, selectedSeasonNumber, selectedEpisodeNumber, selectedPartIndex]);
 
 useEffect(() => {
 const fetchRelatedMovies = async () => {
@@ -529,6 +529,8 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 };
 const syncPartSelection = (partIndex: number) => {
   setSelectedPartIndex(partIndex);
+  setIsSavedToDownloads(false);
+  setActionMessage('');
 
   const nextParams = new URLSearchParams(searchQueryString);
   nextParams.set('part', String(partIndex + 1));
@@ -540,6 +542,8 @@ const syncPartSelection = (partIndex: number) => {
 const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
   setSelectedSeasonNumber(seasonNumber);
   setSelectedEpisodeNumber(episodeNumber);
+  setIsSavedToDownloads(false);
+  setActionMessage('');
 
   const nextParams = new URLSearchParams(searchQueryString);
   nextParams.set('season', String(seasonNumber));
