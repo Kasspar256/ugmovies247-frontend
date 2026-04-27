@@ -5,22 +5,39 @@ import { useEffect, useState } from 'react';
 import { Download, Film, Play, Trash2 } from 'lucide-react';
 import { fetchUserDownloads, removeMovieDownload } from '@/lib/downloads';
 import {
+  cancelOfflineDownload,
+  formatDownloadBytes,
+  getActiveOfflineDownloads,
+  getDownloadPercent,
+  getDownloadRemainingBytes,
   listOfflineDownloads,
   removeOfflineDownload,
+  retryOfflineDownload,
+  subscribeOfflineDownloads,
   supportsNativeOfflineDownloads,
+  type ActiveOfflineDownload,
   type OfflineDownloadRecord,
 } from '@/lib/mobile/offlineDownloads';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import type { DownloadRecord, DownloadStatus } from '@/types/downloads';
 
-type DownloadListItem = DownloadRecord | OfflineDownloadRecord;
+type DownloadListItem = DownloadRecord | OfflineDownloadRecord | ActiveOfflineDownload;
 
 function isOfflineRecord(record: DownloadListItem): record is OfflineDownloadRecord {
   return 'isOfflineFile' in record && record.isOfflineFile === true;
 }
 
+function isActiveDownload(record: DownloadListItem): record is ActiveOfflineDownload {
+  return 'downloadedBytes' in record && 'startedAtIso' in record;
+}
+
+function getDownloadIdentity(record: DownloadListItem) {
+  return 'downloadKey' in record && record.downloadKey ? record.downloadKey : record.movieId;
+}
+
 export default function DownloadsPage() {
   const [downloadedMovies, setDownloadedMovies] = useState<DownloadListItem[]>([]);
+  const [activeDownloadJobs, setActiveDownloadJobs] = useState<ActiveOfflineDownload[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<DownloadStatus>('completed');
   const [activeOfflineMovie, setActiveOfflineMovie] = useState<OfflineDownloadRecord | null>(null);
@@ -46,18 +63,55 @@ export default function DownloadsPage() {
     void loadDownloads();
   }, []);
 
+  useEffect(() => {
+    if (!supportsNativeOfflineDownloads()) {
+      return;
+    }
+
+    const syncActiveDownloads = () => {
+      const jobs = getActiveOfflineDownloads();
+      setActiveDownloadJobs(jobs);
+
+      if (jobs.length === 0) {
+        void loadDownloads();
+      }
+    };
+
+    syncActiveDownloads();
+
+    return subscribeOfflineDownloads(syncActiveDownloads);
+  }, []);
+
   const handleRemoveDownload = async (movie: DownloadListItem) => {
     try {
-      if (isOfflineRecord(movie)) {
-        await removeOfflineDownload(movie.movieId);
+      const identity = getDownloadIdentity(movie);
+
+      if (isActiveDownload(movie)) {
+        await cancelOfflineDownload(movie.downloadKey);
+        setActiveDownloadJobs(getActiveOfflineDownloads());
+      } else if (isOfflineRecord(movie)) {
+        await removeOfflineDownload(identity);
       } else {
         await removeMovieDownload(movie.movieId);
       }
 
-      setDownloadedMovies((current) => current.filter((item) => item.movieId !== movie.movieId));
-      setActionMessage('Download removed.');
+      setDownloadedMovies((current) => current.filter((item) => getDownloadIdentity(item) !== identity));
+      setActionMessage(isActiveDownload(movie) ? 'Download cancelled.' : 'Download removed.');
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Download could not be removed.');
+    }
+  };
+
+  const handleRetryDownload = async (movie: ActiveOfflineDownload) => {
+    try {
+      setActionMessage('Retrying download...');
+      await retryOfflineDownload(movie.downloadKey);
+      setActiveDownloadJobs(getActiveOfflineDownloads());
+      await loadDownloads();
+      setActionMessage('Download completed.');
+    } catch (error) {
+      setActiveDownloadJobs(getActiveOfflineDownloads());
+      setActionMessage(error instanceof Error ? error.message : 'Download could not be retried.');
     }
   };
 
@@ -69,14 +123,19 @@ export default function DownloadsPage() {
     );
   }
 
+  const nativeOffline = supportsNativeOfflineDownloads();
+  const visibleActiveJobs = nativeOffline ? activeDownloadJobs : [];
+
   const groupedDownloads: Record<DownloadStatus, DownloadListItem[]> = {
     completed: downloadedMovies.filter((movie) => (movie.status || 'completed') === 'completed'),
-    downloading: downloadedMovies.filter((movie) => movie.status === 'downloading'),
-    failed: downloadedMovies.filter((movie) => movie.status === 'failed'),
+    downloading: visibleActiveJobs.filter((movie) => movie.status === 'downloading'),
+    failed: [
+      ...downloadedMovies.filter((movie) => movie.status === 'failed'),
+      ...visibleActiveJobs.filter((movie) => movie.status === 'failed'),
+    ],
   };
 
   const activeDownloads = groupedDownloads[activeTab];
-  const nativeOffline = supportsNativeOfflineDownloads();
 
   const tabMeta: Record<
     DownloadStatus,
@@ -116,6 +175,10 @@ export default function DownloadsPage() {
   };
 
   const renderDownloadCard = (movie: DownloadListItem, statusLabel: string, statusTone: string) => {
+    const activeJob = isActiveDownload(movie) ? movie : null;
+    const percent = activeJob ? getDownloadPercent(activeJob) : null;
+    const remainingBytes = activeJob ? getDownloadRemainingBytes(activeJob) : null;
+
     const cardContent = (
       <>
         <div className="w-28 md:w-40 rounded relative overflow-hidden aspect-[16/9] flex-shrink-0 bg-black">
@@ -143,6 +206,26 @@ export default function DownloadsPage() {
           <p className={`text-[10px] font-black uppercase px-2 py-0.5 rounded w-max border ${statusTone}`}>
             {statusLabel}
           </p>
+
+          {activeJob ? (
+            <div className="mt-3 space-y-2">
+              <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-[#D90429] transition-all"
+                  style={{ width: `${percent ?? 4}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/60 md:grid-cols-4">
+                <span>Downloaded: <b className="text-white">{formatDownloadBytes(activeJob.downloadedBytes)}</b></span>
+                <span>Remaining: <b className="text-white">{remainingBytes === null ? '--' : formatDownloadBytes(remainingBytes)}</b></span>
+                <span>Progress: <b className="text-white">{percent === null ? '--' : `${percent}%`}</b></span>
+                <span>Total: <b className="text-white">{activeJob.totalBytes === null ? '--' : formatDownloadBytes(activeJob.totalBytes)}</b></span>
+              </div>
+              {activeJob.error ? (
+                <p className="text-[10px] font-bold text-red-200">{activeJob.error}</p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </>
     );
@@ -167,6 +250,26 @@ export default function DownloadsPage() {
         )}
 
         <div className="flex items-center gap-2">
+          {activeJob?.status === 'downloading' ? (
+            <button
+              type="button"
+              onClick={() => void handleRemoveDownload(activeJob)}
+              className="inline-flex items-center rounded-xl border border-red-400/35 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-100 transition hover:bg-red-500/15"
+            >
+              Cancel
+            </button>
+          ) : null}
+
+          {activeJob?.status === 'failed' ? (
+            <button
+              type="button"
+              onClick={() => void handleRetryDownload(activeJob)}
+              className="inline-flex items-center rounded-xl border border-[#D90429]/40 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#D90429] transition hover:bg-[#D90429] hover:text-white"
+            >
+              Retry
+            </button>
+          ) : null}
+
           {isOfflineRecord(movie) ? (
             <button
               type="button"
@@ -177,14 +280,17 @@ export default function DownloadsPage() {
               Play
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => void handleRemoveDownload(movie)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white/55 transition hover:border-red-500/35 hover:text-red-200"
-            aria-label={`Remove ${movie.title}`}
-          >
-            <Trash2 size={16} />
-          </button>
+
+          {!activeJob ? (
+            <button
+              type="button"
+              onClick={() => void handleRemoveDownload(movie)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white/55 transition hover:border-red-500/35 hover:text-red-200"
+              aria-label={`Remove ${movie.title}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          ) : null}
         </div>
       </div>
     );
