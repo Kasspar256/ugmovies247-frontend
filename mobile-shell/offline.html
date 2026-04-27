@@ -3,30 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>UG Movies 247 Offline</title>
+  <title>Offline</title>
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
       padding: 28px;
       font-family: Arial, sans-serif;
       color: #fff;
-      background:
-        radial-gradient(circle at 20% 10%, rgba(217,4,41,.32), transparent 32%),
-        radial-gradient(circle at 80% 0%, rgba(255,255,255,.09), transparent 28%),
-        linear-gradient(180deg, #090b10 0%, #050608 100%);
+      background: radial-gradient(circle at 20% 10%, rgba(217,4,41,.30), transparent 32%), linear-gradient(180deg, #090b10, #050608);
+    }
+    .wrap {
+      min-height: calc(100vh - 56px);
+      display: grid;
+      place-items: center;
     }
     .card {
       width: 100%;
-      max-width: 420px;
+      max-width: 430px;
       text-align: center;
       border: 1px solid rgba(255,255,255,.10);
       border-radius: 30px;
-      padding: 34px 22px;
-      background: rgba(13, 17, 24, .82);
+      padding: 32px 22px;
+      background: rgba(13,17,24,.88);
       box-shadow: 0 24px 80px rgba(0,0,0,.55);
     }
     .logo {
@@ -40,7 +40,6 @@
       font-weight: 900;
       font-size: 14px;
       line-height: 1.05;
-      letter-spacing: .04em;
       box-shadow: 0 16px 36px rgba(217,4,41,.35);
     }
     h1 { margin: 0; font-size: 34px; line-height: 1.05; letter-spacing: -.04em; }
@@ -56,22 +55,200 @@
       font-weight: 900;
       letter-spacing: .08em;
       text-transform: uppercase;
+      transition: transform .12s ease, opacity .12s ease;
     }
+    button:active, button.loading { transform: scale(.98); opacity: .72; }
     .primary { background: #d90429; }
     .secondary { background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.12); }
     .note { margin-top: 18px; font-size: 13px; color: rgba(255,255,255,.46); }
+    .downloads { display: none; width: 100%; max-width: 520px; }
+    .downloads.open { display: block; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .top h2 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+    .back {
+      width: auto;
+      padding: 11px 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+      border-radius: 14px;
+    }
+    .status, .item {
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 22px;
+      padding: 16px;
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.72);
+    }
+    .list { display: grid; gap: 12px; }
+    .item { color: #fff; }
+    .title { margin: 0 0 6px; font-size: 16px; font-weight: 900; }
+    .meta { margin: 0 0 12px; color: rgba(255,255,255,.55); font-size: 13px; }
+    .player {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgba(0,0,0,.94);
+      padding: 18px;
+      align-items: center;
+      justify-content: center;
+    }
+    .player.open { display: flex; }
+    .box { width: 100%; max-width: 760px; }
+    video { width: 100%; background: #000; border-radius: 18px; }
   </style>
 </head>
 <body>
-  <main class="card">
-    <div class="logo">UG<br>MOVIES<br>24_7</div>
-    <h1>You’re offline</h1>
-    <p>Connect to the internet to browse movies, or open your saved downloads.</p>
-    <div class="actions">
-      <button class="primary" onclick="location.href='https://ugmovies247.com/downloads'">Open Downloads</button>
-      <button class="secondary" onclick="location.href='https://ugmovies247.com/browse'">Try Again</button>
+  <div class="wrap">
+    <main id="offlineCard" class="card">
+      <div class="logo">UG<br>MOVIES<br>24_7</div>
+      <h1>You’re offline</h1>
+      <p>Connect to the internet to browse movies, or open your saved downloads.</p>
+      <div class="actions">
+        <button id="openDownloadsButton" class="primary" onclick="openDownloads()">Open Downloads</button>
+        <button id="tryAgainButton" class="secondary" onclick="tryAgain()">Try Again</button>
+      </div>
+      <p class="note">Already downloaded movies can still be watched offline.</p>
+    </main>
+
+    <section id="downloadsPanel" class="downloads">
+      <div class="top">
+        <h2>Saved Downloads</h2>
+        <button class="back" onclick="showOfflineCard()">Back</button>
+      </div>
+      <div id="downloadsStatus" class="status">Loading saved downloads...</div>
+      <div id="downloadsList" class="list"></div>
+    </section>
+  </div>
+
+  <div id="player" class="player">
+    <div class="box">
+      <button class="back" onclick="closePlayer()">Close</button>
+      <video id="video" controls playsinline></video>
     </div>
-    <p class="note">Already downloaded movies can still be watched offline.</p>
-  </main>
+  </div>
+
+  <script>
+    const offlineCard = document.getElementById('offlineCard');
+    const downloadsPanel = document.getElementById('downloadsPanel');
+    const statusEl = document.getElementById('downloadsStatus');
+    const listEl = document.getElementById('downloadsList');
+    const playerEl = document.getElementById('player');
+    const videoEl = document.getElementById('video');
+
+    function bridge() {
+      return window.UGOfflineDownloads;
+    }
+
+    function press(button, text) {
+      button.classList.add('loading');
+      button.textContent = text;
+    }
+
+    function reset(button, text) {
+      setTimeout(function () {
+        button.classList.remove('loading');
+        button.textContent = text;
+      }, 800);
+    }
+
+    function openDownloads() {
+      const button = document.getElementById('openDownloadsButton');
+      press(button, 'Opening downloads...');
+
+      setTimeout(function () {
+        offlineCard.style.display = 'none';
+        downloadsPanel.classList.add('open');
+        loadDownloads();
+        reset(button, 'Open Downloads');
+      }, 150);
+    }
+
+    function showOfflineCard() {
+      downloadsPanel.classList.remove('open');
+      offlineCard.style.display = 'block';
+    }
+
+    function tryAgain() {
+      const button = document.getElementById('tryAgainButton');
+      press(button, 'Checking connection...');
+
+      if (bridge() && bridge().hasConnection && bridge().hasConnection()) {
+        window.location.href = 'https://ugmovies247.com/browse';
+        return;
+      }
+
+      button.textContent = 'Still offline';
+      reset(button, 'Try Again');
+    }
+
+    function loadDownloads() {
+      try {
+        const raw = bridge() && bridge().getManifest ? bridge().getManifest() : '{"records":[]}';
+        const manifest = JSON.parse(raw || '{"records":[]}');
+        const records = Array.isArray(manifest.records) ? manifest.records : [];
+
+        if (!records.length) {
+          statusEl.textContent = 'No saved downloads found on this device yet.';
+          statusEl.style.display = 'block';
+          listEl.innerHTML = '';
+          return;
+        }
+
+        statusEl.style.display = 'none';
+        window.__offlineRecords = records;
+
+        listEl.innerHTML = records.map(function (record, index) {
+          return `
+            <article class="item">
+              <p class="title">${escapeHtml(record.title || 'Saved movie')}</p>
+              <p class="meta">${escapeHtml(formatDate(record.downloadedAtIso))}</p>
+              <button class="primary" onclick="openMovie(${index})">Play Offline</button>
+            </article>
+          `;
+        }).join('');
+      } catch (error) {
+        statusEl.textContent = 'Could not open saved downloads. Please reopen the app and try again.';
+        statusEl.style.display = 'block';
+      }
+    }
+
+    function openMovie(index) {
+      const record = (window.__offlineRecords || [])[index];
+      if (!record || !record.storagePath || !bridge() || !bridge().getFileUrl) return;
+
+      const src = bridge().getFileUrl(record.storagePath);
+
+      if (!src) {
+        statusEl.textContent = 'This saved movie could not be opened.';
+        statusEl.style.display = 'block';
+        return;
+      }
+
+      videoEl.src = src;
+      playerEl.classList.add('open');
+      videoEl.play().catch(function () {});
+    }
+
+    function closePlayer() {
+      videoEl.pause();
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      playerEl.classList.remove('open');
+    }
+
+    function formatDate(value) {
+      if (!value) return 'Saved offline';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return 'Saved offline';
+      return 'Saved ' + date.toLocaleDateString();
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, function (char) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+      });
+    }
+  </script>
 </body>
 </html>
