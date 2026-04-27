@@ -31,11 +31,37 @@ function normalizeNotification(id: string, data: Partial<NotificationDocument>) 
   };
 }
 
-export async function GET() {
+
+async function readUserNotification(notificationId: string, userId: string) {
+  const { adminDb } = await import('@/lib/firebaseAdmin');
+  const ref = adminDb.collection('user_notifications').doc(notificationId);
+  const snapshot = await ref.get();
+
+  if (!snapshot.exists || snapshot.data()?.userId !== userId) {
+    return null;
+  }
+
+  return normalizeNotification(snapshot.id, snapshot.data());
+}
+
+export async function GET(request: Request) {
   const session = await getCurrentAuthSession();
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const requestUrl = new URL(request.url);
+  const notificationId = requestUrl.searchParams.get('notificationId')?.trim() || '';
+
+  if (notificationId) {
+    const notification = await readUserNotification(notificationId, session.uid);
+
+    if (!notification) {
+      return NextResponse.json({ error: 'Notification not found.' }, { status: 404 });
+    }
+
+    return NextResponse.json({ notification });
   }
 
   const { adminDb } = await import('@/lib/firebaseAdmin');

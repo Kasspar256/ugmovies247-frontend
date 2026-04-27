@@ -68,7 +68,8 @@ async function ensurePushListeners(onRoute: PushRouteHandler) {
 
   const data = notification.data as Record<string, unknown> | undefined;
   const movieId = String(data?.movieId || data?.movie_id || '').trim();
-  const path = resolveNotificationPath(data) || '/notifications';
+  const notificationId = String(data?.notificationId || '').trim();
+  const path = notificationId ? `/notifications/${encodeURIComponent(notificationId)}` : resolveNotificationPath(data) || '/notifications';
 
   void fetch('/api/notifications', {
     method: 'POST',

@@ -106,3 +106,13 @@ export function formatNotificationTime(value?: string) {
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? '' : 's'} ago`;
 }
+
+export async function fetchUserNotification(notificationId: string) {
+  const params = new URLSearchParams({ notificationId });
+  const response = await fetch(`/api/notifications?${params.toString()}`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+
+  return parseJson<{ notification: UserNotification }>(response);
+}

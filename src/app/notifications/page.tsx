@@ -176,7 +176,7 @@ export default function NotificationsPage() {
                 appNotifications.map((notification) => (
                   <Link
                     key={notification.id}
-                    href={notification.path || '/notifications'}
+                    href={`/notifications/${notification.id}`}
                     onClick={() => void handleNotificationClick(notification)}
                     className={`block rounded-[24px] border p-4 transition-colors ${
                       notification.read
@@ -205,7 +205,7 @@ export default function NotificationsPage() {
                             </span>
                           ) : null}
                         </div>
-                        <p className="mt-2 text-sm leading-6 text-white/66">{notification.body}</p>
+                        <p className="mt-2 text-sm leading-6 text-white/66">{notification.body.length > 150 ? `${notification.body.slice(0, 150)}...` : notification.body}</p>
                         <div className="mt-3 text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
                           {formatNotificationTime(notification.createdAt)}
                         </div>
