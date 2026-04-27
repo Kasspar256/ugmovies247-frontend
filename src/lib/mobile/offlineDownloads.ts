@@ -9,6 +9,7 @@ const OFFLINE_DIR = 'offline-videos';
 const MANIFEST_PATH = `${OFFLINE_DIR}/manifest.json`;
 
 export type OfflineDownloadRecord = DownloadRecord & {
+  downloadKey?: string;
   storagePath: string;
   fileUri: string;
   playbackUrl: string;
@@ -84,6 +85,14 @@ export function withOfflineDownloadKey(input: DownloadMovieInput): DownloadMovie
     ...input,
     downloadKey: input.downloadKey || createOfflineDownloadKey(input),
   };
+}
+
+function getRecordDownloadKey(record: OfflineDownloadRecord) {
+  return record.downloadKey || `movie:${safeFilePart(record.movieId)}`;
+}
+
+function isSameOfflineDownload(record: OfflineDownloadRecord, downloadKey: string) {
+  return getRecordDownloadKey(record) === downloadKey;
 }
 
 async function ensureOfflineDirectory() {
@@ -174,6 +183,7 @@ export async function listOfflineDownloads() {
 
       verified.push({
         ...record,
+        downloadKey: getRecordDownloadKey(record),
         fileUri: uri.uri,
         playbackUrl: Capacitor.convertFileSrc(uri.uri),
         isOfflineFile: true,
@@ -190,6 +200,12 @@ export async function listOfflineDownloads() {
   return verified;
 }
 
+export async function findOfflineDownload(downloadKey: string) {
+  const records = await listOfflineDownloads();
+
+  return records.find((record) => isSameOfflineDownload(record, downloadKey)) || null;
+}
+
 export async function downloadMovieOffline(movie: DownloadMovieInput) {
   if (!isNative()) {
     throw new Error('Offline video downloads are only available in the Android app.');
@@ -197,14 +213,15 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
 
   await ensureOfflineDirectory();
 
-  const existing = (await listOfflineDownloads()).find((record) => record.movieId === movie.movieId);
+  const downloadInput = withOfflineDownloadKey(movie);
+  const existing = await findOfflineDownload(downloadInput.downloadKey);
 
   if (existing) {
     return { alreadyExists: true, record: existing };
   }
 
-  const ticket = await requestDownloadTicket(movie);
-  const storagePath = `${OFFLINE_DIR}/${safeFilePart(movie.movieId)}-${Date.now()}.mp4`;
+  const ticket = await requestDownloadTicket(downloadInput);
+  const storagePath = `${OFFLINE_DIR}/${safeFilePart(downloadInput.downloadKey)}-${Date.now()}.mp4`;
   const fileInfo = await Filesystem.getUri({
     directory: Directory.Data,
     path: storagePath,
@@ -218,11 +235,9 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
 
   const downloadedAtIso = new Date().toISOString();
   const record: OfflineDownloadRecord = {
-    id: `offline-${movie.movieId}`,
+    ...downloadInput,
+    id: `offline-${downloadInput.downloadKey}`,
     userId: 'local-device',
-    movieId: movie.movieId,
-    title: movie.title,
-    poster: movie.poster,
     video_url: '',
     status: 'completed',
     storagePath,
@@ -238,15 +253,20 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
   const manifest = await readManifest();
   await writeManifest({
     version: 1,
-    records: [record, ...manifest.records.filter((item) => item.movieId !== movie.movieId)],
+    records: [
+      record,
+      ...manifest.records.filter((item) => !isSameOfflineDownload(item, downloadInput.downloadKey)),
+    ],
   });
 
   return { alreadyExists: false, record };
 }
 
-export async function removeOfflineDownload(movieId: string) {
+export async function removeOfflineDownload(identifier: string) {
   const manifest = await readManifest();
-  const record = manifest.records.find((item) => item.movieId === movieId);
+  const record = manifest.records.find(
+    (item) => item.movieId === identifier || getRecordDownloadKey(item) === identifier
+  );
 
   if (record) {
     await Filesystem.deleteFile({
@@ -257,7 +277,9 @@ export async function removeOfflineDownload(movieId: string) {
 
   await writeManifest({
     version: 1,
-    records: manifest.records.filter((item) => item.movieId !== movieId),
+    records: manifest.records.filter(
+      (item) => item.movieId !== identifier && getRecordDownloadKey(item) !== identifier
+    ),
   });
 
   return { removed: Boolean(record) };
