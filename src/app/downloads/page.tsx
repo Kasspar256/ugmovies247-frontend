@@ -2,28 +2,18 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Download, Film, Play, RefreshCw, Trash2, X } from 'lucide-react';
+import { Download, Film, Play, Trash2 } from 'lucide-react';
 import { fetchUserDownloads, removeMovieDownload } from '@/lib/downloads';
 import {
-  cancelOfflineDownload,
-  formatDownloadBytes,
-  formatDownloadProgressLabel,
-  getActiveOfflineDownloads,
-  getDownloadPercent,
-  getDownloadRemainingBytes,
   listOfflineDownloads,
   removeOfflineDownload,
-  retryOfflineDownload,
-  subscribeOfflineDownloads,
   supportsNativeOfflineDownloads,
-  type ActiveOfflineDownload,
   type OfflineDownloadRecord,
 } from '@/lib/mobile/offlineDownloads';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import type { DownloadRecord, DownloadStatus } from '@/types/downloads';
 
 type DownloadListItem = DownloadRecord | OfflineDownloadRecord;
-type DownloadsTab = Extract<DownloadStatus, 'completed' | 'downloading' | 'failed'>;
 
 function isOfflineRecord(record: DownloadListItem): record is OfflineDownloadRecord {
   return 'isOfflineFile' in record && record.isOfflineFile === true;
@@ -31,24 +21,15 @@ function isOfflineRecord(record: DownloadListItem): record is OfflineDownloadRec
 
 export default function DownloadsPage() {
   const [downloadedMovies, setDownloadedMovies] = useState<DownloadListItem[]>([]);
-  const [activeOfflineDownloads, setActiveOfflineDownloads] = useState<ActiveOfflineDownload[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<DownloadsTab>('downloading');
+  const [activeTab, setActiveTab] = useState<DownloadStatus>('completed');
   const [activeOfflineMovie, setActiveOfflineMovie] = useState<OfflineDownloadRecord | null>(null);
   const [actionMessage, setActionMessage] = useState('');
-
-  const nativeOffline = supportsNativeOfflineDownloads();
-
-  const refreshActiveDownloads = () => {
-    setActiveOfflineDownloads(getActiveOfflineDownloads());
-  };
 
   const loadDownloads = async () => {
     try {
       setActionMessage('');
-      refreshActiveDownloads();
-
-      const downloads = nativeOffline
+      const downloads = supportsNativeOfflineDownloads()
         ? await listOfflineDownloads()
         : await fetchUserDownloads();
 
@@ -63,51 +44,21 @@ export default function DownloadsPage() {
 
   useEffect(() => {
     void loadDownloads();
-
-    if (!nativeOffline) {
-      return;
-    }
-
-    return subscribeOfflineDownloads(() => {
-      refreshActiveDownloads();
-      void listOfflineDownloads().then(setDownloadedMovies).catch(() => undefined);
-    });
-  }, [nativeOffline]);
+  }, []);
 
   const handleRemoveDownload = async (movie: DownloadListItem) => {
     try {
       if (isOfflineRecord(movie)) {
-        await removeOfflineDownload(movie.downloadKey || movie.movieId);
+        await removeOfflineDownload(movie.movieId);
       } else {
         await removeMovieDownload(movie.movieId);
       }
 
-      setDownloadedMovies((current) =>
-        current.filter((item) => {
-          if (isOfflineRecord(item) && isOfflineRecord(movie)) {
-            return item.downloadKey !== movie.downloadKey;
-          }
-
-          return item.movieId !== movie.movieId;
-        })
-      );
-
+      setDownloadedMovies((current) => current.filter((item) => item.movieId !== movie.movieId));
       setActionMessage('Download removed.');
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Download could not be removed.');
     }
-  };
-
-  const handleCancelActiveDownload = async (downloadKey: string) => {
-    await cancelOfflineDownload(downloadKey);
-    refreshActiveDownloads();
-    setActionMessage('Download cancelled. Partial file will be cleaned up safely.');
-  };
-
-  const handleRetryActiveDownload = async (downloadKey: string) => {
-    await retryOfflineDownload(downloadKey);
-    refreshActiveDownloads();
-    setActionMessage('Retrying download.');
   };
 
   if (loading) {
@@ -118,48 +69,53 @@ export default function DownloadsPage() {
     );
   }
 
-  const activeDownloading = activeOfflineDownloads.filter(
-    (download) => download.status === 'queued' || download.status === 'downloading'
-  );
-  const failedDownloads = activeOfflineDownloads.filter((download) => download.status === 'failed');
-  const completedDownloads = downloadedMovies.filter((movie) => (movie.status || 'completed') === 'completed');
-
-  const tabCounts: Record<DownloadsTab, number> = {
-    downloading: activeDownloading.length,
-    completed: completedDownloads.length,
-    failed: failedDownloads.length,
+  const groupedDownloads: Record<DownloadStatus, DownloadListItem[]> = {
+    completed: downloadedMovies.filter((movie) => (movie.status || 'completed') === 'completed'),
+    downloading: downloadedMovies.filter((movie) => movie.status === 'downloading'),
+    failed: downloadedMovies.filter((movie) => movie.status === 'failed'),
   };
 
+  const activeDownloads = groupedDownloads[activeTab];
+  const nativeOffline = supportsNativeOfflineDownloads();
+
   const tabMeta: Record<
-    DownloadsTab,
+    DownloadStatus,
     {
       label: string;
       description: string;
       emptyText: string;
+      statusLabel: string;
+      statusTone: string;
     }
   > = {
-    downloading: {
-      label: 'Active',
-      description: 'Downloads in progress. You can leave the movie page and they will continue while the app stays running.',
-      emptyText: 'No active downloads right now.',
-    },
     completed: {
       label: 'Completed',
       description: nativeOffline
-        ? 'Movies and episodes saved inside this device for offline playback.'
+        ? 'Movies saved inside this device for offline playback.'
         : 'Movies saved to your account activity.',
       emptyText: nativeOffline
-        ? 'No offline videos yet. Use the Download button on a movie or episode to save it to this device.'
+        ? 'No offline videos yet. Use the Download button on a movie to save it to this device.'
         : 'No completed downloads yet. Use the Download button on any movie to save it here.',
+      statusLabel: nativeOffline ? 'Offline ready' : 'Ready to play',
+      statusTone: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    },
+    downloading: {
+      label: 'Active',
+      description: 'Titles that are still downloading appear here.',
+      emptyText: 'No active downloads right now.',
+      statusLabel: 'Downloading',
+      statusTone: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
     },
     failed: {
       label: 'Failed',
-      description: 'Downloads that could not complete. You can retry them here.',
+      description: 'Downloads that could not complete appear here for follow-up.',
       emptyText: 'No failed downloads right now.',
+      statusLabel: 'Failed',
+      statusTone: 'text-red-300 bg-red-500/10 border-red-500/30',
     },
   };
 
-  const renderCompletedCard = (movie: DownloadListItem) => {
+  const renderDownloadCard = (movie: DownloadListItem, statusLabel: string, statusTone: string) => {
     const cardContent = (
       <>
         <div className="w-28 md:w-40 rounded relative overflow-hidden aspect-[16/9] flex-shrink-0 bg-black">
@@ -184,13 +140,8 @@ export default function DownloadsPage() {
           <p className="text-[#888888] text-xs mb-2">
             {isOfflineRecord(movie) ? 'Saved privately on this device' : 'Saved to your account history'}
           </p>
-          {isOfflineRecord(movie) && movie.contentType === 'episode' ? (
-            <p className="text-[10px] font-black uppercase text-white/50">
-              Season {movie.seasonNumber || 1} • Episode {movie.episodeNumber || 1}
-            </p>
-          ) : null}
-          <p className="text-[10px] font-black uppercase px-2 py-0.5 rounded w-max border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">
-            Offline ready
+          <p className={`text-[10px] font-black uppercase px-2 py-0.5 rounded w-max border ${statusTone}`}>
+            {statusLabel}
           </p>
         </div>
       </>
@@ -198,7 +149,7 @@ export default function DownloadsPage() {
 
     return (
       <div
-        key={isOfflineRecord(movie) ? movie.downloadKey : movie.id}
+        key={movie.id}
         className="flex gap-4 bg-[#1F2833]/20 p-3 rounded-lg border border-transparent hover:border-white/10 group shadow-md"
       >
         {isOfflineRecord(movie) ? (
@@ -239,117 +190,6 @@ export default function DownloadsPage() {
     );
   };
 
-  const renderActiveCard = (download: ActiveOfflineDownload) => {
-    const percent = getDownloadPercent(download);
-    const remainingBytes = getDownloadRemainingBytes(download);
-
-    return (
-      <article
-        key={download.downloadKey}
-        className="rounded-xl border border-white/10 bg-[#1F2833]/20 p-4 shadow-md"
-      >
-        <div className="flex gap-4">
-          <div className="w-24 md:w-36 rounded relative overflow-hidden aspect-[16/9] flex-shrink-0 bg-black">
-            {download.input.poster ? (
-              <img src={download.input.poster} alt={download.input.title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-white/35">
-                <Film size={24} />
-              </div>
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <h3 className="text-white font-bold text-sm md:text-lg line-clamp-2">{download.input.title}</h3>
-            {download.input.contentType === 'episode' ? (
-              <p className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/45">
-                Season {download.input.seasonNumber || 1} • Episode {download.input.episodeNumber || 1}
-              </p>
-            ) : null}
-            <p className="mt-2 text-xs font-bold text-[#D9E7FF]">{formatDownloadProgressLabel(download)}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-white/70 md:grid-cols-4">
-          <div className="rounded-xl bg-black/20 p-3">
-            <p className="text-white/35">Downloaded</p>
-            <p className="font-black text-white">{formatDownloadBytes(download.downloadedBytes)}</p>
-          </div>
-          <div className="rounded-xl bg-black/20 p-3">
-            <p className="text-white/35">Remaining</p>
-            <p className="font-black text-white">{remainingBytes === null ? 'Unknown' : formatDownloadBytes(remainingBytes)}</p>
-          </div>
-          <div className="rounded-xl bg-black/20 p-3">
-            <p className="text-white/35">Progress</p>
-            <p className="font-black text-white">{percent === null ? 'Starting' : `${percent}%`}</p>
-          </div>
-          <div className="rounded-xl bg-black/20 p-3">
-            <p className="text-white/35">Total</p>
-            <p className="font-black text-white">{download.totalBytes ? formatDownloadBytes(download.totalBytes) : 'Unknown'}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {download.status === 'failed' ? (
-            <button
-              type="button"
-              onClick={() => void handleRetryActiveDownload(download.downloadKey)}
-              className="inline-flex items-center gap-2 rounded-xl border border-[#D90429]/40 px-4 py-2 text-xs font-black uppercase tracking-wider text-[#FFB3C1] transition hover:bg-[#D90429] hover:text-white"
-            >
-              <RefreshCw size={14} />
-              Retry
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void handleCancelActiveDownload(download.downloadKey)}
-              className="inline-flex items-center gap-2 rounded-xl border border-red-400/30 px-4 py-2 text-xs font-black uppercase tracking-wider text-red-100 transition hover:bg-red-500/15"
-            >
-              <X size={14} />
-              Cancel
-            </button>
-          )}
-        </div>
-
-        {download.error ? (
-          <p className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
-            {download.error}
-          </p>
-        ) : null}
-      </article>
-    );
-  };
-
-  const renderTabContent = () => {
-    if (activeTab === 'downloading') {
-      return activeDownloading.length ? (
-        activeDownloading.map(renderActiveCard)
-      ) : (
-        <div className="bg-[#1F2833]/20 border border-white/10 rounded-lg p-5 text-sm text-[#888888]">
-          {tabMeta.downloading.emptyText}
-        </div>
-      );
-    }
-
-    if (activeTab === 'failed') {
-      return failedDownloads.length ? (
-        failedDownloads.map(renderActiveCard)
-      ) : (
-        <div className="bg-[#1F2833]/20 border border-white/10 rounded-lg p-5 text-sm text-[#888888]">
-          {tabMeta.failed.emptyText}
-        </div>
-      );
-    }
-
-    return completedDownloads.length ? (
-      completedDownloads.map(renderCompletedCard)
-    ) : (
-      <div className="bg-[#1F2833]/20 border border-white/10 rounded-lg p-5 text-sm text-[#888888]">
-        {tabMeta.completed.emptyText}
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
       <MobilePageHeader title="Downloads" fallbackHref="/profile" />
@@ -368,7 +208,7 @@ export default function DownloadsPage() {
             </span>
           </div>
           <span className="text-xs text-[#888888] font-mono">
-            {completedDownloads.length} saved
+            {downloadedMovies.length} saved
           </span>
         </div>
 
@@ -380,7 +220,7 @@ export default function DownloadsPage() {
 
         <section className="rounded-xl border border-white/10 bg-[#11141C]/70 p-4 md:p-5">
           <div className="flex flex-wrap gap-2 mb-5">
-            {(['downloading', 'completed', 'failed'] as DownloadsTab[]).map((tab) => (
+            {(['downloading', 'completed', 'failed'] as DownloadStatus[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -391,7 +231,7 @@ export default function DownloadsPage() {
                 }`}
               >
                 {tabMeta[tab].label}
-                <span className="ml-1 text-[9px] md:text-[10px] opacity-80">{tabCounts[tab]}</span>
+                <span className="ml-1 text-[9px] md:text-[10px] opacity-80">{groupedDownloads[tab].length}</span>
               </button>
             ))}
           </div>
@@ -403,10 +243,20 @@ export default function DownloadsPage() {
               </h2>
               <p className="text-[#888888] text-xs mt-1">{tabMeta[activeTab].description}</p>
             </div>
-            <span className="text-xs text-[#888888] font-mono">{tabCounts[activeTab]}</span>
+            <span className="text-xs text-[#888888] font-mono">{activeDownloads.length}</span>
           </div>
 
-          <div className="flex flex-col gap-4">{renderTabContent()}</div>
+          <div className="flex flex-col gap-4">
+            {activeDownloads.length > 0 ? (
+              activeDownloads.map((movie) =>
+                renderDownloadCard(movie, tabMeta[activeTab].statusLabel, tabMeta[activeTab].statusTone)
+              )
+            ) : (
+              <div className="bg-[#1F2833]/20 border border-white/10 rounded-lg p-5 text-sm text-[#888888]">
+                {tabMeta[activeTab].emptyText}
+              </div>
+            )}
+          </div>
         </section>
       </div>
 
