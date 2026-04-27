@@ -177,8 +177,6 @@ export default function DownloadsPage() {
   const renderDownloadCard = (movie: DownloadListItem, statusLabel: string, statusTone: string) => {
     const activeJob = isActiveDownload(movie) ? movie : null;
     const percent = activeJob ? getDownloadPercent(activeJob) : null;
-    const remainingBytes = activeJob ? getDownloadRemainingBytes(activeJob) : null;
-
     const cardContent = (
       <>
         <div className="w-28 md:w-40 rounded relative overflow-hidden aspect-[16/9] flex-shrink-0 bg-black">
@@ -209,17 +207,16 @@ export default function DownloadsPage() {
 
           {activeJob ? (
             <div className="mt-3 space-y-2">
-              <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-[#D90429] transition-all"
-                  style={{ width: `${percent ?? 4}%` }}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/60 md:grid-cols-4">
-                <span>Downloaded: <b className="text-white">{formatDownloadBytes(activeJob.downloadedBytes)}</b></span>
-                <span>Remaining: <b className="text-white">{remainingBytes === null ? '--' : formatDownloadBytes(remainingBytes)}</b></span>
-                <span>Progress: <b className="text-white">{percent === null ? '--' : `${percent}%`}</b></span>
-                <span>Total: <b className="text-white">{activeJob.totalBytes === null ? '--' : formatDownloadBytes(activeJob.totalBytes)}</b></span>
+              <div className="flex items-center gap-3">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-[#D90429] transition-all"
+                    style={{ width: `${percent ?? 4}%` }}
+                  />
+                </div>
+                <span className="min-w-10 text-right text-[10px] font-black text-white">
+                  {percent === null ? '--' : `${percent}%`}
+                </span>
               </div>
               {activeJob.error ? (
                 <p className="text-[10px] font-bold text-red-200">{activeJob.error}</p>
