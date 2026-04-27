@@ -3,7 +3,21 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
-import { createOfflineDownloadKey, downloadMovieOffline, findOfflineDownload, supportsNativeOfflineDownloads } from '@/lib/mobile/offlineDownloads';
+import {
+  cancelOfflineDownload,
+  createOfflineDownloadKey,
+  downloadMovieOffline,
+  findOfflineDownload,
+  formatDownloadBytes,
+  formatDownloadProgressLabel,
+  getActiveOfflineDownload,
+  getDownloadPercent,
+  getDownloadRemainingBytes,
+  isOfflineDownloadActive,
+  subscribeOfflineDownloads,
+  supportsNativeOfflineDownloads,
+  type ActiveOfflineDownload,
+} from '@/lib/mobile/offlineDownloads';
 import type { FirebaseError } from 'firebase/app';
 import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
@@ -107,6 +121,7 @@ const [isDownloading, setIsDownloading] = useState(false);
 const [isSavingToList, setIsSavingToList] = useState(false);
 const [isLiking, setIsLiking] = useState(false);
 const [isSavedToDownloads, setIsSavedToDownloads] = useState(false);
+const [offlineDownloadJob, setOfflineDownloadJob] = useState<ActiveOfflineDownload | null>(null);
 const [isSavedToWatchlist, setIsSavedToWatchlist] = useState(false);
 const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
@@ -583,6 +598,11 @@ const downloadInput = downloadBaseInput
       downloadKey: createOfflineDownloadKey(downloadBaseInput),
     }
   : null;
+const isNativeDownloadActive = isOfflineDownloadActive(offlineDownloadJob);
+const activeDownloadPercent = offlineDownloadJob ? getDownloadPercent(offlineDownloadJob) : null;
+const activeDownloadRemainingBytes = offlineDownloadJob ? getDownloadRemainingBytes(offlineDownloadJob) : null;
+const activeDownloadLabel = formatDownloadProgressLabel(offlineDownloadJob);
+
 const playbackSessionKey = activeEpisode
   ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
   : selectedPart
@@ -596,6 +616,21 @@ const currentMovieHref = movie
       ? `/movie/${movie.id}?part=${selectedPartIndex + 1}`
       : `/movie/${movie.id}`
   : '/';
+
+useEffect(() => {
+  if (!supportsNativeOfflineDownloads() || !downloadInput?.downloadKey) {
+    setOfflineDownloadJob(null);
+    return;
+  }
+
+  const syncActiveDownload = () => {
+    setOfflineDownloadJob(getActiveOfflineDownload(downloadInput.downloadKey));
+  };
+
+  syncActiveDownload();
+
+  return subscribeOfflineDownloads(syncActiveDownload);
+}, [downloadInput?.downloadKey]);
 
 useLayoutEffect(() => {
   if (!movie) {
@@ -646,6 +681,11 @@ const handleDownload = async () => {
     return;
   }
 
+  if (isNativeDownloadActive) {
+    setActionMessage('This download is already running.');
+    return;
+  }
+
   if (isSavedToDownloads) {
     setActionMessage('Already saved to your downloads.');
     return;
@@ -688,6 +728,21 @@ const handleDownload = async () => {
     setActionMessage(firebaseError?.message || 'We could not save this movie to your downloads right now.');
   } finally {
     setIsDownloading(false);
+  }
+};
+
+const handleCancelDownload = async () => {
+  if (!downloadInput?.downloadKey) {
+    return;
+  }
+
+  try {
+    await cancelOfflineDownload(downloadInput.downloadKey);
+    setOfflineDownloadJob(null);
+    setIsDownloading(false);
+    setActionMessage('Download cancelled.');
+  } catch (error) {
+    setActionMessage(error instanceof Error ? error.message : 'Download could not be cancelled.');
   }
 };
 
@@ -956,16 +1011,46 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
 
         <button
           onClick={handleDownload}
-          disabled={isDownloading || isSavedToDownloads}
+          disabled={isDownloading || isNativeDownloadActive || isSavedToDownloads}
           className="relative flex w-full max-w-[620px] items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-r from-[#24344A] via-[#1E2A3B] to-[#131B28] px-5 py-4 text-sm font-black tracking-[0.18em] text-white shadow-[0_18px_35px_rgba(0,0,0,0.28)] transition-colors duration-200 hover:from-[#2D4059] hover:to-[#182334] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#2B2F38] disabled:text-white/45"
         >
           <span className="text-center">
-            {isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : 'Download'}
+            {isNativeDownloadActive ? activeDownloadLabel : isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : offlineDownloadJob?.status === 'failed' ? 'Download failed - Retry' : 'Download'}
           </span>
           <span className="pointer-events-none absolute right-5">
             {isPlaybackLocked ? <LockedDownloadIcon /> : <DownloadIcon />}
           </span>
         </button>
+
+        {offlineDownloadJob ? (
+          <div className="w-full max-w-[620px] rounded-2xl border border-white/10 bg-[#101824]/90 px-4 py-3 text-xs font-bold text-white/78">
+            <div className="mb-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-[#D90429] transition-all"
+                style={{ width: `${activeDownloadPercent ?? 4}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase tracking-[0.08em] text-white/55 md:grid-cols-4">
+              <span>Downloaded: <b className="text-white">{formatDownloadBytes(offlineDownloadJob.downloadedBytes)}</b></span>
+              <span>Remaining: <b className="text-white">{activeDownloadRemainingBytes === null ? '--' : formatDownloadBytes(activeDownloadRemainingBytes)}</b></span>
+              <span>Progress: <b className="text-white">{activeDownloadPercent === null ? '--' : `${activeDownloadPercent}%`}</b></span>
+              <span>Total: <b className="text-white">{offlineDownloadJob.totalBytes === null ? '--' : formatDownloadBytes(offlineDownloadJob.totalBytes)}</b></span>
+            </div>
+            {offlineDownloadJob.error ? (
+              <p className="mt-2 text-[10px] font-bold text-red-200">{offlineDownloadJob.error}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isNativeDownloadActive ? (
+          <button
+            type="button"
+            onClick={handleCancelDownload}
+            className="w-full max-w-[620px] rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-red-100 transition hover:border-red-300/60"
+          >
+            Cancel Download
+          </button>
+        ) : null}
 
         {actionMessage && (
           <div className="w-full max-w-[620px] rounded-2xl border border-[#7AA2D6]/20 bg-[#182334]/88 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-[#D9E7FF] shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
