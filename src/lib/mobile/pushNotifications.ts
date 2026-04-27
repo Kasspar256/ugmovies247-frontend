@@ -64,8 +64,28 @@ async function ensurePushListeners(onRoute: PushRouteHandler) {
   });
 
   await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-    console.info('[push] foreground notification received', notification);
+  console.info('[push] foreground notification received', notification);
+
+  const data = notification.data as Record<string, unknown> | undefined;
+  const movieId = String(data?.movieId || data?.movie_id || '').trim();
+  const path = resolveNotificationPath(data) || '/notifications';
+
+  void fetch('/api/notifications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      title: notification.title || String(data?.title || 'UG Movies 247'),
+      body: notification.body || String(data?.body || 'You have a new update.'),
+      path,
+      movieId,
+      source: 'push_foreground',
+    }),
+  }).catch((error) => {
+    console.warn('[push] foreground inbox save failed', error);
   });
+});
+
 
   await PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
     const path = resolveNotificationPath(event.notification.data as Record<string, unknown> | undefined);
