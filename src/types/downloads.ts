@@ -1,4 +1,4 @@
-export type DownloadStatus = 'completed' | 'downloading' | 'failed' | 'cancelled';
+export type DownloadStatus = 'completed' | 'downloading' | 'failed';
 
 export type DownloadContentType = 'movie' | 'episode' | 'part';
 
