@@ -62,12 +62,14 @@ function NavItem({
   return (
     <Link
       href={href}
-      className={`flex w-16 flex-col items-center gap-1 transition-colors ${
-        active ? 'text-[#D90429]' : 'text-gray-500 hover:text-[#D90429]'
-      }`}
+      className="flex w-16 flex-col items-center gap-1 transition-colors"
     >
-      <span className="relative">{children}</span>
-      <span className="text-[10px] font-bold">{label}</span>
+      <span className={`relative transition-colors ${active ? 'text-white' : 'text-white/62'}`}>
+        {children}
+      </span>
+      <span className={`text-[10px] font-bold ${active ? 'text-[#D90429]' : 'text-white/55'}`}>
+        {label}
+      </span>
     </Link>
   );
 }
@@ -92,7 +94,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-white/5 bg-[#0B0C10] px-2 md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-black/10 bg-white px-2 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] md:hidden"
       style={{
         position: 'fixed',
         bottom: 0,
@@ -103,7 +105,7 @@ export default function MobileBottomNav() {
         height: `calc(${MOBILE_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom))`,
         paddingBottom: 'env(safe-area-inset-bottom)',
         boxSizing: 'border-box',
-        backgroundColor: '#0B0C10',
+        backgroundColor: '#FFFFFF',
       }}
       aria-label="Mobile navigation"
     >
