@@ -94,7 +94,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-black/10 bg-white px-2 shadow-[0_-10px_30px_rgba(0,0,0,0.18)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-white/5 bg-[#0B0C10] px-2 md:hidden"
       style={{
         position: 'fixed',
         bottom: 0,
@@ -105,7 +105,7 @@ export default function MobileBottomNav() {
         height: `calc(${MOBILE_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom))`,
         paddingBottom: 'env(safe-area-inset-bottom)',
         boxSizing: 'border-box',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#0B0C10',
       }}
       aria-label="Mobile navigation"
     >
