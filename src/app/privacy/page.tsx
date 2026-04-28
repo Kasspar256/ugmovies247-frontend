@@ -105,14 +105,14 @@ export default function PrivacyPage() {
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="4.3 Payment processors">
+        <LegalSubsection title="4.3 Payment Processors">
           <p>
-            Card payments are processed through PayFast. Mobile Money payments are processed through
-            PawaPay and supported wallet correspondents made available during checkout. We do not
-            need your full card details to charge you directly through our own servers; payment
-            credentials are handled by the relevant processor, while we store the payment metadata,
-            provider references, and recurring authorization records needed to manage your
-            subscription.
+            Card payments are processed through PayFast. We also utilize various secure regional
+            payment processors and wallet correspondents to manage subscriptions where available. We
+            do not store your full card details or sensitive wallet credentials directly on our
+            servers; these are handled by the relevant secure processor. We retain only the payment
+            metadata, provider references, and authorization records needed to manage your access
+            and provide support.
           </p>
         </LegalSubsection>
       </LegalSection>

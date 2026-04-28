@@ -131,30 +131,21 @@ export default function TermsPage() {
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="6.3 Mobile Money payments">
+        <LegalSubsection title="6.3 Regional and Local Payment Methods">
           <p>
-            Mobile Money payments are processed through supported providers made available at
-            checkout, including provider networks routed through PawaPay where enabled. Availability
-            depends on region, network support, provider uptime, and wallet authorization.
-          </p>
-          <p>
-            Mobile Money transactions may remain pending until your provider confirms them. A
-            pending, failed, cancelled, expired, or unconfirmed transaction does not create paid
-            entitlement.
+            Where supported, we may offer local payment methods or mobile wallet options during the
+            checkout process. The availability of these methods depends on your geographic region,
+            network support, and device compatibility. Transactions made through these methods may
+            remain pending until confirmed by the relevant provider; a pending or unconfirmed
+            transaction does not grant active subscription status.
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="6.4 Auto-renewal">
+        <LegalSubsection title="6.4 Manual and One-Off Payments">
           <p>
-            Card subscriptions may support auto-renewal when you expressly authorize recurring
-            billing and a valid payment token is stored through the payment provider. In that case,
-            future renewals may be charged automatically before or when the current access period
-            expires.
-          </p>
-          <p>
-            Mobile Money purchases are generally one-off payments unless we clearly state otherwise.
-            They may require a new authorization for each renewal and should not be assumed to renew
-            automatically.
+            Payments made via local wallets or regional vouchers are generally treated as one-off
+            transactions. These do not support auto-renewal and require a new manual authorization
+            for each subsequent billing period.
           </p>
         </LegalSubsection>
 
@@ -237,6 +228,11 @@ export default function TermsPage() {
         <p>
           We are not responsible for third-party websites, processors, telecom networks, wallet
           providers, or external source sites that are not controlled by us.
+        </p>
+        <p>
+          Please note that specific feature availability—including available payment methods,
+          content categories, and UI elements—is dynamic and may vary based on your geographic
+          location, device type, application version, and current regional support status.
         </p>
       </LegalSection>
 
