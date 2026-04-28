@@ -226,7 +226,7 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       document.head.appendChild(dnsPrefetch);
     });
 
-    artworkUrls.forEach((url) => {
+    artworkUrls.forEach((url, index) => {
       if (warmedArtworkUrls.has(url)) {
         return;
       }
@@ -234,6 +234,11 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       warmedArtworkUrls.add(url);
       const image = new window.Image();
       image.decoding = 'async';
+
+      if (index < 14) {
+        (image as HTMLImageElement & { fetchPriority?: 'high' | 'low' | 'auto' }).fetchPriority = 'high';
+      }
+
       image.onload = () => {
         markArtworkUrlLoaded(url);
       };

@@ -204,6 +204,11 @@ const HomeCardImage = memo(function HomeCardImage({
     let active = true;
     const image = new window.Image();
     image.decoding = 'async';
+
+    if (priority) {
+      (image as HTMLImageElement & { fetchPriority?: 'high' | 'low' | 'auto' }).fetchPriority = 'high';
+    }
+
     image.src = normalizedSrc;
 
     if (image.complete && image.naturalWidth > 0) {
@@ -260,7 +265,7 @@ const HomeCardImage = memo(function HomeCardImage({
           srcSet={imageProps.srcSet}
           sizes={imageProps.sizes}
           alt={alt}
-          className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+          className={`${imageClassName} bg-[#111318] transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
           loading={priority ? 'eager' : 'lazy'}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
@@ -522,7 +527,7 @@ export default function Home() {
 
   useEffect(() => {
     if (priorityArtworkMovies.length) {
-      warmHomePageArtwork(priorityArtworkMovies, 28);
+      warmHomePageArtwork(priorityArtworkMovies, 48);
     }
   }, [priorityArtworkMovies]);
 
