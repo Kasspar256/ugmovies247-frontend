@@ -24,6 +24,7 @@ export default function SubscribePaymentMethodPage() {
     selectedPlanHasCardPricing,
     sortedProviders,
     submitting,
+    mobileMoneyEnabled,
   } = useSubscribeFlow();
 
   useEffect(() => {
@@ -85,7 +86,8 @@ export default function SubscribePaymentMethodPage() {
             Payment options
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <button
+            {mobileMoneyEnabled ? (
+              <button
               type="button"
               onClick={() => {
                 clearFeedback();
@@ -109,7 +111,8 @@ export default function SubscribePaymentMethodPage() {
                   </div>
                 </div>
               </div>
-            </button>
+              </button>
+            ) : null}
 
             <button
               type="button"

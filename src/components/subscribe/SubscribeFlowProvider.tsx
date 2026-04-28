@@ -21,6 +21,7 @@ import {
 import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
+import { getShowMobileMoneyFlag } from '@/lib/mobile/mobileMoneyFeatureFlag';
 import type {
   CardPaymentGateway,
   PaymentMethodProvider,
@@ -74,6 +75,7 @@ type SubscribeFlowContextValue = {
   loading: boolean;
   loadError: string;
   submitting: boolean;
+  mobileMoneyEnabled: boolean;
   plans: SubscriptionPlanDefinition[];
   entitlement: SubscriptionEntitlement;
   recurringAgreement: RecurringAgreementSummary;
@@ -236,6 +238,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [mobileMoneyEnabled, setMobileMoneyEnabled] = useState(false);
   const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>([]);
   const [entitlement, setEntitlement] = useState<SubscriptionEntitlement>(DEFAULT_ENTITLEMENT);
   const [recurringAgreement, setRecurringAgreement] = useState<RecurringAgreementSummary>(
@@ -277,11 +280,28 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     selectedPlanHasCardPricing &&
     cardAvailable;
   const canPayWithMobileMoney =
-    paymentMethod === 'mobile_money' && Boolean(selectedProviderOption) && Boolean(phoneNumber.trim());
+    mobileMoneyEnabled &&
+    paymentMethod === 'mobile_money' &&
+    Boolean(selectedProviderOption) &&
+    Boolean(phoneNumber.trim());
 
   const clearFeedback = useCallback(() => {
     setError('');
     setMessage('');
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getShowMobileMoneyFlag().then((enabled) => {
+      if (mounted) {
+        setMobileMoneyEnabled(enabled);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const loadSubscriptionData = useCallback(async () => {
@@ -486,7 +506,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const methods: FlowPaymentMethod[] = [];
 
-    if (sortedProviders.length) {
+    if (mobileMoneyEnabled && sortedProviders.length) {
       methods.push('mobile_money');
     }
 
@@ -499,7 +519,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (requestedMethod === 'mobile_money' && sortedProviders.length) {
+    if (requestedMethod === 'mobile_money' && mobileMoneyEnabled && sortedProviders.length) {
       setPaymentMethod('mobile_money');
       return;
     }
@@ -507,7 +527,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     if (paymentMethod && !methods.includes(paymentMethod)) {
       setPaymentMethod('');
     }
-  }, [cardAvailable, paymentMethod, requestedMethod, selectedPlanHasCardPricing, sortedProviders.length]);
+  }, [cardAvailable, mobileMoneyEnabled, paymentMethod, requestedMethod, selectedPlanHasCardPricing, sortedProviders.length]);
 
   useEffect(() => {
     if (!sortedProviders.length) {
@@ -615,6 +635,11 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
+    if (!mobileMoneyEnabled) {
+      setError('Mobile Money is not available right now.');
+      return false;
+    }
+
     setSubmitting(true);
     setError('');
     setMessage('');
@@ -622,31 +647,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setRedirectCountdown(null);
 
     try {
-      if (isNativeAndroidApp()) {
-        const response = await fetch('/api/subscriptions/external-checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            planType: selectedPlanDefinition.type,
-            paymentMethod: 'mobile_money',
-            provider,
-            phoneNumber,
-            returnTo: safeReturnTo,
-          }),
-        });
-        const payload = await readJsonResponse<CheckoutResponse>(response);
-
-        if (!response.ok || !payload.checkoutUrl) {
-          throw new Error(payload.detail || payload.error || 'Failed to open payment checkout.');
-        }
-
-        setMessage('Opening secure payment checkout...');
-        await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
-        setMessage('Checkout closed. If you cancelled, no charge was made. If you paid, your subscription will refresh shortly.');
-        return true;
-      }
-
       const response = await fetch('/api/subscriptions/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -674,7 +674,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       };
 
       setActivePayment(nextPayment);
-      setMessage('Payment request sent. Approve it on your phone.');
+      setMessage('Waiting for PIN prompt. Approve the Mobile Money request on your phone.');
       return true;
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : 'Failed to start payment.');
@@ -683,6 +683,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       setSubmitting(false);
     }
   }, [
+    mobileMoneyEnabled,
     phoneNumber,
     provider,
     refreshNativeCheckoutState,
@@ -771,6 +772,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       loading: loading || !draftReady,
       loadError,
       submitting,
+      mobileMoneyEnabled,
       plans,
       entitlement,
       recurringAgreement,
@@ -798,6 +800,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       activePayment,
       error,
       message,
+      mobileMoneyEnabled,
       emailVerified,
       clearFeedback,
       startMobileMoneyCheckout,

@@ -1,5 +1,7 @@
 'use client';
 
+import { Loader2 } from 'lucide-react';
+
 type PaymentState = {
   id: string;
   status: string;
@@ -84,6 +86,20 @@ export default function SubscribeFlowNotices({
               </span>
             </p>
           </div>
+
+          {activePayment.paymentProvider === 'pawapay' &&
+          !['completed', 'failed', 'cancelled', 'not_found'].includes(activePayment.status) ? (
+            <div
+              className={`mt-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-bold ${
+                isLight
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+              }`}
+            >
+              <Loader2 size={18} className="animate-spin" />
+              Waiting for PIN prompt...
+            </div>
+          ) : null}
         </div>
       ) : null}
     </>
