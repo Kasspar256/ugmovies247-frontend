@@ -13,7 +13,7 @@ import {
   readCachedHomePageCategories,
   warmHomePageArtwork,
 } from '@/lib/homePageClient';
-import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
+import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Loader2, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import {
   fetchAuthStatus,
@@ -248,6 +248,8 @@ export default function Home() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
+  const [heroInteractionPaused, setHeroInteractionPaused] = useState(false);
+  const [heroPlayLoading, setHeroPlayLoading] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
@@ -593,10 +595,19 @@ export default function Home() {
             <div className="flex flex-row w-full gap-3 justify-center px-2">
               <Link
                 href={heroPlayHref}
-                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+                onPointerDown={() => setHeroInteractionPaused(true)}
+                onClick={() => {
+                  setHeroInteractionPaused(true);
+                  setHeroPlayLoading(true);
+                }}
+                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-all active:scale-[0.96] shadow-lg shadow-red-900/30"
               >
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <span className="text-[11px]">PLAY NOW</span>
+                {heroPlayLoading ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                )}
+                <span className="text-[11px]">{heroPlayLoading ? 'OPENING...' : 'PLAY NOW'}</span>
               </Link>
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
@@ -677,10 +688,19 @@ export default function Home() {
                 <div className="mt-10 flex items-center gap-4">
                   <Link
                     href={heroPlayHref}
-                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
+                    onPointerDown={() => setHeroInteractionPaused(true)}
+                    onClick={() => {
+                      setHeroInteractionPaused(true);
+                      setHeroPlayLoading(true);
+                    }}
+                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-all hover:bg-[#F6121D] active:scale-[0.96]"
                   >
-                    <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    <span>PLAY NOW</span>
+                    {heroPlayLoading ? (
+                      <Loader2 size={20} className="animate-spin" />
+                    ) : (
+                      <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    )}
+                    <span>{heroPlayLoading ? 'OPENING...' : 'PLAY NOW'}</span>
                   </Link>
                   <button
                     onClick={() => setShowHeroDetails((prev) => !prev)}

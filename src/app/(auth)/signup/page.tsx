@@ -3,7 +3,7 @@ import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, User } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
@@ -28,6 +28,8 @@ export default function SignupPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  const authBusy = loading || googleLoading;
 
   const clearFeedback = () => {
     if (error) {
@@ -80,6 +82,10 @@ export default function SignupPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (authBusy) {
+      return;
+    }
     clearFeedback();
     setError('');
     setDevDiagnostics([]);
@@ -122,6 +128,10 @@ export default function SignupPage() {
   };
 
   const handleGoogleSignup = async () => {
+    if (authBusy) {
+      return;
+    }
+
     clearFeedback();
     setError('');
     setDevDiagnostics([]);
@@ -187,7 +197,7 @@ export default function SignupPage() {
             <div className="space-y-4">
               <GoogleAuthButton
                 onClick={handleGoogleSignup}
-                disabled={loading}
+                disabled={authBusy}
                 loading={googleLoading}
                 idleLabel="Sign up with Google"
                 loadingLabel="Connecting with Google..."
@@ -214,7 +224,8 @@ export default function SignupPage() {
                       clearFeedback();
                       setName(event.target.value);
                     }}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                    disabled={authBusy}
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="Your full name"
                     autoComplete="name"
                   />
@@ -234,7 +245,8 @@ export default function SignupPage() {
                       clearFeedback();
                       setEmail(event.target.value);
                     }}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                    disabled={authBusy}
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="name@example.com"
                     autoComplete="email"
                   />
@@ -255,7 +267,8 @@ export default function SignupPage() {
                         clearFeedback();
                         setPassword(event.target.value);
                       }}
-                      className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                      disabled={authBusy}
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
                       placeholder="Create password"
                       autoComplete="new-password"
                     />
@@ -283,7 +296,8 @@ export default function SignupPage() {
                         clearFeedback();
                         setConfirmPassword(event.target.value);
                       }}
-                      className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                      disabled={authBusy}
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
                       placeholder="Confirm password"
                       autoComplete="new-password"
                     />
@@ -309,9 +323,10 @@ export default function SignupPage() {
 
               <button
                 type="submit"
-                disabled={loading || googleLoading}
-                className="w-full rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-colors hover:bg-[#b00320] disabled:cursor-not-allowed disabled:bg-[#5E1623]"
+                disabled={authBusy}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-all hover:bg-[#b00320] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#5E1623] disabled:opacity-80"
               >
+                {loading ? <Loader2 size={18} className="animate-spin" /> : null}
                 {loading ? 'Creating Account...' : 'Create Account'}
               </button>
             </form>
