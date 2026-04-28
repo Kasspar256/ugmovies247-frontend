@@ -15,7 +15,7 @@ type CachedHomePageCategories = {
 };
 
 const HOME_PAGE_CATEGORIES_CACHE_KEY = 'ugmovies247.home-categories.v1';
-const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 5;
+const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 30;
 
 let inMemoryHomePageCategories: CachedHomePageCategories | null = null;
 let inFlightHomePageCategoriesRequest: Promise<HomePageCategoryRecord[]> | null = null;

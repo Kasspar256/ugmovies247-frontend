@@ -75,6 +75,46 @@ const DESKTOP_CATEGORY_PILLS = [
   },
 ] as const;
 
+const HOME_SCROLL_STORAGE_KEY = 'ugmovies247.home-scroll-y.v1';
+const HOME_CATEGORY_STORAGE_KEY = 'ugmovies247.home-category.v1';
+
+function readStoredHomeCategory() {
+  if (typeof window === 'undefined') {
+    return 'ALL';
+  }
+
+  try {
+    return window.sessionStorage.getItem(HOME_CATEGORY_STORAGE_KEY) || 'ALL';
+  } catch {
+    return 'ALL';
+  }
+}
+
+function readStoredHomeScrollY() {
+  if (typeof window === 'undefined') {
+    return 0;
+  }
+
+  try {
+    const value = Number(window.sessionStorage.getItem(HOME_SCROLL_STORAGE_KEY) || '0');
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function persistHomeScrollY() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(HOME_SCROLL_STORAGE_KEY, String(Math.max(0, window.scrollY)));
+  } catch {
+    // Ignore storage failures. The page still works normally.
+  }
+}
+
 function getMovieVjLabel(movie: Movie) {
   return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
 }
@@ -246,7 +286,7 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string>(() => readStoredHomeCategory());
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [heroInteractionPaused, setHeroInteractionPaused] = useState(false);
   const [heroPlayLoading, setHeroPlayLoading] = useState(false);
@@ -255,6 +295,7 @@ export default function Home() {
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
+  const restoredHomeScrollRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -336,6 +377,67 @@ export default function Home() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(HOME_CATEGORY_STORAGE_KEY, activeCategory);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [activeCategory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const saveScroll = () => persistHomeScrollY();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveScroll();
+      }
+    };
+
+    window.addEventListener('pagehide', saveScroll);
+    window.addEventListener('beforeunload', saveScroll);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      saveScroll();
+      window.removeEventListener('pagehide', saveScroll);
+      window.removeEventListener('beforeunload', saveScroll);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || restoredHomeScrollRef.current || movies.length === 0) {
+      return;
+    }
+
+    restoredHomeScrollRef.current = true;
+    let firstFrame = 0;
+    let secondFrame = 0;
+
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const savedY = readStoredHomeScrollY();
+
+        if (savedY > 0) {
+          window.scrollTo(0, savedY);
+        }
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [movies.length]);
 
   useEffect(() => {
     const updateAndroidMobileState = () => {

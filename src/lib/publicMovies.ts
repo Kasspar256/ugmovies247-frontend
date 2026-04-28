@@ -6,7 +6,7 @@ type CachedPublicMovieCatalog = {
 };
 
 const PUBLIC_MOVIE_CACHE_KEY = 'ugmovies247.public-movies.v2';
-const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 2;
+const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 30;
 
 let inMemoryMovieCatalog: CachedPublicMovieCatalog | null = null;
 let inFlightMovieCatalogRequest: Promise<Movie[]> | null = null;
