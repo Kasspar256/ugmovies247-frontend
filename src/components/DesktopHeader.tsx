@@ -202,7 +202,7 @@ export default function DesktopHeader() {
                     key={action.href}
                     href={action.href}
                     aria-label={action.label}
-                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                    className={`flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full transition-all duration-150 active:scale-90 active:opacity-75 ${
                       active
                         ? 'bg-[#D90429] text-white'
                         : 'text-white/72 hover:bg-white/6 hover:text-white'
@@ -216,7 +216,7 @@ export default function DesktopHeader() {
               <Link
                 href="/search"
                 aria-label="Search"
-                className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+                className={`flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full transition-all duration-150 active:scale-90 active:opacity-75 ${
                   isActivePath(pathname, '/search')
                     ? 'bg-[#D90429] text-white'
                     : 'text-white/72 hover:bg-white/6 hover:text-white'
