@@ -303,6 +303,10 @@ export default function DownloadsPage() {
           <h1 className="text-3xl font-black text-white uppercase tracking-wider">Downloads</h1>
         </div>
 
+        <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs font-bold leading-6 text-amber-100">
+          Downloads are kept for 7 days, then removed automatically to keep your library clean.
+        </div>
+
         <div className="bg-[#1F2833]/30 border border-[#1F2833] rounded-lg p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={20} className="text-[#888888]" />

@@ -5,6 +5,7 @@ import type { LikeMovieInput, LikeRecord } from '@/types/likes';
 import type { WatchlistMovieInput, WatchlistRecord } from '@/types/watchlist';
 
 const DOWNLOADS_COLLECTION = 'downloads';
+const DOWNLOAD_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7;
 const WATCHLIST_COLLECTION = 'watchlist';
 const LIKES_COLLECTION = 'likes';
 
@@ -73,6 +74,20 @@ function getTimestampSeconds(value: { seconds?: number; nanoseconds?: number } |
   return value?.seconds || 0;
 }
 
+function getTimestampMs(value: unknown) {
+  const timestamp = serializeTimestamp(value);
+  return timestamp?.seconds ? timestamp.seconds * 1000 : 0;
+}
+
+function isExpiredDownload(data: Record<string, unknown>) {
+  const expiresAtMs = getTimestampMs(data.expiresAt);
+  return expiresAtMs > 0 && expiresAtMs <= Date.now();
+}
+
+function getDownloadExpiryTimestamp() {
+  return admin.firestore.Timestamp.fromMillis(Date.now() + DOWNLOAD_EXPIRY_MS);
+}
+
 function normalizeDownloadRecord(id: string, data: Record<string, unknown>): DownloadRecord {
   return {
     id,
@@ -84,6 +99,7 @@ function normalizeDownloadRecord(id: string, data: Record<string, unknown>): Dow
     status: data.status === 'downloading' || data.status === 'failed' ? data.status : 'completed',
     description: typeof data.description === 'string' ? data.description : '',
     downloadedAt: serializeTimestamp(data.downloadedAt),
+    expiresAt: serializeTimestamp(data.expiresAt),
   };
 }
 
@@ -120,7 +136,14 @@ export async function getUserDownload(uid: string, movieId: string) {
     return null;
   }
 
-  return normalizeDownloadRecord(snapshot.id, snapshot.data() || {});
+  const data = snapshot.data() || {};
+
+  if (isExpiredDownload(data)) {
+    await snapshot.ref.delete();
+    return null;
+  }
+
+  return normalizeDownloadRecord(snapshot.id, data);
 }
 
 export async function listUserDownloads(uid: string) {
@@ -129,7 +152,24 @@ export async function listUserDownloads(uid: string) {
     .where('userId', '==', uid)
     .get();
 
-  return snapshot.docs
+  const activeDocs = [];
+  const expiredDocs = [];
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+
+    if (isExpiredDownload(data)) {
+      expiredDocs.push(doc);
+    } else {
+      activeDocs.push(doc);
+    }
+  }
+
+  if (expiredDocs.length) {
+    await Promise.all(expiredDocs.map((doc) => doc.ref.delete()));
+  }
+
+  return activeDocs
     .map((doc) => normalizeDownloadRecord(doc.id, doc.data()))
     .sort((left, right) => getTimestampSeconds(right.downloadedAt) - getTimestampSeconds(left.downloadedAt));
 }
@@ -140,10 +180,14 @@ export async function saveUserDownload(uid: string, movie: DownloadMovieInput) {
   const existing = await documentRef.get();
 
   if (existing.exists) {
-    return {
-      alreadyExists: true,
-      record: normalizeDownloadRecord(existing.id, existing.data() || {}),
-    };
+    const existingData = existing.data() || {};
+
+    if (!isExpiredDownload(existingData)) {
+      return {
+        alreadyExists: true,
+        record: normalizeDownloadRecord(existing.id, existingData),
+      };
+    }
   }
 
   await documentRef.set({
@@ -154,6 +198,7 @@ export async function saveUserDownload(uid: string, movie: DownloadMovieInput) {
     userId: uid,
     status: 'completed',
     downloadedAt: admin.firestore.FieldValue.serverTimestamp(),
+    expiresAt: getDownloadExpiryTimestamp(),
   });
 
   const created = await documentRef.get();
