@@ -226,6 +226,47 @@ function submitHostedPaymentForm(redirect: NonNullable<CheckoutResponse['redirec
   form.submit();
 }
 
+
+function SkeletonBlock({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-2xl bg-white/[0.07] ${className}`} />;
+}
+
+function SubscribePlansSkeleton() {
+  return (
+    <div className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-5 shadow-2xl shadow-black/30">
+          <SkeletonBlock className="mb-5 h-4 w-36" />
+          <SkeletonBlock className="mb-3 h-12 w-3/4 max-w-[420px]" />
+          <SkeletonBlock className="h-5 w-2/3 max-w-[520px]" />
+        </section>
+
+        <section className="rounded-[32px] border border-white/10 bg-white/[0.04] p-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div className="space-y-3">
+              <SkeletonBlock className="h-4 w-28" />
+              <SkeletonBlock className="h-8 w-44" />
+            </div>
+            <SkeletonBlock className="h-10 w-28 rounded-full" />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="rounded-[26px] border border-white/10 bg-[#111318] p-5">
+                <SkeletonBlock className="mb-4 h-5 w-24" />
+                <SkeletonBlock className="mb-3 h-10 w-32" />
+                <SkeletonBlock className="mb-2 h-4 w-full" />
+                <SkeletonBlock className="mb-5 h-4 w-4/5" />
+                <SkeletonBlock className="h-12 w-full rounded-2xl" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -913,16 +954,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
         </div>
       ) : null}
 
-      {loading || !draftReady ? (
-        <div className="flex min-h-screen items-center justify-center bg-[#0B0C10]">
-          <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-4 text-sm font-bold text-white">
-            <Loader2 size={18} className="animate-spin" />
-            Loading premium plans...
-          </div>
-        </div>
-      ) : (
-        children
-      )}
+      {loading || !draftReady ? <SubscribePlansSkeleton /> : children}
     </SubscribeFlowContext.Provider>
   );
 }

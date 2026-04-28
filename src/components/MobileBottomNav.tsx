@@ -93,7 +93,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-white/5 bg-[#0B0C10] px-2 md:hidden"
+      className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[9999] flex w-full items-center justify-around border-t border-white/5 bg-[#0B0C10] px-2 md:hidden"
       style={{
         position: 'fixed',
         bottom: 0,
