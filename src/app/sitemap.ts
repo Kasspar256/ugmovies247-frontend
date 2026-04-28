@@ -1,14 +1,13 @@
 import type { MetadataRoute } from 'next';
 import { VJ_DIRECTORY } from '@/config/constants';
 import { getSeoMovieCatalog } from '@/lib/server/seoMovies';
-import { absoluteUrl } from '@/lib/seo';
+import { canonicalUrl } from '@/lib/seo';
 
-const staticRoutes = [
+const publicStaticRoutes = [
   '/',
   '/browse',
-  '/genres',
   '/series',
-  '/search',
+  '/genres',
   '/vjs',
   '/category/latest',
   '/category/uganda-movies',
@@ -36,36 +35,59 @@ const genreRoutes = [
   'Thriller',
 ].map((genre) => `/genres/${encodeURIComponent(genre)}`);
 
+function sitemapEntry(
+  path: string,
+  options: {
+    lastModified: Date | string;
+    changeFrequency?: MetadataRoute.Sitemap[number]['changeFrequency'];
+    priority?: number;
+  }
+): MetadataRoute.Sitemap[number] {
+  return {
+    url: canonicalUrl(path),
+    lastModified: options.lastModified,
+    changeFrequency: options.changeFrequency || 'weekly',
+    priority: options.priority || 0.7,
+  };
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const movies = await getSeoMovieCatalog(1000);
-  const movieRoutes = movies.map((movie) => ({
-    url: absoluteUrl(`/movie/${encodeURIComponent(movie.id)}`),
-    lastModified: movie.updatedAt || movie.date_added || movie.createdAt || now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.72,
-  }));
-  const vjRoutes = VJ_DIRECTORY.map((vj) => ({
-    url: absoluteUrl(`/vjs/${vj.id}`),
-    lastModified: now,
-    changeFrequency: 'weekly' as const,
-    priority: 0.7,
-  }));
 
-  return [
-    ...staticRoutes.map((route) => ({
-      url: absoluteUrl(route),
+  const staticEntries = publicStaticRoutes.map((route) =>
+    sitemapEntry(route, {
       lastModified: now,
-      changeFrequency: route === '/' ? 'daily' as const : 'weekly' as const,
-      priority: route === '/' ? 1 : 0.78,
-    })),
-    ...genreRoutes.map((route) => ({
-      url: absoluteUrl(route),
+      changeFrequency: route === '/' || route === '/browse' ? 'daily' : 'weekly',
+      priority: route === '/' ? 1 : route === '/browse' ? 0.9 : 0.72,
+    })
+  );
+
+  const genreEntries = genreRoutes.map((route) =>
+    sitemapEntry(route, {
       lastModified: now,
-      changeFrequency: 'weekly' as const,
+      changeFrequency: 'weekly',
       priority: 0.72,
-    })),
-    ...vjRoutes,
-    ...movieRoutes,
-  ];
+    })
+  );
+
+  const vjEntries = VJ_DIRECTORY.map((vj) =>
+    sitemapEntry(`/vjs/${vj.id}`, {
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.7,
+    })
+  );
+
+  const movieEntries = movies
+    .filter((movie) => movie.id)
+    .map((movie) =>
+      sitemapEntry(`/movie/${encodeURIComponent(movie.id)}`, {
+        lastModified: movie.updatedAt || movie.date_added || movie.createdAt || now,
+        changeFrequency: 'weekly',
+        priority: 0.82,
+      })
+    );
+
+  return [...staticEntries, ...genreEntries, ...vjEntries, ...movieEntries];
 }
