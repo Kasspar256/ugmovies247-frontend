@@ -64,6 +64,8 @@ export default function MobileCheckoutPage() {
   const token = searchParams.get('token') || '';
   const returnedPaymentId = searchParams.get('paymentId') || '';
   const cancelled = searchParams.get('cancelled') === '1';
+  const rawReturnTo = searchParams.get('returnTo') || '/profile/payments';
+  const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile/payments';
   const [paymentId, setPaymentId] = useState(returnedPaymentId);
   const [status, setStatus] = useState(cancelled ? 'cancelled' : 'loading');
   const [message, setMessage] = useState(
@@ -72,6 +74,7 @@ export default function MobileCheckoutPage() {
       : 'Preparing secure checkout...'
   );
   const [error, setError] = useState('');
+  const [redirectCountdown, setRedirectCountdown] = useState(6);
   const submittedFormRef = useRef(false);
 
   useEffect(() => {
@@ -178,6 +181,30 @@ export default function MobileCheckoutPage() {
 
   const isSuccess = status === 'completed';
   const isFailure = Boolean(error) || status === 'failed' || status === 'cancelled' || status === 'not_found';
+  const shouldAutoReturn = isSuccess || isFailure;
+
+  useEffect(() => {
+    if (!shouldAutoReturn) {
+      setRedirectCountdown(6);
+      return;
+    }
+
+    setRedirectCountdown(6);
+
+    const interval = window.setInterval(() => {
+      setRedirectCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(interval);
+          window.location.replace(returnTo);
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [returnTo, shouldAutoReturn]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0B0C10] px-4 py-10 text-white">
@@ -208,9 +235,15 @@ export default function MobileCheckoutPage() {
           </div>
         ) : null}
 
-        <p className="mt-5 text-xs leading-6 text-white/46">
-          After payment confirms, close this tab and return to the UG Movies 247 app. The app will refresh your premium access automatically.
-        </p>
+        {shouldAutoReturn ? (
+          <div className="mt-5 rounded-2xl border border-[#D90429]/25 bg-[#D90429]/10 px-4 py-3 text-xs font-bold leading-6 text-[#FFB3C1]">
+            Redirecting back to UG Movies 247 in {redirectCountdown} second{redirectCountdown === 1 ? '' : 's'}...
+          </div>
+        ) : (
+          <p className="mt-5 text-xs leading-6 text-white/46">
+            Keep this page open while we confirm your payment. You will be returned automatically when it finishes.
+          </p>
+        )}
       </section>
     </main>
   );

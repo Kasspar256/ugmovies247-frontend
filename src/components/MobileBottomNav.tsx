@@ -59,17 +59,16 @@ function NavItem({
   active: boolean;
   children: ReactNode;
 }) {
+  const itemColor = active ? 'text-[#D90429]' : 'text-white/62 hover:text-white';
+  const iconColor = active ? '[&_svg]:text-[#D90429]' : '[&_svg]:text-white/62';
+
   return (
     <Link
       href={href}
-      className="flex w-16 flex-col items-center gap-1 transition-colors"
+      className={`flex w-16 flex-col items-center gap-1 transition-colors active:scale-95 ${itemColor}`}
     >
-      <span className={`relative transition-colors ${active ? 'text-white' : 'text-white/62'}`}>
-        {children}
-      </span>
-      <span className={`text-[10px] font-bold ${active ? 'text-[#D90429]' : 'text-white/55'}`}>
-        {label}
-      </span>
+      <span className={iconColor}>{children}</span>
+      <span className={`text-[10px] font-semibold ${itemColor}`}>{label}</span>
     </Link>
   );
 }
