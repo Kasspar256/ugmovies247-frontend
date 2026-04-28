@@ -85,6 +85,31 @@ export function absoluteUrl(path = '/') {
   return `${SITE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+export function canonicalPath(path = '/') {
+  let pathname = path || '/';
+
+  try {
+    if (/^https?:\/\//i.test(pathname)) {
+      pathname = new URL(pathname).pathname || '/';
+    }
+  } catch {
+    pathname = '/';
+  }
+
+  pathname = pathname.split('?')[0].split('#')[0] || '/';
+  pathname = pathname.startsWith('/') ? pathname : `/${pathname}`;
+
+  if (pathname.length > 1) {
+    pathname = pathname.replace(/\/+$/, '');
+  }
+
+  return pathname || '/';
+}
+
+export function canonicalUrl(path = '/') {
+  return absoluteUrl(canonicalPath(path));
+}
+
 export function cleanText(value?: string, fallback = '') {
   return String(value || fallback)
     .replace(/\s+/g, ' ')
@@ -148,7 +173,7 @@ export function buildPageMetadata(options: {
   const description = options.description || SITE_DESCRIPTION;
   const path = options.path || '/';
   const image = absoluteUrl(options.image || SITE_OG_IMAGE);
-  const url = absoluteUrl(path);
+  const url = canonicalUrl(path);
 
   return {
     metadataBase: new URL(SITE_URL),
