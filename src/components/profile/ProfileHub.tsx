@@ -29,6 +29,33 @@ import {
 import { logoutCurrentUser } from '@/lib/auth/client';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 
+const PROFILE_CACHE_KEY = 'ugmovies247.profile-cache.v1';
+
+function readCachedProfile() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(PROFILE_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as AccountProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(profile: AccountProfile) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile));
+  } catch {
+    // Cache is only a speed boost; the live request remains the source of truth.
+  }
+}
+
 function getTimeLeftLabel(profile: AccountProfile) {
   if (profile.role === 'admin') {
     return {
@@ -257,6 +284,15 @@ export default function ProfileHub() {
 
   useEffect(() => {
     let mounted = true;
+    let hasCachedProfile = false;
+
+    const cachedProfile = readCachedProfile();
+
+    if (cachedProfile) {
+      hasCachedProfile = true;
+      setProfile(cachedProfile);
+      setLoading(false);
+    }
 
     const loadProfile = async () => {
       try {
@@ -266,9 +302,11 @@ export default function ProfileHub() {
           return;
         }
 
+        writeCachedProfile(nextProfile);
         setProfile(nextProfile);
+        setError('');
       } catch (loadError) {
-        if (mounted) {
+        if (mounted && !hasCachedProfile) {
           setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
         }
       } finally {
