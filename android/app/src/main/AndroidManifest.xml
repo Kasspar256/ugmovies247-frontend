@@ -29,6 +29,17 @@
                     android:host="open"
                     android:scheme="ugmovies247" />
             </intent-filter>
+        
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="https"
+                    android:host="ugmovies247.com" />
+            </intent-filter>
         </activity>
 
         <provider

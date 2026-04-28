@@ -1,18 +1,21 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { useRouter } from 'next/navigation';
 
-function getSafePathFromUrl(url: string) {
+function getSafePathFromUrl(rawUrl: string) {
   try {
-    const parsed = new URL(url);
-    const path = parsed.searchParams.get('path') || '/profile/payments';
+    const url = new URL(rawUrl);
 
-    return path.startsWith('/') && !path.startsWith('//') ? path : '/profile/payments';
+    if (!['ugmovies247.com', 'www.ugmovies247.com'].includes(url.hostname)) {
+      return null;
+    }
+
+    return `${url.pathname || '/'}${url.search || ''}${url.hash || ''}`;
   } catch {
-    return '/profile/payments';
+    return null;
   }
 }
 
@@ -24,23 +27,22 @@ export default function NativeDeepLinkHandler() {
       return;
     }
 
-    let removed = false;
-    let listener: { remove: () => Promise<void> } | null = null;
+    let removeListener: (() => void) | undefined;
 
-    App.addListener('appUrlOpen', ({ url }) => {
-      router.replace(getSafePathFromUrl(url));
-    }).then((nextListener) => {
-      if (removed) {
-        void nextListener.remove();
-        return;
+    App.addListener('appUrlOpen', (event) => {
+      const path = getSafePathFromUrl(event.url);
+
+      if (path) {
+        router.push(path);
       }
-
-      listener = nextListener;
+    }).then((listener) => {
+      removeListener = () => {
+        void listener.remove();
+      };
     });
 
     return () => {
-      removed = true;
-      void listener?.remove();
+      removeListener?.();
     };
   }, [router]);
 
