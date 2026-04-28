@@ -15,12 +15,14 @@ import {
   GoogleAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
   signOut,
   type User,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 type SessionResponse = {
   success: boolean;
@@ -489,6 +491,24 @@ function createGoogleProvider() {
   return provider;
 }
 
+async function continueWithNativeGoogle(rememberMe: boolean) {
+  const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+  const result = await FirebaseAuthentication.signInWithGoogle();
+  const googleIdToken = result.credential?.idToken || '';
+  const googleAccessToken = result.credential?.accessToken || '';
+
+  if (!googleIdToken) {
+    throw Object.assign(new Error('Google did not return an authentication token. Please try again.'), {
+      code: 'auth/missing-google-token',
+    });
+  }
+
+  const credential = GoogleAuthProvider.credential(googleIdToken, googleAccessToken || undefined);
+  const webResult = await signInWithCredential(auth, credential);
+
+  return syncGoogleUserToSession(webResult.user, rememberMe);
+}
+
 export async function loginWithEmailPassword(
   email: string,
   password: string,
@@ -541,6 +561,11 @@ export async function signupWithEmailPassword(options: {
 
 export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const rememberMe = options?.rememberMe !== false;
+
+  if (isNativeAndroidApp()) {
+    return continueWithNativeGoogle(rememberMe);
+  }
+
   const provider = createGoogleProvider();
 
   rememberGooglePreference(rememberMe);

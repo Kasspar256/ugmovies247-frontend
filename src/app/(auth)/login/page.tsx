@@ -1,4 +1,5 @@
 'use client';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -13,7 +14,6 @@ import {
   getFirebaseAuthErrorMessage,
   loginWithEmailPassword,
 } from '@/lib/auth/client';
-import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 function getSessionNoticeFromReason(reason: string) {
   if (reason === 'session-replaced') {
@@ -37,14 +37,9 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [nativeApp, setNativeApp] = useState(false);
   const [sessionNotice, setSessionNotice] = useState('');
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
-
-  useEffect(() => {
-    setNativeApp(isNativeAndroidApp());
-  }, []);
 
   useEffect(() => {
     setSessionNotice(getSessionNoticeFromReason(sessionReason));
@@ -132,11 +127,6 @@ export default function LoginPage() {
     setError('');
     setDevDiagnostics([]);
 
-    if (isNativeAndroidApp()) {
-      setError('Google login is being prepared for the Android app. Please sign in with email and password for now.');
-      return;
-    }
-
     setGoogleLoading(true);
 
     try {
@@ -196,19 +186,13 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-4">
-              {nativeApp ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-semibold leading-6 text-white/78">
-                  Google login is coming to the Android app. Please continue with email and password for now.
-                </div>
-              ) : (
-                <GoogleAuthButton
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                  loading={googleLoading}
-                  idleLabel="Continue with Google"
-                  loadingLabel="Connecting with Google..."
-                />
-              )}
+              <GoogleAuthButton
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                loading={googleLoading}
+                idleLabel="Continue with Google"
+                loadingLabel="Connecting with Google..."
+              />
 
               <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.26em] text-white/35">
                 <div className="h-px flex-1 bg-white/10" />
