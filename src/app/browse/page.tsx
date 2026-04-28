@@ -602,7 +602,7 @@ export default function Home() {
 
           <div className="pointer-events-auto h-[46px] min-w-[138px] px-2.5 rounded-[24px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-3">
             <button
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              className="flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
               aria-label="Cast"
               onClick={handleHeaderCast}
             >
@@ -611,7 +611,7 @@ export default function Home() {
 
             <Link
               href="/downloads"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              className="flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
               aria-label="Download"
             >
               <Download size={20} strokeWidth={2.2} />
@@ -619,7 +619,7 @@ export default function Home() {
 
             <Link
               href="/notifications"
-              className="relative flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+              className="relative flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
               aria-label="Notifications"
             >
               <Bell size={20} strokeWidth={2.2} />
