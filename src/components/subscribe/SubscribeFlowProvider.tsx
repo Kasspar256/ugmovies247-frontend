@@ -105,6 +105,7 @@ type SubscribeFlowContextValue = {
   message: string;
   emailVerified: boolean;
   clearFeedback: () => void;
+  cancelActivePayment: () => void;
   startMobileMoneyCheckout: () => Promise<boolean>;
   startCardCheckout: () => Promise<boolean>;
 };
@@ -290,6 +291,13 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setMessage('');
   }, []);
 
+  const cancelActivePayment = useCallback(() => {
+    setActivePayment(null);
+    setSubmitting(false);
+    setMessage('');
+    setError('Payment request cancelled. You can choose a payment method again.');
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -361,6 +369,30 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
         providerMessage: payment.providerMessage || '',
         paymentProvider: payment.paymentProvider || 'payfast',
       };
+
+      const normalizedProviderStatus = nextPayment.providerStatus.toLowerCase();
+      const normalizedProviderMessage = nextPayment.providerMessage.toLowerCase();
+      const providerCancelled =
+        nextPayment.paymentProvider === 'pawapay' &&
+        (
+          normalizedProviderStatus.includes('cancel') ||
+          normalizedProviderStatus.includes('reject') ||
+          normalizedProviderStatus.includes('declin') ||
+          normalizedProviderStatus.includes('fail') ||
+          normalizedProviderStatus.includes('expire') ||
+          normalizedProviderMessage.includes('cancel') ||
+          normalizedProviderMessage.includes('reject') ||
+          normalizedProviderMessage.includes('declin') ||
+          normalizedProviderMessage.includes('fail') ||
+          normalizedProviderMessage.includes('expire')
+        );
+
+      if (providerCancelled) {
+        setActivePayment({ ...nextPayment, status: 'cancelled' });
+        setError(nextPayment.providerMessage || 'Mobile Money payment was cancelled. You can try again.');
+        setMessage('');
+        return;
+      }
 
       setActivePayment(nextPayment);
 
@@ -802,6 +834,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       message,
       emailVerified,
       clearFeedback,
+      cancelActivePayment,
       startMobileMoneyCheckout,
       startCardCheckout,
     }),
@@ -809,6 +842,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       activePayment,
       canPayWithCard,
       canPayWithMobileMoney,
+      cancelActivePayment,
       cardAvailable,
       cardGateway,
       clearFeedback,

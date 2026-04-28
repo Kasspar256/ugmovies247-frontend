@@ -14,6 +14,7 @@ type SubscribeFlowNoticesProps = {
   error?: string;
   message?: string;
   activePayment?: PaymentState | null;
+  onCancelPayment?: () => void;
   tone?: 'dark' | 'light';
 };
 
@@ -25,6 +26,7 @@ export default function SubscribeFlowNotices({
   error,
   message,
   activePayment,
+  onCancelPayment,
   tone = 'dark',
 }: SubscribeFlowNoticesProps) {
   const isLight = tone === 'light';
@@ -97,7 +99,20 @@ export default function SubscribeFlowNotices({
               }`}
             >
               <Loader2 size={18} className="animate-spin" />
-              Waiting for PIN prompt...
+              <span className="flex-1">Waiting for PIN prompt...</span>
+              {onCancelPayment ? (
+                <button
+                  type="button"
+                  onClick={onCancelPayment}
+                  className={`rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-all active:scale-95 ${
+                    isLight
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : 'border-red-400/30 bg-red-500/10 text-red-100'
+                  }`}
+                >
+                  Cancel Waiting
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>

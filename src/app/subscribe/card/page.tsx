@@ -20,6 +20,7 @@ export default function SubscribeCardPage() {
     error,
     message,
     activePayment,
+    cancelActivePayment,
     selectedPlanDefinition,
     paymentMethod,
     cardAvailable,
@@ -75,7 +76,7 @@ export default function SubscribeCardPage() {
           </div>
         ) : null}
 
-        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} />
+        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} onCancelPayment={cancelActivePayment} />
 
         <SubscribePlanSummaryCard plan={selectedPlanDefinition} eyebrow="Ready for card checkout" />
 

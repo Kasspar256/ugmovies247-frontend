@@ -16,6 +16,7 @@ export default function SubscribeMobileMoneyPage() {
     error,
     message,
     activePayment,
+    cancelActivePayment,
     clearFeedback,
     selectedPlanDefinition,
     paymentMethod,
@@ -89,6 +90,7 @@ export default function SubscribeMobileMoneyPage() {
           error={error}
           message={message}
           activePayment={activePayment}
+          onCancelPayment={cancelActivePayment}
           tone="light"
         />
 

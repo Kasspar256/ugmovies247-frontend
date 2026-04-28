@@ -21,6 +21,7 @@ export default function SubscribePlanPage() {
     error,
     message,
     activePayment,
+    cancelActivePayment,
     clearFeedback,
     plans,
     entitlement,
@@ -84,7 +85,7 @@ export default function SubscribePlanPage() {
           </div>
         ) : null}
 
-        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} />
+        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} onCancelPayment={cancelActivePayment} />
 
         {hasActiveSubscription ? (
           <section className="rounded-[30px] border border-white/10 bg-[#11141C]/84 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.28)] md:p-6">

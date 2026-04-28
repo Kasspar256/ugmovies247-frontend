@@ -16,6 +16,7 @@ export default function SubscribePaymentMethodPage() {
     error,
     message,
     activePayment,
+    cancelActivePayment,
     clearFeedback,
     selectedPlanDefinition,
     paymentMethod,
@@ -77,7 +78,7 @@ export default function SubscribePaymentMethodPage() {
           </div>
         ) : null}
 
-        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} />
+        <SubscribeFlowNotices error={error} message={message} activePayment={activePayment} onCancelPayment={cancelActivePayment} />
 
         <SubscribePlanSummaryCard plan={selectedPlanDefinition} eyebrow="Selected plan" />
 
