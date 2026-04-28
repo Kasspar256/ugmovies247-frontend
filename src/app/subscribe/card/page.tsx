@@ -119,7 +119,7 @@ export default function SubscribeCardPage() {
               type="button"
               onClick={handleProceed}
               disabled={!cardAvailable || !selectedPlanHasCardPricing || submitting}
-              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-colors disabled:cursor-not-allowed disabled:bg-[#5E1623] sm:min-w-[260px]"
+              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-all hover:bg-[#F0062F] active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-[#5E1623] disabled:opacity-70 sm:min-w-[260px]"
             >
               {submitting ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
               {submitting ? 'Preparing Checkout...' : 'Proceed to Card Payment'}

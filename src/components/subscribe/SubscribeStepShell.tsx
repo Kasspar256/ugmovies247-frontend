@@ -53,7 +53,7 @@ export default function SubscribeStepShell({
         <div className="hidden items-center justify-between gap-3 md:flex">
           <Link
             href={backHref}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold ${
+            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold transition-all active:scale-[0.97] ${
               isLight
                 ? 'border-slate-300/80 bg-white text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
                 : 'border-white/10 bg-white/5 text-white'
@@ -66,7 +66,7 @@ export default function SubscribeStepShell({
           {actionHref && actionLabel ? (
             <Link
               href={actionHref}
-              className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.22em] ${
+              className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.22em] transition-all active:scale-[0.97] ${
                 isLight
                   ? 'border-slate-300/80 bg-white text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
                   : 'border-[#D90429]/30 bg-[#D90429]/10 text-[#FFB3C1]'

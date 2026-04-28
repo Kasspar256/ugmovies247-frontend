@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import SubscribeFlowNotices from '@/components/subscribe/SubscribeFlowNotices';
 import SubscribeStepShell from '@/components/subscribe/SubscribeStepShell';
 import { useSubscribeFlow } from '@/components/subscribe/SubscribeFlowProvider';
@@ -14,6 +14,7 @@ import {
 
 export default function SubscribePlanPage() {
   const router = useRouter();
+  const [proceeding, setProceeding] = useState(false);
   const proceedSectionRef = useRef<HTMLDivElement | null>(null);
   const {
     loadError,
@@ -49,6 +50,7 @@ export default function SubscribePlanPage() {
       return;
     }
 
+    setProceeding(true);
     router.push('/subscribe/payment-method');
   };
 
@@ -157,7 +159,7 @@ export default function SubscribePlanPage() {
                       setSelectedPlan(plan.type);
                       scrollToProceedSection();
                     }}
-                    className={`rounded-[22px] border px-3 py-3 text-left transition-all ${
+                    className={`rounded-[22px] border px-3 py-3 text-left transition-all active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D90429]/70 ${
                       isSelected
                         ? 'border-[#D90429] bg-[#D90429]/10 shadow-[0_16px_36px_rgba(217,4,41,0.14)]'
                         : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
@@ -211,11 +213,11 @@ export default function SubscribePlanPage() {
             <button
               type="button"
               onClick={handleProceed}
-              disabled={!selectedPlanDefinition}
-              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-colors disabled:cursor-not-allowed disabled:bg-[#5E1623] sm:min-w-[220px]"
+              disabled={!selectedPlanDefinition || proceeding}
+              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-all hover:bg-[#F0062F] active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-[#5E1623] disabled:opacity-70 sm:min-w-[220px]"
             >
-              Proceed
-              <ArrowRight size={16} />
+              {proceeding ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+              {proceeding ? 'Opening Payment...' : 'Proceed'}
             </button>
           </div>
         </section>

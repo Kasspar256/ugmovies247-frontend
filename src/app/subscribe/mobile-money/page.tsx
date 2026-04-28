@@ -121,7 +121,7 @@ export default function SubscribeMobileMoneyPage() {
                     clearFeedback();
                     setProvider(entry.id);
                   }}
-                  className={`rounded-[24px] border px-4 py-4 text-left transition-all ${
+                  className={`rounded-[24px] border px-4 py-4 text-left transition-all active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C1121F]/60 ${
                     isSelected
                       ? selectedClass
                       : 'border-slate-300/80 bg-white/70 text-slate-900 hover:border-slate-400 hover:bg-white'
@@ -186,7 +186,7 @@ export default function SubscribeMobileMoneyPage() {
             <button
               type="submit"
               disabled={!canPayWithMobileMoney || submitting}
-              className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#C1121F] px-4 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-colors disabled:cursor-not-allowed disabled:bg-[#A5A9B5]"
+              className="flex w-full items-center justify-center gap-2 rounded-[22px] bg-[#C1121F] px-4 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-all hover:bg-[#D51624] active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-[#A5A9B5] disabled:opacity-75"
             >
               {submitting ? <Loader2 size={18} className="animate-spin" /> : <Wallet size={18} />}
               {submitting
@@ -198,7 +198,7 @@ export default function SubscribeMobileMoneyPage() {
 
             <Link
               href="/subscribe/payment-method"
-              className="flex w-full items-center justify-center rounded-[22px] border border-slate-300/80 bg-white/80 px-4 py-4 text-sm font-black uppercase tracking-[0.24em] text-slate-700"
+              className="flex w-full items-center justify-center rounded-[22px] border border-slate-300/80 bg-white/80 px-4 py-4 text-sm font-black uppercase tracking-[0.24em] text-slate-700 transition-all hover:bg-white active:scale-[0.97]"
             >
               Cancel
             </Link>

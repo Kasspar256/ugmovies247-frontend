@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, CreditCard, Wallet } from 'lucide-react';
+import { ArrowRight, CreditCard, Loader2, Wallet } from 'lucide-react';
 import SubscribeFlowNotices from '@/components/subscribe/SubscribeFlowNotices';
 import SubscribePlanSummaryCard from '@/components/subscribe/SubscribePlanSummaryCard';
 import SubscribeStepShell from '@/components/subscribe/SubscribeStepShell';
@@ -10,6 +10,7 @@ import { useSubscribeFlow } from '@/components/subscribe/SubscribeFlowProvider';
 
 export default function SubscribePaymentMethodPage() {
   const router = useRouter();
+  const [proceeding, setProceeding] = useState(false);
   const {
     loadError,
     error,
@@ -37,11 +38,13 @@ export default function SubscribePaymentMethodPage() {
 
   const handleProceed = () => {
     if (paymentMethod === 'mobile_money') {
+      setProceeding(true);
       router.push('/subscribe/mobile-money');
       return;
     }
 
     if (paymentMethod === 'card') {
+      setProceeding(true);
       router.push('/subscribe/card');
     }
   };
@@ -88,8 +91,8 @@ export default function SubscribePaymentMethodPage() {
                 clearFeedback();
                 setPaymentMethod('mobile_money');
               }}
-              disabled={!sortedProviders.length || submitting}
-              className={`rounded-[24px] border px-4 py-5 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+              disabled={!sortedProviders.length || submitting || proceeding}
+              className={`rounded-[24px] border px-4 py-5 text-left transition-all active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D90429]/70 disabled:cursor-not-allowed disabled:opacity-50 ${
                 paymentMethod === 'mobile_money'
                   ? 'border-[#D90429] bg-[#D90429]/10'
                   : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
@@ -114,8 +117,8 @@ export default function SubscribePaymentMethodPage() {
                 clearFeedback();
                 setPaymentMethod('card');
               }}
-              disabled={!cardAvailable || !selectedPlanHasCardPricing || submitting}
-              className={`rounded-[24px] border px-4 py-5 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+              disabled={!cardAvailable || !selectedPlanHasCardPricing || submitting || proceeding}
+              className={`rounded-[24px] border px-4 py-5 text-left transition-all active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D90429]/70 disabled:cursor-not-allowed disabled:opacity-50 ${
                 paymentMethod === 'card'
                   ? 'border-[#D90429] bg-[#D90429]/10'
                   : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/[0.07]'
@@ -141,11 +144,11 @@ export default function SubscribePaymentMethodPage() {
             <button
               type="button"
               onClick={handleProceed}
-              disabled={!paymentMethod || submitting}
-              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-colors disabled:cursor-not-allowed disabled:bg-[#5E1623] sm:min-w-[220px]"
+              disabled={!paymentMethod || submitting || proceeding}
+              className="inline-flex items-center justify-center gap-2 rounded-[22px] bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.24em] text-white transition-all hover:bg-[#F0062F] active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-[#5E1623] disabled:opacity-70 sm:min-w-[220px]"
             >
-              Proceed
-              <ArrowRight size={16} />
+              {proceeding ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+              {proceeding ? 'Opening...' : 'Proceed'}
             </button>
           </div>
         </section>
