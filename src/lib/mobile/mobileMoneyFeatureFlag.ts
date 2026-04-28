@@ -32,7 +32,7 @@ export async function getShowMobileMoneyFlag() {
 
     remoteConfig.settings = {
       fetchTimeoutMillis: 10000,
-      minimumFetchIntervalMillis: 60 * 1000,
+      minimumFetchIntervalMillis: process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 60 * 1000,
     };
 
     await fetchAndActivate(remoteConfig);
