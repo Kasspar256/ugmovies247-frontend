@@ -387,9 +387,7 @@ export default function DownloadsPage() {
               controls
               playsInline
               className="aspect-video w-full bg-black"
-            /
-              preload="metadata"
-            >
+            />
           </div>
         </div>
       ) : null}
