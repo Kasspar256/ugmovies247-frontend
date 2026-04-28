@@ -412,6 +412,38 @@ async function sendAutoRenewReminderEmail(user: EmailUser, agreement: RecurringA
   });
 }
 
+async function hasActiveCardAutoRenew(subscription: UserSubscriptionDocument) {
+  if (subscription.paymentProvider !== 'payfast') {
+    return false;
+  }
+
+  if (subscription.autoRenewEnabled === true && subscription.nextChargeAt) {
+    return true;
+  }
+
+  try {
+    const snapshot = await adminDb
+      .collection('subscription_recurring_agreements')
+      .doc(subscription.userId)
+      .get();
+
+    if (!snapshot.exists) {
+      return false;
+    }
+
+    const agreement = snapshot.data() as RecurringAgreementDocument;
+
+    return Boolean(
+      agreement.autoRenewEnabled === true &&
+        agreement.status !== 'cancelled' &&
+        agreement.token &&
+        agreement.nextChargeAt
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isMonthPlan(planType?: SubscriptionPlanType | null) {
   const plan = planType ? SUBSCRIPTION_PLANS[planType] : null;
   return plan?.durationUnit === 'months';
@@ -445,6 +477,11 @@ export async function processScheduledTransactionalEmails(limit = 50) {
     }
 
     const remainingMs = expiresAtMs - now;
+    const cardAutoRenewActive = await hasActiveCardAutoRenew(subscription);
+
+    if (cardAutoRenewActive) {
+      continue;
+    }
 
     if (remainingMs <= 0) {
       await sendSubscriptionExpiredEmail(user, subscription);

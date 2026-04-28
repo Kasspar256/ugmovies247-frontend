@@ -241,9 +241,6 @@ async function processRecurringCharges() {
   };
 
   await reconcilePendingRecurringCharges();
-  await processScheduledTransactionalEmails(SUBSCRIPTION_WORKER_BATCH_SIZE).catch((error) => {
-    console.warn('[subscription-worker] scheduled email processing failed', error);
-  });
 
   const dueAgreements = await listDueRecurringAgreements(SUBSCRIPTION_WORKER_BATCH_SIZE);
 
@@ -420,6 +417,10 @@ async function processRecurringCharges() {
       }).catch(() => undefined);
     }
   }
+
+  await processScheduledTransactionalEmails(SUBSCRIPTION_WORKER_BATCH_SIZE).catch((error) => {
+    console.warn('[subscription-worker] scheduled email processing failed', error);
+  });
 }
 
 async function loop() {

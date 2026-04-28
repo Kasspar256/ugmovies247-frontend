@@ -41,7 +41,7 @@ export const VIDEO_JOB_RETRY_BASE_DELAY_MS = Number(
   process.env.VIDEO_JOB_RETRY_BASE_DELAY_MS || 1000 * 60
 );
 export const SUBSCRIPTION_WORKER_POLL_MS = Number(
-  process.env.SUBSCRIPTION_WORKER_POLL_MS || 1000 * 60
+  process.env.SUBSCRIPTION_WORKER_POLL_MS || 1000 * 60 * 5
 );
 export const SUBSCRIPTION_WORKER_BATCH_SIZE = Number(
   process.env.SUBSCRIPTION_WORKER_BATCH_SIZE || 5

@@ -69,6 +69,13 @@ export async function POST(request: Request) {
     currentAgreement &&
       (currentAgreement.status === 'cancelled' || Boolean(currentAgreement.cancelledAt))
   );
+  const hasActiveTokenizedAgreement = Boolean(
+    isRecurringEnrollment &&
+      currentAgreement?.token &&
+      currentAgreement.autoRenewEnabled === true &&
+      currentAgreement.nextChargeAt &&
+      currentAgreement.status !== 'cancelled'
+  );
   const keepAgreementCancelled = async (lastChargeStatus: string, failureReason = '') => {
     await upsertRecurringAgreementForUser(payment.userId, {
       status: 'cancelled',
@@ -185,6 +192,18 @@ export async function POST(request: Request) {
   const validation = await validatePayFastPayloadWithGateway(rawBody);
 
   if (!validation.ok) {
+    if (hasActiveTokenizedAgreement) {
+      await updatePaymentAttempt(paymentId, {
+        providerStatus: payload.payment_status || 'VALIDATION_IGNORED_AFTER_TOKENIZED_SETUP',
+        providerMessage:
+          `${validation.reason || 'PayFast validation rejected the ITN payload.'} Existing tokenized auto-renew agreement was kept active.`,
+        providerCallbackPayload: payload as Record<string, unknown>,
+        webhookReceivedAt: new Date().toISOString(),
+      });
+
+      return new NextResponse('OK', { status: 200 });
+    }
+
     await updatePaymentAttempt(paymentId, {
       status: 'needs_attention',
       providerStatus: payload.payment_status || 'VALIDATION_FAILED',
