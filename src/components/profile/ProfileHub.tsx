@@ -19,7 +19,9 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
+  clearAccountProfileCache,
   fetchAccountProfile,
+  readCachedAccountProfile,
   formatAccountDate,
   getAccountAccessLabel,
   getAccountBadge,
@@ -276,8 +278,8 @@ function NavigationGroup({
 
 export default function ProfileHub() {
   const router = useRouter();
-  const [profile, setProfile] = useState<AccountProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedAccountProfile());
+  const [loading, setLoading] = useState(() => !readCachedAccountProfile());
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
@@ -305,9 +307,12 @@ export default function ProfileHub() {
         writeCachedProfile(nextProfile);
         setProfile(nextProfile);
         setError('');
+        setError('');
       } catch (loadError) {
         if (mounted && !hasCachedProfile) {
-          setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
+          if (!readCachedAccountProfile()) {
+            setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
+          }
         }
       } finally {
         if (mounted) {
@@ -328,6 +333,7 @@ export default function ProfileHub() {
     setSignOutError('');
 
     try {
+      clearAccountProfileCache();
       await logoutCurrentUser();
       router.replace('/login');
     } catch (signOutError) {

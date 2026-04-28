@@ -33,6 +33,110 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: AccountNotificationPreferences = 
   productUpdates: true,
 };
 
+type CachedAccountProfile = {
+  profile: AccountProfile;
+  cachedAt: number;
+};
+
+const ACCOUNT_PROFILE_CACHE_KEY = 'ugmovies247.account-profile.v1';
+const ACCOUNT_PROFILE_CACHE_TTL_MS = 1000 * 60 * 10;
+
+let cachedAccountProfile: CachedAccountProfile | null = null;
+
+function canUseSessionStorage() {
+  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+}
+
+function normalizeAccountProfile(profile: AccountProfile) {
+  return {
+    ...profile,
+    emailVerified: profile.emailVerified === true,
+    ...resolveUserAvatar({
+      avatarPresetId: profile.avatarPresetId,
+      avatarUrl: profile.avatarUrl,
+      fallbackSeed: profile.id || profile.email,
+    }),
+    notificationPreferences: {
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...(profile.notificationPreferences || {}),
+    },
+  } satisfies AccountProfile;
+}
+
+function isFreshAccountProfile(cache: CachedAccountProfile | null) {
+  return Boolean(cache && Date.now() - cache.cachedAt < ACCOUNT_PROFILE_CACHE_TTL_MS);
+}
+
+function persistAccountProfileCache(profile: AccountProfile) {
+  cachedAccountProfile = {
+    profile,
+    cachedAt: Date.now(),
+  };
+
+  if (!canUseSessionStorage()) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(ACCOUNT_PROFILE_CACHE_KEY, JSON.stringify(cachedAccountProfile));
+  } catch {
+    // Keep in-memory cache only when session storage is unavailable.
+  }
+}
+
+export function readCachedAccountProfile() {
+  if (isFreshAccountProfile(cachedAccountProfile)) {
+    return cachedAccountProfile?.profile || null;
+  }
+
+  if (!canUseSessionStorage()) {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(ACCOUNT_PROFILE_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<CachedAccountProfile>;
+
+    if (!parsed.profile || typeof parsed.cachedAt !== 'number') {
+      return null;
+    }
+
+    const normalized = {
+      profile: normalizeAccountProfile(parsed.profile as AccountProfile),
+      cachedAt: parsed.cachedAt,
+    } satisfies CachedAccountProfile;
+
+    if (!isFreshAccountProfile(normalized)) {
+      return null;
+    }
+
+    cachedAccountProfile = normalized;
+    return normalized.profile;
+  } catch {
+    return null;
+  }
+}
+
+export function clearAccountProfileCache() {
+  cachedAccountProfile = null;
+
+  if (!canUseSessionStorage()) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(ACCOUNT_PROFILE_CACHE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+
 async function parseResponse<T>(response: Response) {
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
 
@@ -54,19 +158,10 @@ export async function fetchAccountProfile() {
     throw new Error('Your profile could not be loaded.');
   }
 
-  return {
-    ...payload.user,
-    emailVerified: payload.user.emailVerified === true,
-    ...resolveUserAvatar({
-      avatarPresetId: payload.user.avatarPresetId,
-      avatarUrl: payload.user.avatarUrl,
-      fallbackSeed: payload.user.id || payload.user.email,
-    }),
-    notificationPreferences: {
-      ...DEFAULT_NOTIFICATION_PREFERENCES,
-      ...(payload.user.notificationPreferences || {}),
-    },
-  } satisfies AccountProfile;
+  const profile = normalizeAccountProfile(payload.user);
+  persistAccountProfileCache(profile);
+
+  return profile;
 }
 
 export async function updateAccountProfile(input: {
