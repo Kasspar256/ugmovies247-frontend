@@ -192,6 +192,8 @@ export type RecurringAgreementDocument = {
   processingLockUntil: string;
   cancelledAt: string;
   failureReason: string;
+  failedChargeAttempts: number;
+  firstFailedChargeAt: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -210,6 +212,8 @@ export type RecurringAgreementSummary = {
   tokenAvailable: boolean;
   pendingPaymentId: string;
   failureReason: string;
+  failedChargeAttempts: number;
+  firstFailedChargeAt: string;
 };
 
 export type SubscriptionEntitlement = {

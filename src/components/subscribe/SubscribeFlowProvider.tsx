@@ -154,6 +154,8 @@ const EMPTY_RECURRING_AGREEMENT: RecurringAgreementSummary = {
   tokenAvailable: false,
   pendingPaymentId: '',
   failureReason: '',
+  failedChargeAttempts: 0,
+  firstFailedChargeAt: '',
 };
 
 const SubscribeFlowContext = createContext<SubscribeFlowContextValue | null>(null);

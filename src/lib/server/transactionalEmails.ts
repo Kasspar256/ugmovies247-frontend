@@ -298,20 +298,26 @@ export async function sendPaymentFailedEmail(payment: PaymentAttemptDocument) {
     return;
   }
 
+  const isAutoRenewal = payment.paymentKind === 'recurring_renewal';
+
   return sendBrandedEmail({
     user,
-    type: payment.paymentKind === 'recurring_renewal' ? 'auto_renew_failed' : 'payment_failed',
-    subject:
-      payment.paymentKind === 'recurring_renewal'
-        ? 'Your UG Movies 247 auto-renewal failed'
-        : 'Payment failed',
-    title: payment.paymentKind === 'recurring_renewal' ? 'Auto-renewal failed' : 'Payment failed',
-    intro: `Your payment for ${payment.planName} could not be completed.`,
-    lines: [
-      payment.failureReason || payment.providerMessage || 'Please try again when you are ready.',
-      'Your account access is only affected if your current plan has expired.',
-    ],
-    dedupeKey: `${payment.paymentKind === 'recurring_renewal' ? 'auto_renew_failed' : 'payment_failed'}:${payment.id}:${payment.status}`,
+    type: isAutoRenewal ? 'auto_renew_failed' : 'payment_failed',
+    subject: isAutoRenewal ? 'Your UG Movies 247 auto-renewal failed' : 'Payment failed',
+    title: isAutoRenewal ? 'Auto-renewal failed' : 'Payment failed',
+    intro: isAutoRenewal
+      ? `We were unable to complete the automatic renewal for your ${payment.planName}.`
+      : `Your payment for ${payment.planName} could not be completed.`,
+    lines: isAutoRenewal
+      ? [
+          'No immediate action is required if your current plan is still active. Once it expires, access may pause unless payment is completed.',
+          'Please review your payment method to avoid interruption.',
+        ]
+      : [
+          payment.failureReason || payment.providerMessage || 'Please try again when you are ready.',
+          'Your account access is only affected if your current plan has expired.',
+        ],
+    dedupeKey: `${isAutoRenewal ? 'auto_renew_failed' : 'payment_failed'}:${payment.id}:${payment.status}`,
   });
 }
 
@@ -400,11 +406,11 @@ async function sendAutoRenewReminderEmail(user: EmailUser, agreement: RecurringA
     type: 'auto_renew_reminder',
     subject: 'Your UG Movies 247 auto-renewal is coming up',
     title: 'Auto-renewal reminder',
-    intro: `Your ${agreement.planName || 'premium plan'} is scheduled to renew soon.`,
+    intro: `Your ${agreement.planName || 'premium plan'} will renew soon.`,
     lines: [
-      `Next charge: ${formatDate(agreement.nextChargeAt)}`,
+      `Next billing date: ${formatDate(agreement.nextChargeAt)}`,
       `Amount: ${formatMoney(agreement.amount, agreement.currency)}`,
-      'You can cancel auto-renewal from your subscription page before the charge.',
+      'Cancel auto-renewal anytime before renewal.',
     ],
     ctaLabel: 'Manage Renewal',
     ctaHref: `${getBaseUrl()}/subscribe`,

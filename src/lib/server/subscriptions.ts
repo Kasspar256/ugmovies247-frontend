@@ -103,10 +103,13 @@ function blankRecurringAgreementSummary(): RecurringAgreementSummary {
     tokenAvailable: false,
     pendingPaymentId: '',
     failureReason: '',
+    failedChargeAttempts: 0,
+    firstFailedChargeAt: '',
   };
 }
 
 const STALE_RECURRING_SETUP_MS = 1000 * 60 * 60 * 2;
+const MAX_RECURRING_FAILURE_ATTEMPTS = 3;
 
 function getRecurringAgreementDocId(userId: string) {
   return userId;
@@ -523,6 +526,8 @@ export function summarizeRecurringAgreement(
     tokenAvailable: Boolean(agreement.token),
     pendingPaymentId: agreement.pendingPaymentId || '',
     failureReason: agreement.failureReason || '',
+    failedChargeAttempts: Number(agreement.failedChargeAttempts || 0),
+    firstFailedChargeAt: agreement.firstFailedChargeAt || '',
   };
 }
 
@@ -664,6 +669,14 @@ export async function upsertRecurringAgreementForUser(
       typeof state.cancelledAt === 'string' ? state.cancelledAt : current?.cancelledAt || '',
     failureReason:
       typeof state.failureReason === 'string' ? state.failureReason : current?.failureReason || '',
+    failedChargeAttempts:
+      typeof state.failedChargeAttempts === 'number'
+        ? state.failedChargeAttempts
+        : Number(current?.failedChargeAttempts || 0),
+    firstFailedChargeAt:
+      typeof state.firstFailedChargeAt === 'string'
+        ? state.firstFailedChargeAt
+        : current?.firstFailedChargeAt || '',
     createdAt: current?.createdAt || timestamp,
     updatedAt: timestamp,
   };
@@ -824,6 +837,8 @@ export async function updateRecurringAgreementAfterSuccessfulPayment(options: {
     processingLockUntil: '',
     cancelledAt: '',
     failureReason: '',
+    failedChargeAttempts: 0,
+    firstFailedChargeAt: '',
     billingAnchorDay: billingAnchorDate.getUTCDate(),
   });
 
@@ -843,21 +858,32 @@ export async function updateRecurringAgreementAfterFailedPayment(options: {
   status: RecurringAgreementStatus;
   failureReason: string;
 }) {
+  const current = await getRecurringAgreementForUser(options.userId);
+  const failedChargeAttempts = Math.max(0, Number(current?.failedChargeAttempts || 0)) + 1;
+  const attemptsExhausted = failedChargeAttempts >= MAX_RECURRING_FAILURE_ATTEMPTS;
+  const autoRenewEnabled = attemptsExhausted === false;
+  const nextChargeAt = attemptsExhausted ? '' : options.nextChargeAt;
+  const failureReason = attemptsExhausted
+    ? `${options.failureReason} Auto-renew stopped after ${MAX_RECURRING_FAILURE_ATTEMPTS} failed attempts.`
+    : options.failureReason;
+
   const updated = await upsertRecurringAgreementForUser(options.userId, {
-    status: options.status,
-    autoRenewEnabled: true,
+    status: attemptsExhausted ? 'needs_attention' : options.status,
+    autoRenewEnabled,
     lastChargeStatus: options.status,
     lastPaymentId: options.paymentId,
     pendingPaymentId: '',
     processingLockUntil: '',
-    failureReason: options.failureReason,
-    nextChargeAt: options.nextChargeAt,
+    failureReason,
+    nextChargeAt,
+    failedChargeAttempts,
+    firstFailedChargeAt: current?.firstFailedChargeAt || nowIso(),
   });
 
   await updateSubscriptionRecurringState(options.userId, {
     recurringAgreementId: updated?.id || getRecurringAgreementDocId(options.userId),
-    autoRenewEnabled: true,
-    nextChargeAt: options.nextChargeAt,
+    autoRenewEnabled,
+    nextChargeAt,
   });
 
   return updated;

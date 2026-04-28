@@ -6,6 +6,7 @@ import { ChevronRight, CreditCard, ReceiptText } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 import type {
+  RecurringAgreementSummary,
   SubscriptionEntitlement,
   UserPaymentHistoryEntry,
 } from '@/types/subscriptions';
@@ -13,6 +14,7 @@ import type {
 type PaymentsPayload = {
   entitlement: SubscriptionEntitlement;
   payments: UserPaymentHistoryEntry[];
+  recurringAgreement?: RecurringAgreementSummary;
   emailVerified?: boolean;
 };
 
@@ -75,6 +77,8 @@ export default function PaymentsPage() {
   const [payload, setPayload] = useState<PaymentsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [autoRenewMessage, setAutoRenewMessage] = useState('');
+  const [cancellingAutoRenew, setCancellingAutoRenew] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -98,6 +102,7 @@ export default function PaymentsPage() {
         setPayload({
           entitlement: data.entitlement || EMPTY_ENTITLEMENT,
           payments: data.payments || [],
+          recurringAgreement: data.recurringAgreement,
           emailVerified: data.emailVerified === true,
         });
       } catch (loadError) {
@@ -118,6 +123,47 @@ export default function PaymentsPage() {
     };
   }, []);
 
+  const handleCancelAutoRenew = async () => {
+    setAutoRenewMessage('');
+    setError('');
+    setCancellingAutoRenew(true);
+
+    try {
+      const response = await fetch('/api/subscriptions/auto-renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const data = (await response.json().catch(() => ({}))) as PaymentsPayload & { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Auto-renew could not be cancelled.');
+      }
+
+      setPayload((current) =>
+        current
+          ? {
+              ...current,
+              recurringAgreement: data.recurringAgreement,
+              entitlement: {
+                ...current.entitlement,
+                subscription: {
+                  ...current.entitlement.subscription,
+                  autoRenewEnabled: false,
+                },
+              },
+            }
+          : current
+      );
+      setAutoRenewMessage('Auto-renew has been cancelled. Your current access remains until its expiry date.');
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Auto-renew could not be cancelled.');
+    } finally {
+      setCancellingAutoRenew(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0B0C10]">
@@ -128,6 +174,8 @@ export default function PaymentsPage() {
 
   const entitlement = payload?.entitlement || EMPTY_ENTITLEMENT;
   const payments = payload?.payments || [];
+  const recurringAgreement = payload?.recurringAgreement;
+  const canCancelAutoRenew = recurringAgreement?.autoRenewEnabled === true && recurringAgreement.tokenAvailable;
 
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
@@ -275,6 +323,42 @@ export default function PaymentsPage() {
                 </div>
               )}
             </section>
+
+            {recurringAgreement?.tokenAvailable ? (
+              <section className="rounded-[28px] border border-white/10 bg-[#11141C]/70 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                  Auto Renew
+                </div>
+                <h2 className="mt-2 text-xl font-black tracking-[-0.03em] text-white">
+                  Card subscription renewal
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-white/62">
+                  {canCancelAutoRenew
+                    ? `Your card auto-renew is active. Next charge: ${formatDate(recurringAgreement.nextChargeAt)}.`
+                    : 'Card auto-renew is currently off for this account.'}
+                </p>
+                {recurringAgreement.failedChargeAttempts > 0 ? (
+                  <p className="mt-2 text-sm font-bold text-amber-100">
+                    Failed renewal attempts: {recurringAgreement.failedChargeAttempts}/3
+                  </p>
+                ) : null}
+                {autoRenewMessage ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100">
+                    {autoRenewMessage}
+                  </div>
+                ) : null}
+                {canCancelAutoRenew ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelAutoRenew}
+                    disabled={cancellingAutoRenew}
+                    className="mt-5 inline-flex w-full items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/10 px-5 py-3 text-sm font-black uppercase tracking-[0.18em] text-red-100 transition active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 md:w-auto"
+                  >
+                    {cancellingAutoRenew ? 'Cancelling...' : 'Cancel Auto Renew'}
+                  </button>
+                ) : null}
+              </section>
+            ) : null}
           </div>
         )}
       </div>
