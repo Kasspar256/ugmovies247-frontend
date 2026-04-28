@@ -3,6 +3,7 @@ import AuthGate from '@/components/AuthGate';
 import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import NativeDeepLinkHandler from '@/components/NativeDeepLinkHandler';
 import NativePushBridge from '@/components/NativePushBridge';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
 import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
@@ -55,6 +56,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </AuthGate>
             <EnvironmentBadge />
           </main>
+          <NativeDeepLinkHandler />
           <MobileBottomNav />
         </PlaybackProvider>
       </body>

@@ -195,7 +195,14 @@ export default function MobileCheckoutPage() {
       setRedirectCountdown((current) => {
         if (current <= 1) {
           window.clearInterval(interval);
-          window.location.replace(returnTo);
+
+          const appReturnUrl = `ugmovies247://open?path=${encodeURIComponent(returnTo)}`;
+          window.location.href = appReturnUrl;
+
+          window.setTimeout(() => {
+            window.location.replace(returnTo);
+          }, 2500);
+
           return 0;
         }
 
