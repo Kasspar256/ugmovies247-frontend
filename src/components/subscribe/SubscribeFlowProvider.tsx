@@ -800,7 +800,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       activePayment,
       error,
       message,
-      mobileMoneyEnabled,
       emailVerified,
       clearFeedback,
       startMobileMoneyCheckout,
