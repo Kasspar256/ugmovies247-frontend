@@ -342,18 +342,7 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
 
 
 function StreamLoadingIndicator({ compact = false }: { compact?: boolean }) {
-  return (
-    <div
-      className={`inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/58 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white/86 shadow-[0_18px_55px_rgba(0,0,0,0.45)] backdrop-blur-xl ${
-        compact ? 'px-3 py-2 text-[10px]' : ''
-      }`}
-      role="status"
-      aria-live="polite"
-    >
-      <SpinnerOrb className={compact ? 'h-9 w-9' : 'h-11 w-11'} />
-      <span>{compact ? 'Connecting...' : 'Connecting stream...'}</span>
-    </div>
-  );
+  return <SpinnerOrb className={compact ? 'h-12 w-12' : 'h-14 w-14'} />;
 }
 
 function useIsDesktopViewport() {
@@ -890,6 +879,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     videoElement.setAttribute('preload', 'metadata');
     videoElement.src = activeSource.sourceUrl;
     videoElement.load();
+
+    if (shouldResumePlayback) {
+      void videoElement.play().catch(() => {
+        setPlaybackPhaseSafe('paused');
+      });
+    }
   }, [
     activeSource?.autoplay,
     activeSource?.sessionKey,
@@ -1506,6 +1501,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.setAttribute('preload', 'metadata');
       videoElement.src = fallbackUrl;
       videoElement.load();
+
+      if (pendingAutoplayRef.current) {
+        void videoElement.play().catch(() => {
+          setPlaybackPhaseSafe('paused');
+        });
+      }
       return;
     }
 
