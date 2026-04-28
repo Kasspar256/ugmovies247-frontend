@@ -340,6 +340,22 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
   );
 }
 
+
+function StreamLoadingIndicator({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/58 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white/86 shadow-[0_18px_55px_rgba(0,0,0,0.45)] backdrop-blur-xl ${
+        compact ? 'px-3 py-2 text-[10px]' : ''
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      <SpinnerOrb className={compact ? 'h-9 w-9' : 'h-11 w-11'} />
+      <span>{compact ? 'Connecting...' : 'Connecting stream...'}</span>
+    </div>
+  );
+}
+
 function useIsDesktopViewport() {
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -576,6 +592,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         node.setAttribute('playsinline', 'true');
         node.setAttribute('webkit-playsinline', 'true');
         node.setAttribute('x-webkit-airplay', 'allow');
+        node.preload = 'metadata';
+        node.setAttribute('preload', 'metadata');
         node.volume = clamp(volume, 0, 1);
         node.muted = isMuted;
         node.playbackRate = playbackRate;
@@ -868,6 +886,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setPlaybackPhaseSafe('loading');
 
     videoElement.pause();
+    videoElement.preload = 'metadata';
+    videoElement.setAttribute('preload', 'metadata');
     videoElement.src = activeSource.sourceUrl;
     videoElement.load();
   }, [
@@ -1482,6 +1502,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       lastAssignedSourceKeyRef.current = `${activeSource.sessionKey}|${fallbackUrl}`;
       setPlaybackPhaseSafe('loading');
       videoElement.pause();
+      videoElement.preload = 'metadata';
+      videoElement.setAttribute('preload', 'metadata');
       videoElement.src = fallbackUrl;
       videoElement.load();
       return;
@@ -1977,7 +1999,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                   {isDesktopInlineMode && showCenterAction ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-5">
                       {playbackPhase === 'loading' || playbackPhase === 'buffering' ? (
-                        <SpinnerOrb className="h-14 w-14" />
+                        <StreamLoadingIndicator />
                       ) : (
                         <button
                           type="button"
@@ -2009,7 +2031,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         onClick={(event) => event.stopPropagation()}
                       >
                         {playbackPhase === 'loading' || playbackPhase === 'buffering' ? (
-                          <SpinnerOrb className="h-12 w-12" />
+                          <StreamLoadingIndicator compact />
                         ) : playbackPhase === 'paused' || playbackPhase === 'ended' ? (
                           <button
                             type="button"
