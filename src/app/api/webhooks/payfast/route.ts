@@ -126,6 +126,10 @@ export async function POST(request: Request) {
       await upsertRecurringAgreementForUser(payment.userId, {
         status: 'needs_attention',
         autoRenewEnabled: false,
+        token: '',
+        tokenCapturedAt: '',
+        tokenSourcePaymentId: '',
+        nextChargeAt: '',
         pendingPaymentId: '',
         processingLockUntil: '',
         failureReason: 'PayFast signature validation failed during auto-renew setup.',
@@ -165,6 +169,10 @@ export async function POST(request: Request) {
       await upsertRecurringAgreementForUser(payment.userId, {
         status: 'needs_attention',
         autoRenewEnabled: false,
+        token: '',
+        tokenCapturedAt: '',
+        tokenSourcePaymentId: '',
+        nextChargeAt: '',
         pendingPaymentId: '',
         processingLockUntil: '',
         failureReason: 'PayFast ITN source IP did not match the configured allow list.',
@@ -420,6 +428,10 @@ export async function POST(request: Request) {
       await upsertRecurringAgreementForUser(payment.userId, {
         status: mappedStatus === 'cancelled' ? 'cancelled' : 'payment_failed',
         autoRenewEnabled: false,
+        token: '',
+        tokenCapturedAt: '',
+        tokenSourcePaymentId: '',
+        nextChargeAt: '',
         pendingPaymentId: '',
         processingLockUntil: '',
         failureReason: payload.error_message || payload.payment_status || 'Recurring setup was not completed.',
