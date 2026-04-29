@@ -328,20 +328,27 @@ export async function sendSubscriptionActivatedEmail(payment: PaymentAttemptDocu
     return;
   }
 
+  const isAutoRenewal = payment.paymentKind === 'recurring_renewal';
+
   return sendBrandedEmail({
     user,
-    type: 'subscription_activated',
-    subject: 'Your UG Movies 247 subscription is active',
-    title: 'Subscription activated',
-    intro: `Your ${payment.planName} is now active.`,
+    type: isAutoRenewal ? 'auto_renew_success' : 'subscription_activated',
+    subject: isAutoRenewal
+      ? 'Your UG Movies 247 auto-renewal was successful'
+      : 'Your UG Movies 247 subscription is active',
+    title: isAutoRenewal ? 'Auto-renewal successful' : 'Subscription activated',
+    intro: isAutoRenewal
+      ? `Your ${payment.planName} renewed successfully.`
+      : `Your ${payment.planName} is now active.`,
     lines: [
+      `Amount: ${formatMoney(payment.amount, payment.currency)}`,
       `Started: ${formatDate(payment.startsAt)}`,
       `Expires: ${formatDate(payment.expiresAt)}`,
       'You can now continue watching premium movies and series.',
     ],
     ctaLabel: 'Start Watching',
     ctaHref: `${getBaseUrl()}/browse`,
-    dedupeKey: `subscription_activated:${payment.id}`,
+    dedupeKey: `${isAutoRenewal ? 'auto_renew_success' : 'subscription_activated'}:${payment.id}`,
   });
 }
 

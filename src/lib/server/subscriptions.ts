@@ -1203,12 +1203,8 @@ export async function applySuccessfulSubscriptionPayment(options: {
   }
 
   if (!result.alreadyApplied && result.payment) {
-    void import('@/lib/server/transactionalEmails').then(
-      ({ sendPaymentSuccessEmail, sendSubscriptionActivatedEmail }) =>
-        Promise.all([
-          sendPaymentSuccessEmail(result.payment as PaymentAttemptDocument),
-          sendSubscriptionActivatedEmail(result.payment as PaymentAttemptDocument),
-        ])
+    void import('@/lib/server/transactionalEmails').then(({ sendSubscriptionActivatedEmail }) =>
+      sendSubscriptionActivatedEmail(result.payment as PaymentAttemptDocument)
     ).catch((error) => {
       console.warn('[subscriptions] payment success email hook failed', error);
     });
