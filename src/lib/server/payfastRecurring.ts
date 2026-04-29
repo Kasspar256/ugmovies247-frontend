@@ -392,6 +392,37 @@ function getPayloadValue(payload: Record<string, unknown>, keys: string[]) {
   return '';
 }
 
+function getNestedPayloadValue(
+  payload: Record<string, unknown>,
+  containerKeys: string[],
+  keys: string[]
+) {
+  for (const containerKey of containerKeys) {
+    const nested = payload[containerKey];
+
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const value = getPayloadValue(nested as Record<string, unknown>, keys);
+
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return '';
+}
+
+export function isInvalidPayFastRecurringState(result: PayFastRecurringChargeResult) {
+  const nestedMessage = getNestedPayloadValue(result.rawPayload, ['data', 'error'], [
+    'message',
+    'error',
+    'detail',
+  ]);
+  const message = `${result.providerMessage || ''} ${nestedMessage || ''}`;
+
+  return /not in a valid state/i.test(message);
+}
+
 function extractTransactionList(payload: Record<string, unknown>): Array<Record<string, unknown>> {
   const queue: unknown[] = [payload];
 
@@ -565,12 +596,19 @@ export async function chargePayFastTokenizedAgreement(
     'payment_status',
     'result',
   ]).toUpperCase() || (response.ok ? 'SUBMITTED' : 'FAILED');
-  const providerTransactionId = getPayloadValue(response.payload, [
-    'pf_payment_id',
-    'payment_id',
-    'id',
-    'reference',
-  ]);
+  const providerTransactionId =
+    getPayloadValue(response.payload, [
+      'pf_payment_id',
+      'payment_id',
+      'id',
+      'reference',
+    ]) ||
+    getNestedPayloadValue(response.payload, ['data'], [
+      'pf_payment_id',
+      'payment_id',
+      'id',
+      'reference',
+    ]);
   const normalizedProviderStatus = providerStatus.trim().toUpperCase();
   const providerFailureMessage =
     normalizedProviderStatus === 'FAILED' ||
@@ -581,6 +619,7 @@ export async function chargePayFastTokenizedAgreement(
 
   const providerMessage =
     getPayloadValue(response.payload, ['message', 'error', 'detail']) ||
+    getNestedPayloadValue(response.payload, ['data', 'error'], ['message', 'error', 'detail']) ||
     providerFailureMessage ||
     (response.ok
       ? 'Recurring card renewal submitted to PayFast.'

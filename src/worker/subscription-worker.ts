@@ -36,6 +36,7 @@ async function processRecurringCharges() {
       chargePayFastTokenizedAgreement,
       findPayFastTransactionByPaymentId,
       getRecurringFailureRescheduleAt,
+      isInvalidPayFastRecurringState,
       mapRecurringChargeResultToPaymentState,
     },
   ] = await Promise.all([
@@ -389,6 +390,33 @@ async function processRecurringCharges() {
         rawPayload: chargeResult.rawPayload,
         source: 'poll',
       });
+
+      if (isInvalidPayFastRecurringState(chargeResult)) {
+        const invalidAgreementMessage =
+          'PayFast says this recurring card agreement is not active anymore. Please set up card auto-renew again.';
+
+        await upsertRecurringAgreementForUser(claimed.userId, {
+          status: 'needs_attention',
+          autoRenewEnabled: false,
+          token: '',
+          tokenCapturedAt: '',
+          tokenSourcePaymentId: '',
+          nextChargeAt: '',
+          pendingPaymentId: '',
+          processingLockUntil: '',
+          lastChargeStatus: 'PAYFAST_INVALID_STATE',
+          lastPaymentId: paymentId,
+          failureReason: invalidAgreementMessage,
+        });
+
+        await updateSubscriptionRecurringState(claimed.userId, {
+          recurringAgreementId: claimed.id || claimed.userId,
+          autoRenewEnabled: false,
+          nextChargeAt: '',
+        }).catch(() => undefined);
+
+        continue;
+      }
 
       await updateRecurringAgreementAfterFailedPayment({
         userId: claimed.userId,
