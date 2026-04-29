@@ -571,8 +571,17 @@ export async function chargePayFastTokenizedAgreement(
     'id',
     'reference',
   ]);
+  const normalizedProviderStatus = providerStatus.trim().toUpperCase();
+  const providerFailureMessage =
+    normalizedProviderStatus === 'FAILED' ||
+    normalizedProviderStatus === 'ERROR' ||
+    normalizedProviderStatus === 'DECLINED'
+      ? 'PayFast did not complete the recurring card renewal.'
+      : '';
+
   const providerMessage =
     getPayloadValue(response.payload, ['message', 'error', 'detail']) ||
+    providerFailureMessage ||
     (response.ok
       ? 'Recurring card renewal submitted to PayFast.'
       : `PayFast recurring charge request failed (${response.status}).`);

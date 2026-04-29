@@ -400,6 +400,32 @@ async function sendSubscriptionExpiredEmail(user: EmailUser, subscription: UserS
   });
 }
 
+function shouldSendAutoRenewReminder(
+  agreement: RecurringAgreementDocument,
+  remainingMs: number,
+  oneDayMs: number,
+) {
+  const failedChargeAttempts = Number(agreement.failedChargeAttempts || 0);
+  const lastChargeStatus = String(agreement.lastChargeStatus || '').toLowerCase();
+
+  if (remainingMs <= 0 || remainingMs > oneDayMs) {
+    return false;
+  }
+
+  if (
+    agreement.status === 'cancelled' ||
+    agreement.status === 'payment_failed' ||
+    agreement.status === 'needs_attention' ||
+    failedChargeAttempts > 0 ||
+    lastChargeStatus === 'payment_failed'
+  ) {
+    return false;
+  }
+
+  // Daily plans renew too frequently for reminder emails to feel useful.
+  return agreement.planType !== 'daily';
+}
+
 async function sendAutoRenewReminderEmail(user: EmailUser, agreement: RecurringAgreementDocument) {
   return sendBrandedEmail({
     user,
@@ -545,7 +571,7 @@ export async function processScheduledTransactionalEmails(limit = 50) {
 
     const remainingMs = nextChargeAtMs - now;
 
-    if (remainingMs <= 0 || remainingMs > oneDayMs || agreement.status === 'cancelled') {
+    if (!shouldSendAutoRenewReminder(agreement, remainingMs, oneDayMs)) {
       continue;
     }
 
