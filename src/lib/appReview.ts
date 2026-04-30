@@ -1,4 +1,4 @@
-export const isAppInReview = false;
+export const isAppInReview = true;
 
 export const APP_REVIEW_HOME_PATH = '/browse';
 
