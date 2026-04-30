@@ -102,6 +102,10 @@ export function absoluteUrl(path = '/') {
   return `${SITE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+export function canonicalUrl(path = '/') {
+  return absoluteUrl(path);
+}
+
 export function cleanText(value?: string, fallback = '') {
   return String(value || fallback)
     .replace(/\s+/g, ' ')
