@@ -32,6 +32,7 @@ import {
 } from '@/lib/artwork';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
+import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 
 type SessionUser = {
   role: 'user' | 'admin';
@@ -252,6 +253,7 @@ export default function Home() {
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
+  const [activeTrailer, setActiveTrailer] = useState<{ url: string; title: string } | null>(null);
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
@@ -439,11 +441,10 @@ export default function Home() {
       return;
     }
 
-    const popup = window.open(trailerUrl, '_blank', 'noopener,noreferrer');
-
-    if (!popup) {
-      window.location.href = trailerUrl;
-    }
+    setActiveTrailer({
+      url: trailerUrl,
+      title: `${heroMovie.title || heroMovie.name || 'UG Movies 247'} trailer`,
+    });
   };
 
   if (loading) {
@@ -505,6 +506,42 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:pb-12">
+      {activeTrailer && (
+        <div
+          className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/86 px-4 py-8 backdrop-blur-sm"
+          onClick={() => setActiveTrailer(null)}
+        >
+          <section
+            className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/10 bg-[#05070C] shadow-[0_28px_90px_rgba(0,0,0,0.62)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 md:px-5">
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-[0.24em] text-[#FFB3C1]">
+                  Trailer
+                </div>
+                <h2 className="truncate text-sm font-black text-white md:text-base">
+                  {activeTrailer.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTrailer(null)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xl font-bold text-white transition-colors hover:bg-white/10"
+                aria-label="Close trailer"
+              >
+                x
+              </button>
+            </div>
+            <TrailerEmbedPlayer
+              trailerUrl={activeTrailer.url}
+              title={activeTrailer.title}
+              autoplay
+              className="rounded-none"
+            />
+          </section>
+        </div>
+      )}
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">

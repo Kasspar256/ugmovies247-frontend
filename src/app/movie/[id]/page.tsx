@@ -16,6 +16,7 @@ import {
   PersistentPlaybackHost,
   usePlayback,
 } from '@/components/player/PlaybackProvider';
+import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 
@@ -117,12 +118,17 @@ const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>([]);
 const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number | null>(null);
 const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
 const [selectedPartIndex, setSelectedPartIndex] = useState(0);
+const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
 const router = useRouter();
 const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
 const { setPlaybackSource, videoElement } = usePlayback();
 const shouldAutoplay = searchParams.get('autoplay') === '1';
+
+useEffect(() => {
+setIsTrailerPlaying(false);
+}, [params.id]);
 
 useEffect(() => {
 const fetchMovie = async () => {
@@ -796,11 +802,8 @@ const handleWatchTrailer = () => {
     return;
   }
 
-  const popup = window.open(trailerUrl, '_blank', 'noopener,noreferrer');
-
-  if (!popup) {
-    window.location.href = trailerUrl;
-  }
+  setActionMessage('');
+  setIsTrailerPlaying(true);
 };
 
 const handleCast = async () => {
@@ -846,6 +849,7 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const hasPlaybackSource = !isAppInReview && Boolean(playbackVideoUrl);
 const showPlayerPreviewBackdrop = Boolean(playerBackdrop) && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
+const reviewTrailerUrl = isAppInReview ? getReviewTrailerUrl(movie) : '';
 
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
 
@@ -895,7 +899,16 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         <div className="absolute inset-0 bg-gradient-to-b from-black/18 via-black/28 to-black/42" />
       </div>
     )}
-    {isAppInReview ? (
+    {isAppInReview && isTrailerPlaying ? (
+      <div className="absolute inset-0 z-20 bg-black">
+        <TrailerEmbedPlayer
+          trailerUrl={reviewTrailerUrl}
+          title={`${playbackTitle || movie.title || movie.name || 'UG Movies 247'} trailer`}
+          autoplay
+          fill
+        />
+      </div>
+    ) : isAppInReview ? (
       <button
         type="button"
         onClick={handleWatchTrailer}
@@ -1267,4 +1280,3 @@ function DownloadIcon() {
 function LockedDownloadIcon() {
   return <Lock className="h-[18px] w-[18px] text-white/90" strokeWidth={2.1} aria-hidden="true" />;
 }
-

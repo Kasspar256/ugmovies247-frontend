@@ -2,11 +2,16 @@
 
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
+import { isAppInReview } from '@/lib/appReview';
 
 export async function openExternalCheckout(
   url: string,
   onReturnToApp: () => Promise<void> | void
 ) {
+  if (isAppInReview) {
+    return async () => undefined;
+  }
+
   let refreshing = false;
   let cleanup = async () => undefined;
 
