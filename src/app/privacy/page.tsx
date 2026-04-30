@@ -25,15 +25,16 @@ export default function PrivacyPage() {
           <>
             This Privacy Policy explains how UGMOVIES247 collects, uses, stores, shares, and
             protects personal information when you browse movie details, create an account, save
-            titles, contact support, or use connected discovery features.
+            titles, watch trailers, contact support, or use connected discovery features.
           </>
         }
       >
         <LegalSection title="1. Information We Collect">
           <LegalBulletList>
-            <li>Name, display name, email address, and account identifiers tied to login.</li>
-            <li>Profile preferences, saved lists, likes, notification preferences, and support requests.</li>
-            <li>Device, browser, app, IP-related request data, and technical diagnostics used for security and reliability.</li>
+            <li>Account information such as name, display name, email address, and account identifiers tied to login.</li>
+            <li>Profile preferences, saved lists, likes, notification preferences, and support messages.</li>
+            <li>Device, browser, app, IP-related request data, and technical diagnostics used for security, abuse prevention, and reliability.</li>
+            <li>Trailer and catalog interaction data such as pages opened, saved titles, search activity, and app navigation events.</li>
           </LegalBulletList>
         </LegalSection>
 
@@ -45,11 +46,58 @@ export default function PrivacyPage() {
           </LegalBulletList>
         </LegalSection>
 
-        <LegalSection title="3. Account Deletion and Support">
+        <LegalSection title="3. Third-Party Services">
           <p>
-            You can request account deletion from the in-app profile security page. When deletion is
-            completed, account records and supported user-owned records are removed from active
-            systems, subject to security and legal retention needs.
+            We use service providers to run the app, including Firebase for authentication and
+            account data, hosting and delivery infrastructure for app content, and YouTube embed
+            playback for trailer videos. These providers may process technical information needed to
+            deliver their services.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="4. Payments and Subscriptions in This App Version">
+          <p>
+            This app version is offered as a free movie discovery and trailer catalog. It does not
+            offer in-app subscription checkout, payment methods, or paid digital purchases.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="5. Sharing and Disclosure">
+          <LegalBulletList>
+            <li>We share data with service providers only as needed to operate, secure, support, and improve the app.</li>
+            <li>We may disclose information when required by law, legal process, safety needs, abuse prevention, or rights enforcement.</li>
+            <li>We do not sell personal information.</li>
+          </LegalBulletList>
+        </LegalSection>
+
+        <LegalSection title="6. Data Retention">
+          <p>
+            We keep account and app data while your account is active and for a reasonable period
+            afterward where needed for security, legal compliance, support, backups, abuse
+            prevention, or dispute handling. Backup copies may remain briefly before being
+            overwritten through normal maintenance.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="7. Account Deletion and Support">
+          <p>
+            You can delete your account from Profile, Security in the app. You can also request
+            deletion from the web at{' '}
+            <LegalInlineLink href="/account-deletion">ugmovies247.com/account-deletion</LegalInlineLink>.
+            When deletion is completed, account records and supported user-owned records are removed
+            from active systems, subject to security and legal retention needs.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="8. Children, Security, and Contact">
+          <p>
+            UGMOVIES247 is not directed to children under 13, or any higher age required by local
+            law. We use reasonable safeguards to protect account data, but no internet service can
+            promise absolute security.
+          </p>
+          <p>
+            Privacy questions, deletion requests, or support messages can be sent to{' '}
+            <LegalInlineLink href="mailto:info@ugmovies247.com">info@ugmovies247.com</LegalInlineLink>.
           </p>
         </LegalSection>
       </LegalDocumentPage>

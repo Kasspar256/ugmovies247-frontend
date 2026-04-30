@@ -7,10 +7,12 @@ import {
   MessageCircle,
   Phone,
   Shield,
+  Trash2,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import { Manrope, Sora } from 'next/font/google';
+import { isAppInReview } from '@/lib/appReview';
 
 const headingFont = Sora({
   subsets: ['latin'],
@@ -24,7 +26,9 @@ const bodyFont = Manrope({
 
 export const metadata: Metadata = {
   title: 'Help | UG Movies 247',
-  description: 'Find help online for UG Movies 247, including customer service, privacy, and terms information.',
+  description: isAppInReview
+    ? 'Find help for UG Movies 247 accounts, privacy, account deletion, and trailer discovery features.'
+    : 'Find help online for UG Movies 247, including customer service, privacy, and terms information.',
 };
 
 const EMAIL_SUBJECT = encodeURIComponent('UG Movies 247 Help Center');
@@ -124,9 +128,10 @@ export default function HelpPage() {
             </h1>
 
             <div className="mt-6 space-y-3">
-              <InfoCard href={HELP_CENTER_HREF} label="Help Center" icon={Mail} />
+              {!isAppInReview && <InfoCard href={HELP_CENTER_HREF} label="Help Center" icon={Mail} />}
               <InfoCard href="/privacy" label="Privacy Statement" icon={FileText} internal />
               <InfoCard href="/terms" label="Terms Of Use" icon={Shield} internal />
+              <InfoCard href="/account-deletion" label="Account Deletion" icon={Trash2} internal />
             </div>
 
             <div className="mt-8 border-t border-white/10 pt-8">
@@ -134,9 +139,9 @@ export default function HelpPage() {
                 We&apos;re here for you.
               </h2>
               <p className="mt-4 text-[1.02rem] leading-8 text-white/76">
-                Need help getting back into your account, understanding your subscription, or finding the
-                right page? Reach out and we&apos;ll point you in the right direction so you can get back to
-                streaming quickly.
+                {isAppInReview
+                  ? 'Need help getting back into your account, browsing trailers, saving titles, or finding the right page? Reach out and we will point you in the right direction.'
+                  : 'Need help getting back into your account, understanding your subscription, or finding the right page? Reach out and we will point you in the right direction so you can get back to streaming quickly.'}
               </p>
             </div>
 
@@ -145,13 +150,21 @@ export default function HelpPage() {
                 Contact UG Movies 247 Customer Service
               </h2>
               <p className="mt-4 text-[1.02rem] leading-8 text-white/76">
-                Call us directly or start a WhatsApp chat using the same UG Movies 247 support line.
+                {isAppInReview
+                  ? 'For support, contact us at info@ugmovies247.com. This keeps help available without sending users out of the app.'
+                  : 'Call us directly or start a WhatsApp chat using the same UG Movies 247 support line.'}
               </p>
 
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <ContactButton href={CALL_HREF} label="Call" icon={Phone} />
-                <ContactButton href={WHATSAPP_HREF} label="Chat" icon={MessageCircle} />
-              </div>
+              {isAppInReview ? (
+                <div className="mt-6 rounded-[20px] border border-white/10 bg-white/[0.08] px-5 py-4 text-base font-bold text-white">
+                  info@ugmovies247.com
+                </div>
+              ) : (
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <ContactButton href={CALL_HREF} label="Call" icon={Phone} />
+                  <ContactButton href={WHATSAPP_HREF} label="Chat" icon={MessageCircle} />
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -159,4 +172,3 @@ export default function HelpPage() {
     </main>
   );
 }
-

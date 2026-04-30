@@ -623,7 +623,7 @@ const handleDownload = async () => {
   }
 
   if (isAppInReview) {
-    setActionMessage('Downloads are not available in this discovery build.');
+      setActionMessage('Downloads are not available in this app version.');
     return;
   }
 
@@ -808,7 +808,7 @@ const handleWatchTrailer = () => {
 
 const handleCast = async () => {
   if (isAppInReview) {
-    setActionMessage('Casting is not available in this discovery build.');
+      setActionMessage('Casting is not available in this app version.');
     return;
   }
 

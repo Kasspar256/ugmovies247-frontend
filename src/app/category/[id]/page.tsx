@@ -6,6 +6,7 @@ import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import { isAppInReview } from '@/lib/appReview';
 
 function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
   if (categorySlug === 'latest') {
@@ -25,6 +26,10 @@ function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
 
 function getCategoryIntro(categoryTitle: string) {
   const normalized = categoryTitle.toLowerCase();
+
+  if (isAppInReview) {
+    return `Discover ${categoryTitle.toLowerCase()} trailers, VJ catalog entries, movie details, and curated discovery picks on UG Movies 247.`;
+  }
 
   if (normalized.includes('luganda')) {
     return 'Watch Luganda translated movies online, including VJ translated action, drama, comedy, and Hollywood movies on UG Movies 247.';
@@ -78,7 +83,7 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
 
       <MobilePageHeader title={displayTitle} fallbackHref="/browse" />
 
@@ -89,7 +94,9 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
         </Link>
         <div>
            <h1 className="text-4xl lg:text-5xl font-black text-white uppercase tracking-widest drop-shadow-md">{displayTitle}</h1>
-           <p className="text-[#D90429] font-bold uppercase tracking-widest mt-2">{movies.length} Vaulted Files</p>
+           <p className="text-[#D90429] font-bold uppercase tracking-widest mt-2">
+             {isAppInReview ? `${movies.length} Trailer Picks` : `${movies.length} Vaulted Files`}
+           </p>
            <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-white/58">{getCategoryIntro(displayTitle)}</p>
         </div>
       </div>

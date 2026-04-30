@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { VJ_DIRECTORY } from '@/config/constants';
+import { isAppInReview } from '@/lib/appReview';
 import type { Movie } from '@/types/movie';
 
 export const SITE_URL = (
@@ -10,10 +11,25 @@ export const SITE_URL = (
 ).replace(/\/$/, '');
 
 export const SITE_NAME = 'UG Movies 247';
-export const SITE_TITLE = 'UG Movies 247 - Watch Ugandan, Luganda & Translated Movies Online';
+export const SITE_TITLE = isAppInReview
+  ? 'UG Movies 247 - Movie Trailers, VJs & Discovery Catalog'
+  : 'UG Movies 247 - Watch Ugandan, Luganda & Translated Movies Online';
 export const SITE_DESCRIPTION =
-  'Watch Ugandan movies, Luganda translated movies, Uganda translated films, VJ movies, series, and trending entertainment online on UG Movies 247.';
-export const SITE_KEYWORDS = [
+  isAppInReview
+    ? 'Discover movie trailers, VJ catalog information, genres, and saved title lists on UG Movies 247.'
+    : 'Watch Ugandan movies, Luganda translated movies, Uganda translated films, VJ movies, series, and trending entertainment online on UG Movies 247.';
+const REVIEW_SITE_KEYWORDS = [
+  'ugmovies247',
+  'UG Movies 247',
+  'movie trailers Uganda',
+  'Uganda movie trailers',
+  'Luganda translated movie trailers',
+  'VJ movie trailers',
+  'movie discovery Uganda',
+  'UG Movies 247 trailers',
+  ...VJ_DIRECTORY.map((vj) => `${vj.name} trailers`),
+];
+const FULL_SITE_KEYWORDS = [
   'ugmovies247',
   'UG Movies 247',
   'ug movies',
@@ -73,6 +89,7 @@ export const SITE_KEYWORDS = [
   'Luganda VJ movies',
   'Ugandan VJ movies online',
 ];
+export const SITE_KEYWORDS = isAppInReview ? REVIEW_SITE_KEYWORDS : FULL_SITE_KEYWORDS;
 
 export const SITE_ICON = '/siteicon.png';
 export const SITE_OG_IMAGE = '/siteicon.png';
@@ -83,31 +100,6 @@ export function absoluteUrl(path = '/') {
   }
 
   return `${SITE_URL}${path.startsWith('/') ? path : `/${path}`}`;
-}
-
-export function canonicalPath(path = '/') {
-  let pathname = path || '/';
-
-  try {
-    if (/^https?:\/\//i.test(pathname)) {
-      pathname = new URL(pathname).pathname || '/';
-    }
-  } catch {
-    pathname = '/';
-  }
-
-  pathname = pathname.split('?')[0].split('#')[0] || '/';
-  pathname = pathname.startsWith('/') ? pathname : `/${pathname}`;
-
-  if (pathname.length > 1) {
-    pathname = pathname.replace(/\/+$/, '');
-  }
-
-  return pathname || '/';
-}
-
-export function canonicalUrl(path = '/') {
-  return absoluteUrl(canonicalPath(path));
 }
 
 export function cleanText(value?: string, fallback = '') {
@@ -148,7 +140,7 @@ export function getMovieDescription(movie: Partial<Movie>) {
   const baseDescription = cleanText(movie.description || movie.overview || '');
   const genreText = (movie.genres || []).slice(0, 3).join(', ');
   const keywordLine = [
-    `Watch ${title}`,
+    isAppInReview ? `Watch the ${title} trailer` : `Watch ${title}`,
     vjLabel ? `${vjLabel} translated ${typeLabel}` : `Uganda translated ${typeLabel}`,
     releaseYear ? `${releaseYear}` : '',
     genreText ? `in ${genreText}` : '',
@@ -173,7 +165,7 @@ export function buildPageMetadata(options: {
   const description = options.description || SITE_DESCRIPTION;
   const path = options.path || '/';
   const image = absoluteUrl(options.image || SITE_OG_IMAGE);
-  const url = canonicalUrl(path);
+  const url = absoluteUrl(path);
 
   return {
     metadataBase: new URL(SITE_URL),
@@ -193,7 +185,7 @@ export function buildPageMetadata(options: {
           url: image,
           width: 512,
           height: 512,
-          alt: `${SITE_NAME} streaming platform`,
+          alt: isAppInReview ? `${SITE_NAME} trailer catalog` : `${SITE_NAME} streaming platform`,
         },
       ],
       locale: 'en_UG',

@@ -8,6 +8,7 @@ import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
+import { isAppInReview } from '@/lib/appReview';
 
 function getGenreMovies(genreId: string, allMovies: Movie[]) {
   if (genreId.toLowerCase() === 'indian') {
@@ -34,6 +35,10 @@ function getGenreMovies(genreId: string, allMovies: Movie[]) {
 function getGenreIntro(genreId: string, count: number) {
   const normalizedGenre = genreId.replace(/[-_]+/g, ' ').trim();
   const readableGenre = normalizedGenre || 'movie';
+  if (isAppInReview) {
+    return `Discover ${count} ${readableGenre} trailer picks on UG Movies 247, including VJ catalog entries, movie details, and discovery lists selected for Uganda and East Africa.`;
+  }
+
   return `Watch ${count} ${readableGenre} titles on UG Movies 247, including Ugandan movies, Luganda translated movies, VJ translated movies, and online entertainment selected for Uganda and East Africa.`;
 }
 
@@ -90,7 +95,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
 
       <MobilePageHeader
         title={genreId}
-        subtitle={`${movies.length} Vaulted Files`}
+        subtitle={isAppInReview ? `${movies.length} Trailer Picks` : `${movies.length} Vaulted Files`}
         fallbackHref="/genres"
       />
       <p className="mx-4 mt-3 text-sm leading-6 text-white/64 md:hidden">
@@ -100,7 +105,9 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
       {/* Desktop Info */}
       <div className="hidden md:block mb-8 max-w-[1380px] mx-auto">
         <h1 className="text-5xl font-black text-white uppercase tracking-widest mb-2 border-l-4 border-[#D90429] pl-6">{genreId}</h1>
-        <p className="text-[#888888] pl-6 font-bold uppercase tracking-widest">{movies.length} Encrypted Files</p>
+        <p className="text-[#888888] pl-6 font-bold uppercase tracking-widest">
+          {isAppInReview ? `${movies.length} Trailer Picks` : `${movies.length} Encrypted Files`}
+        </p>
         <p className="mt-4 max-w-3xl pl-6 text-sm leading-7 text-white/62">
           {genreIntro}
         </p>
@@ -113,7 +120,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
             <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">
               <img
                 src={getOptimizedArtworkUrl(movie.poster, 'card')}
-                alt={`Watch ${movie.title} on UG Movies 247`}
+                alt={`${isAppInReview ? 'Discover' : 'Watch'} ${movie.title} on UG Movies 247`}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 loading={index < 6 ? 'eager' : 'lazy'}
                 decoding="async"

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { isAppInReview } from '@/lib/appReview';
 import { buildPageMetadata, cleanText } from '@/lib/seo';
 
 function formatCategoryTitle(categoryId: string) {
@@ -13,15 +14,21 @@ export function generateMetadata({ params }: { params: { id: string } }): Metada
   const categoryTitle = cleanText(formatCategoryTitle(params.id), 'Movies');
 
   return buildPageMetadata({
-    title: `${categoryTitle} Online - UG Movies 247`,
-    description: `Watch ${categoryTitle.toLowerCase()} online on UG Movies 247, including Uganda movies, Luganda translated movies, VJ translated movies, and trending series.`,
+    title: isAppInReview
+      ? `${categoryTitle} Trailers - UG Movies 247`
+      : `${categoryTitle} Online - UG Movies 247`,
+    description: isAppInReview
+      ? `Discover ${categoryTitle.toLowerCase()} trailers, VJ catalog entries, movie details, and trending discovery lists on UG Movies 247.`
+      : `Watch ${categoryTitle.toLowerCase()} online on UG Movies 247, including Uganda movies, Luganda translated movies, VJ translated movies, and trending series.`,
     path: `/category/${encodeURIComponent(params.id)}`,
-    keywords: [
-      `${categoryTitle} Uganda`,
-      `${categoryTitle} online`,
-      'Uganda translated movies',
-      'Luganda translated movies',
-    ],
+    keywords: isAppInReview
+      ? [`${categoryTitle} trailers`, `${categoryTitle} discovery`, 'Uganda movie trailer catalog']
+      : [
+          `${categoryTitle} Uganda`,
+          `${categoryTitle} online`,
+          'Uganda translated movies',
+          'Luganda translated movies',
+        ],
   });
 }
 

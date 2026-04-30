@@ -48,9 +48,21 @@ export default function TermsPage() {
             search, saved lists, and related informational features. Content availability can change
             based on operational, licensing, technical, or moderation needs.
           </p>
+          <p>
+            This app version is a free discovery and trailer catalog. It does not provide in-app
+            subscription checkout, payment methods, premium upgrades, or paid digital purchases.
+          </p>
         </LegalSection>
 
-        <LegalSection title="3. Account and Acceptable Use">
+        <LegalSection title="3. Trailer Playback and External Providers">
+          <p>
+            Trailer playback may use embedded video services such as YouTube. Trailer availability,
+            controls, captions, ads shown by the provider, and playback quality may depend on the
+            provider, your network, device support, and regional availability.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="4. Account and Acceptable Use">
           <LegalBulletList>
             <li>You must provide accurate account information and keep your login secure.</li>
             <li>You may not abuse, scrape, attack, reverse-engineer, or disrupt the platform.</li>
@@ -58,10 +70,12 @@ export default function TermsPage() {
           </LegalBulletList>
         </LegalSection>
 
-        <LegalSection title="4. Support and Account Deletion">
+        <LegalSection title="5. Support and Account Deletion">
           <p>
-            Account deletion is available from the profile security page. Support and legal notices
-            can be sent through the contact details provided in the app.
+            Account deletion is available from the profile security page and from the web deletion
+            page at <LegalInlineLink href="/account-deletion">ugmovies247.com/account-deletion</LegalInlineLink>.
+            Support and legal notices can be sent to{' '}
+            <LegalInlineLink href="mailto:info@ugmovies247.com">info@ugmovies247.com</LegalInlineLink>.
           </p>
         </LegalSection>
       </LegalDocumentPage>

@@ -8,6 +8,7 @@ import {
   getCurrentAuthSession,
 } from '@/lib/auth/server';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
+import { isAppInReview } from '@/lib/appReview';
 import {
   getDefaultAvatarPresetId,
   isValidAvatarPresetId,
@@ -25,10 +26,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const entitlement = await getViewerEntitlement(session.uid, {
-    email: session.email,
-    role: session.role,
-  });
+  const entitlement = isAppInReview
+    ? { subscription: undefined }
+    : await getViewerEntitlement(session.uid, {
+        email: session.email,
+        role: session.role,
+      });
 
   return NextResponse.json({
     user: {

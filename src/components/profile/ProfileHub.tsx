@@ -121,7 +121,12 @@ function ProfileSummary({
     : profile.subscription?.isActive
       ? 'Manage, extend, or switch your premium plan.'
       : 'Upgrade or purchase a plan.';
-  const accessMeta = getTimeLeftLabel(profile);
+  const accessMeta = isAppInReview
+    ? {
+        label: 'Free',
+        className: 'border border-emerald-500/25 bg-emerald-500/10 text-emerald-200',
+      }
+    : getTimeLeftLabel(profile);
 
   return (
     <section className="rounded-[28px] border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_22px_50px_rgba(0,0,0,0.35)]">

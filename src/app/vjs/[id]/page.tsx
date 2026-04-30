@@ -7,6 +7,7 @@ import { type Movie } from '@/types/movie';
 import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
+import { isAppInReview } from '@/lib/appReview';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
 function getMoviesForVj(vjName: string, allMovies: Movie[]) {
@@ -23,6 +24,10 @@ function getMoviesForVj(vjName: string, allMovies: Movie[]) {
 }
 
 function getVjIntro(vjName: string, count: number) {
+  if (isAppInReview) {
+    return `Discover ${count} ${vjName} trailer picks on UG Movies 247, including Luganda translated titles, VJ catalog entries, series details, and movie discovery picks.`;
+  }
+
   return `Watch ${count} ${vjName} movies on UG Movies 247, including Luganda translated movies, Uganda translated movies, VJ translated action movies, series, and Hollywood entertainment for Uganda.`;
 }
 
@@ -79,7 +84,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
         title={vjInfo.name}
-        subtitle={`${movies.length} Dubbed Movies`}
+        subtitle={isAppInReview ? `${movies.length} Trailer Picks` : `${movies.length} Dubbed Movies`}
         fallbackHref="/vjs"
       />
       <p className="mx-4 mt-3 text-sm leading-6 text-white/64 md:hidden">
@@ -92,7 +97,9 @@ export default function VJDetail({ params }: { params: { id: string } }) {
         </Link>
         <div>
           <h1 className="text-2xl font-black uppercase tracking-[0.18em] text-white">{vjInfo.name}</h1>
-          <p className="mt-1 text-[11px] font-black uppercase tracking-[0.26em] text-[#D90429]">{movies.length} Dubbed Movies</p>
+          <p className="mt-1 text-[11px] font-black uppercase tracking-[0.26em] text-[#D90429]">
+            {isAppInReview ? `${movies.length} Trailer Picks` : `${movies.length} Dubbed Movies`}
+          </p>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-white/62">
             {vjIntro}
           </p>

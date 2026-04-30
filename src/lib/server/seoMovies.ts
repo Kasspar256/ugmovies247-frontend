@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebaseAdmin';
+import { isAppInReview } from '@/lib/appReview';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import {
   inMemoryMovieCache,
@@ -12,7 +13,8 @@ const SEO_MOVIE_LIMIT = 1000;
 function normalizeMovies(movies: Array<Record<string, unknown>>) {
   return movies
     .map((movie) => normalizeMovie(String(movie.id || movie.movieId || ''), movie))
-    .filter((movie) => movie.id && movie.title);
+    .filter((movie) => movie.id && movie.title)
+    .filter((movie) => (isAppInReview ? movie.is_for_review === true : true));
 }
 
 export async function getSeoMovieCatalog(limit = SEO_MOVIE_LIMIT): Promise<Movie[]> {
@@ -24,7 +26,10 @@ export async function getSeoMovieCatalog(limit = SEO_MOVIE_LIMIT): Promise<Movie
   }
 
   try {
-    const snapshot = await adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').limit(limit).get();
+    const query = isAppInReview
+      ? adminDb.collection(MOVIES_COLLECTION).where('is_for_review', '==', true).limit(limit)
+      : adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').limit(limit);
+    const snapshot = await query.get();
 
     return normalizeMovies(
       snapshot.docs.map((movieDoc) => ({
@@ -61,10 +66,16 @@ export async function getSeoMovieById(movieId: string) {
       return null;
     }
 
-    return normalizeMovie(snapshot.id, {
+    const movie = normalizeMovie(snapshot.id, {
       id: snapshot.id,
       ...snapshot.data(),
     });
+
+    if (isAppInReview && movie.is_for_review !== true) {
+      return null;
+    }
+
+    return movie;
   } catch (error) {
     console.warn('[seo] failed to load movie metadata', error);
     return null;

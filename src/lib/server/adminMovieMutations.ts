@@ -275,6 +275,7 @@ export function buildEditableMovieDocument(
     category: normalizedCategories,
     vj: String(input.vj || existingMovie?.vj || 'Unknown'),
     video_url: contentType === 'movie' ? primaryVideoUrl : '',
+    trailer_url: String(input.trailer_url || existingMovie?.trailer_url || ''),
     release_date: releaseDate,
     date_added: String(existingMovie?.date_added || timestamp),
     country: String(input.country || existingMovie?.country || 'Unknown'),
@@ -286,6 +287,10 @@ export function buildEditableMovieDocument(
           : null,
     file_name: String(input.file_name || existingMovie?.file_name || ''),
     status: String(input.status || existingMovie?.status || 'published'),
+    is_for_review:
+      typeof input.is_for_review === 'boolean'
+        ? input.is_for_review
+        : existingMovie?.is_for_review === true,
     is_trending_tiktok: isTrendingTikTok,
     parts,
     seasons,

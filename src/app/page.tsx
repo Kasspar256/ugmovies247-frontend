@@ -28,12 +28,14 @@ export const metadata: Metadata = {
     title: SITE_TITLE,
     description: SITE_DESCRIPTION,
     path: '/',
-    keywords: [
-      'watch Ugandan movies online',
-      'Luganda translated movies',
-      'VJ movies Uganda',
-      'Uganda movie streaming',
-    ],
+    keywords: isAppInReview
+      ? ['movie trailers Uganda', 'Luganda translated trailer catalog', 'VJ movie discovery']
+      : [
+          'watch Ugandan movies online',
+          'Luganda translated movies',
+          'VJ movies Uganda',
+          'Uganda movie streaming',
+        ],
   }),
 };
 

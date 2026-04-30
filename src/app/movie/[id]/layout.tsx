@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { isAppInReview } from '@/lib/appReview';
 import { getSeoMovieById } from '@/lib/server/seoMovies';
 import {
   breadcrumbJsonLd,
@@ -15,7 +16,9 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   if (!movie) {
     return buildPageMetadata({
       title: 'Movie Not Found - UG Movies 247',
-      description: 'Find Ugandan movies, Luganda translated movies, VJ movies, and series on UG Movies 247.',
+      description: isAppInReview
+        ? 'Find movie trailers, VJ catalog entries, genres, and discovery lists on UG Movies 247.'
+        : 'Find Ugandan movies, Luganda translated movies, VJ movies, and series on UG Movies 247.',
       path: `/movie/${encodeURIComponent(params.id)}`,
       noIndex: true,
     });
@@ -26,7 +29,9 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   const typeLabel = movie.contentType === 'series' ? 'Series' : 'Movie';
 
   return buildPageMetadata({
-    title: `${title}${vjLabel ? ` - ${vjLabel}` : ''} | Watch ${typeLabel} Online`,
+    title: isAppInReview
+      ? `${title}${vjLabel ? ` - ${vjLabel}` : ''} | Watch Trailer`
+      : `${title}${vjLabel ? ` - ${vjLabel}` : ''} | Watch ${typeLabel} Online`,
     description: getMovieDescription(movie),
     path: `/movie/${encodeURIComponent(movie.id)}`,
     image: movie.poster || undefined,
