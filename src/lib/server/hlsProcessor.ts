@@ -9,6 +9,8 @@ const PRESET_RENDITIONS = [
   { name: '1080p' as const, height: 1080, width: 1920, bitrateKbps: 5000 },
 ];
 
+type Rendition = (typeof PRESET_RENDITIONS)[number];
+
 function toEven(value: number) {
   const normalized = Math.max(2, Math.floor(value));
   return normalized % 2 === 0 ? normalized : normalized - 1;
@@ -17,7 +19,7 @@ function toEven(value: number) {
 function resolveRenditionDimensions(
   sourceWidth: number,
   sourceHeight: number,
-  rendition: { name: '360p' | '480p' | '720p' | '1080p'; height: number; width: number; bitrateKbps: number }
+  rendition: Rendition
 ) {
   const sourceAspectRatio = sourceWidth / sourceHeight;
   const scaledHeight = Math.min(rendition.height, sourceHeight);
@@ -27,6 +29,30 @@ function resolveRenditionDimensions(
     ...rendition,
     width: toEven(Math.min(scaledWidth, sourceWidth)),
     height: toEven(scaledHeight),
+  };
+}
+
+function getRenditionCodecProfile(rendition: Rendition) {
+  if (rendition.height <= 480) {
+    return {
+      ffmpegProfile: 'baseline',
+      ffmpegLevel: '3.1',
+      codecs: 'avc1.42e01f,mp4a.40.2',
+    };
+  }
+
+  if (rendition.height <= 720) {
+    return {
+      ffmpegProfile: 'main',
+      ffmpegLevel: '4.0',
+      codecs: 'avc1.4d0028,mp4a.40.2',
+    };
+  }
+
+  return {
+    ffmpegProfile: 'main',
+    ffmpegLevel: '4.1',
+    codecs: 'avc1.4d0029,mp4a.40.2',
   };
 }
 
@@ -60,23 +86,31 @@ function getHlsSegmentPattern(renditionName: string) {
 async function generateVariantPlaylist(
   sourcePath: string,
   outputDirectory: string,
-  rendition: { name: '360p' | '480p' | '720p' | '1080p'; height: number; width: number; bitrateKbps: number },
+  rendition: Rendition,
   timeoutMs: number
 ) {
   const renditionDirectory = path.join(outputDirectory, rendition.name);
   await fs.mkdir(renditionDirectory, { recursive: true });
 
   const playlistPath = path.join(renditionDirectory, 'index.m3u8');
+  const codecProfile = getRenditionCodecProfile(rendition);
 
   await runFfmpeg(
     [
       '-y',
       '-i',
       sourcePath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-sn',
       '-vf',
       `scale=${rendition.width}:${rendition.height}`,
       '-c:a',
       'aac',
+      '-ac',
+      '2',
       '-ar',
       '48000',
       '-b:a',
@@ -86,9 +120,13 @@ async function generateVariantPlaylist(
       '-preset',
       'veryfast',
       '-profile:v',
-      'main',
+      codecProfile.ffmpegProfile,
+      '-level:v',
+      codecProfile.ffmpegLevel,
       '-crf',
       '21',
+      '-pix_fmt',
+      'yuv420p',
       '-maxrate',
       `${rendition.bitrateKbps}k`,
       '-bufsize',
@@ -119,14 +157,15 @@ async function generateVariantPlaylist(
 
 async function writeMasterPlaylist(
   outputDirectory: string,
-  renditions: { name: '360p' | '480p' | '720p' | '1080p'; height: number; width: number; bitrateKbps: number }[]
+  renditions: Rendition[]
 ) {
   const masterPlaylistPath = path.join(outputDirectory, 'master.m3u8');
-  const lines = ['#EXTM3U', '#EXT-X-VERSION:3'];
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:6', '#EXT-X-INDEPENDENT-SEGMENTS'];
 
   renditions.forEach((rendition) => {
+    const codecProfile = getRenditionCodecProfile(rendition);
     lines.push(
-      `#EXT-X-STREAM-INF:BANDWIDTH=${rendition.bitrateKbps * 1000},RESOLUTION=${rendition.width}x${rendition.height}`,
+      `#EXT-X-STREAM-INF:BANDWIDTH=${rendition.bitrateKbps * 1000},CODECS="${codecProfile.codecs}",RESOLUTION=${rendition.width}x${rendition.height}`,
       `${rendition.name}/index.m3u8`
     );
   });

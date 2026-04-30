@@ -19,9 +19,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
-  clearAccountProfileCache,
   fetchAccountProfile,
-  readCachedAccountProfile,
   formatAccountDate,
   getAccountAccessLabel,
   getAccountBadge,
@@ -30,33 +28,7 @@ import {
 } from '@/lib/accountProfile';
 import { logoutCurrentUser } from '@/lib/auth/client';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
-
-const PROFILE_CACHE_KEY = 'ugmovies247.profile-cache.v1';
-
-function readCachedProfile() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    const raw = window.sessionStorage.getItem(PROFILE_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as AccountProfile) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeCachedProfile(profile: AccountProfile) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile));
-  } catch {
-    // Cache is only a speed boost; the live request remains the source of truth.
-  }
-}
+import { isAppInReview } from '@/lib/appReview';
 
 function getTimeLeftLabel(profile: AccountProfile) {
   if (profile.role === 'admin') {
@@ -144,9 +116,11 @@ function ProfileSummary({
 }) {
   const badge = getAccountBadge(profile);
   const accessLabel = getAccountAccessLabel(profile);
-  const accessDescription = profile.subscription?.isActive
-    ? 'Manage, extend, or switch your premium plan.'
-    : 'Upgrade or purchase a plan.';
+  const accessDescription = isAppInReview
+    ? 'Browse movies, trailers, VJ catalogs, and save titles to your list.'
+    : profile.subscription?.isActive
+      ? 'Manage, extend, or switch your premium plan.'
+      : 'Upgrade or purchase a plan.';
   const accessMeta = getTimeLeftLabel(profile);
 
   return (
@@ -205,7 +179,7 @@ function ProfileSummary({
       </div>
 
       <Link
-        href="/subscribe"
+        href={isAppInReview ? '/browse' : '/subscribe'}
         className="mt-4 block rounded-[24px] border border-[#D90429]/18 bg-[linear-gradient(135deg,rgba(217,4,41,0.16),rgba(22,27,38,0.92))] px-4 py-5 shadow-[0_18px_42px_rgba(0,0,0,0.22)] transition-colors hover:border-[#D90429]/38 hover:bg-[linear-gradient(135deg,rgba(217,4,41,0.2),rgba(26,34,50,0.96))]"
       >
         <div className="flex items-start justify-between gap-3">
@@ -225,7 +199,9 @@ function ProfileSummary({
         </div>
 
         <div className="mt-4 flex items-center gap-2 text-[#D90429]">
-          <span className="text-xs font-black uppercase tracking-[0.22em] text-[#FFB3C1]">Open</span>
+          <span className="text-xs font-black uppercase tracking-[0.22em] text-[#FFB3C1]">
+            {isAppInReview ? 'Explore' : 'Open'}
+          </span>
           <ChevronRight size={16} />
         </div>
       </Link>
@@ -278,23 +254,14 @@ function NavigationGroup({
 
 export default function ProfileHub() {
   const router = useRouter();
-  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedAccountProfile());
-  const [loading, setLoading] = useState(() => !readCachedAccountProfile());
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
-    let hasCachedProfile = false;
-
-    const cachedProfile = readCachedProfile();
-
-    if (cachedProfile) {
-      hasCachedProfile = true;
-      setProfile(cachedProfile);
-      setLoading(false);
-    }
 
     const loadProfile = async () => {
       try {
@@ -304,15 +271,10 @@ export default function ProfileHub() {
           return;
         }
 
-        writeCachedProfile(nextProfile);
         setProfile(nextProfile);
-        setError('');
-        setError('');
       } catch (loadError) {
-        if (mounted && !hasCachedProfile) {
-          if (!readCachedAccountProfile()) {
-            setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
-          }
+        if (mounted) {
+          setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
         }
       } finally {
         if (mounted) {
@@ -333,7 +295,6 @@ export default function ProfileHub() {
     setSignOutError('');
 
     try {
-      clearAccountProfileCache();
       await logoutCurrentUser();
       router.replace('/login');
     } catch (signOutError) {
@@ -342,8 +303,77 @@ export default function ProfileHub() {
     }
   };
 
+  const accountItems = [
+    {
+      href: '/profile/settings',
+      icon: PencilLine,
+      label: 'Edit Profile',
+      description: 'Update your name and account preferences.',
+    },
+    {
+      href: '/watchlist',
+      icon: Bookmark,
+      label: 'My List',
+      description: 'Saved titles you want to come back to.',
+    },
+    {
+      href: '/series',
+      icon: Tv2,
+      label: 'Series',
+      description: 'Browse all series currently available in the app.',
+    },
+    {
+      href: '/likes',
+      icon: Heart,
+      label: 'Liked Movies',
+      description: 'Movies you have liked across the app.',
+    },
+    ...(
+      isAppInReview
+        ? []
+        : [
+            {
+              href: '/downloads',
+              icon: Download,
+              label: 'Downloads',
+              description: 'See titles saved to your account history.',
+            },
+          ]
+    ),
+    ...(
+      isAppInReview
+        ? []
+        : [
+            {
+              href: '/subscribe',
+              icon: CreditCard,
+              label: 'Premium Plans',
+              description: 'Choose, extend, or switch your plan.',
+            },
+            {
+              href: '/profile/payments',
+              icon: ReceiptText,
+              label: 'Payment History',
+              description: 'See your recent premium payments clearly.',
+            },
+          ]
+    ),
+    {
+      href: '/notifications',
+      icon: Bell,
+      label: 'Notifications',
+      description: 'Open your app updates and latest upload alerts.',
+    },
+    {
+      href: '/profile/security',
+      icon: Shield,
+      label: 'Security',
+      description: 'Password help and account protection tools.',
+    },
+  ];
+
   return (
-    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] pt-8 text-white md:px-8 md:pb-16 md:pt-[112px] lg:px-10">
+    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(8.5rem+env(safe-area-inset-bottom))] pt-8 text-white md:px-8 md:pb-16 md:pt-[112px] lg:px-10">
       <div className="mx-auto max-w-3xl">
         <div className="mb-5">
           <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
@@ -367,62 +397,7 @@ export default function ProfileHub() {
 
             <NavigationGroup
               title="Account"
-              items={[
-                {
-                  href: '/profile/settings',
-                  icon: PencilLine,
-                  label: 'Edit Profile',
-                  description: 'Update your name and account preferences.',
-                },
-                {
-                  href: '/watchlist',
-                  icon: Bookmark,
-                  label: 'My List',
-                  description: 'Saved titles you want to come back to.',
-                },
-                {
-                  href: '/series',
-                  icon: Tv2,
-                  label: 'Series',
-                  description: 'Browse all series currently available in the app.',
-                },
-                {
-                  href: '/likes',
-                  icon: Heart,
-                  label: 'Liked Movies',
-                  description: 'Movies you have liked across the app.',
-                },
-                {
-                  href: '/downloads',
-                  icon: Download,
-                  label: 'Downloads',
-                  description: 'See titles saved to your account history.',
-                },
-                {
-                  href: '/subscribe',
-                  icon: CreditCard,
-                  label: 'Premium Plans',
-                  description: 'Choose, extend, or switch your plan.',
-                },
-                {
-                  href: '/profile/payments',
-                  icon: ReceiptText,
-                  label: 'Payment History',
-                  description: 'See your recent premium payments clearly.',
-                },
-                {
-                  href: '/notifications',
-                  icon: Bell,
-                  label: 'Notifications',
-                  description: 'Open your app updates and latest upload alerts.',
-                },
-                {
-                  href: '/profile/security',
-                  icon: Shield,
-                  label: 'Security',
-                  description: 'Password help and account protection tools.',
-                },
-              ]}
+              items={accountItems}
             />
 
             <NavigationGroup

@@ -1,9 +1,8 @@
 'use client';
-import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
@@ -45,8 +44,6 @@ export default function LoginPage() {
     setSessionNotice(getSessionNoticeFromReason(sessionReason));
   }, [sessionReason]);
 
-  const authBusy = loading || googleLoading;
-
   const clearFeedback = () => {
     if (sessionNotice) {
       setSessionNotice('');
@@ -65,10 +62,6 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
-      if (isNativeAndroidApp()) {
-        return;
-      }
-
       setGoogleLoading(true);
 
       try {
@@ -102,10 +95,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
-    if (authBusy) {
-      return;
-    }
     setSessionNotice('');
     setError('');
     setDevDiagnostics([]);
@@ -129,14 +118,9 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
-    if (authBusy) {
-      return;
-    }
-
     setSessionNotice('');
     setError('');
     setDevDiagnostics([]);
-
     setGoogleLoading(true);
 
     try {
@@ -191,14 +175,14 @@ export default function LoginPage() {
                 Welcome Back
               </h1>
               <p className="mt-2 text-sm text-[#9AA4B2]">
-                Sign in to keep watching movies, series, downloads, and your account.
+                Sign in to keep browsing movies, series, watchlists, and your account.
               </p>
             </div>
 
             <div className="space-y-4">
               <GoogleAuthButton
                 onClick={handleGoogleLogin}
-                disabled={authBusy}
+                disabled={loading}
                 loading={googleLoading}
                 idleLabel="Continue with Google"
                 loadingLabel="Connecting with Google..."
@@ -231,8 +215,7 @@ export default function LoginPage() {
                       clearFeedback();
                       setEmail(event.target.value);
                     }}
-                    disabled={authBusy}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="name@example.com"
                     autoComplete="email"
                   />
@@ -252,16 +235,14 @@ export default function LoginPage() {
                       clearFeedback();
                       setPassword(event.target.value);
                     }}
-                    disabled={authBusy}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
                     placeholder="Enter your password"
                     autoComplete="current-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((current) => !current)}
-                    disabled={authBusy}
-                    className="text-white/50 transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="text-white/50 transition-colors hover:text-white"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -278,8 +259,7 @@ export default function LoginPage() {
                       clearFeedback();
                       setRememberMe(event.target.checked);
                     }}
-                    disabled={authBusy}
-                    className="h-4 w-4 accent-[#D90429] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-4 w-4 accent-[#D90429]"
                   />
                   Remember me
                 </label>
@@ -302,10 +282,9 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={authBusy}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-all hover:bg-[#b00320] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#5E1623] disabled:opacity-80"
+                disabled={loading || googleLoading}
+                className="w-full rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-colors hover:bg-[#b00320] disabled:cursor-not-allowed disabled:bg-[#5E1623]"
               >
-                {loading ? <Loader2 size={18} className="animate-spin" /> : null}
                 {loading ? 'Signing In...' : 'Sign In'}
               </button>
             </form>

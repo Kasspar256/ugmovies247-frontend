@@ -315,7 +315,7 @@ export function AdminSeriesTab({
                 </div>
                 <div className="mt-2 text-xs leading-6 text-white/50">
                   Open a series, add Season 7 later, move episodes between seasons, and replace any
-                  direct MP4 anytime.
+                  direct video source anytime.
                 </div>
               </div>
               <button
@@ -506,7 +506,7 @@ export function AdminSeriesTab({
 
                               <div className="mt-4">
                                 <SourceEditor
-                                  title="Episode MP4 Source"
+                                  title="Episode Video Source"
                                   source={episode.source}
                                   onChange={(source) =>
                                     updateEpisode(season.id, episode.id, (entry) => ({

@@ -143,7 +143,7 @@ export function SourceEditor({
             active={source.mode === 'file'}
             onClick={() => onChange({ mode: 'file', url: source.url, file: source.file })}
           >
-            Upload MP4
+            Upload Video
           </PillButton>
         </div>
       </div>
@@ -158,7 +158,7 @@ export function SourceEditor({
           />
           <input
             type="file"
-            accept="video/mp4"
+            accept=".mp4,.mkv,video/mp4,video/x-matroska,video/mkv"
             onChange={(event) =>
               onChange({
                 ...source,

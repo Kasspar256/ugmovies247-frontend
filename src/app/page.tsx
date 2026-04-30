@@ -11,6 +11,7 @@ import {
   SITE_TITLE,
   websiteJsonLd,
 } from '@/lib/seo';
+import { isAppInReview } from '@/lib/appReview';
 
 const headingFont = Sora({
   subsets: ['latin'],
@@ -59,9 +60,13 @@ const desktopPosterWall = [
 ] as const;
 
 const bulletPoints = [
-  'Watch movies and series on any device, anywhere.',
+  isAppInReview
+    ? 'Discover movies and series on any device, anywhere.'
+    : 'Watch movies and series on any device, anywhere.',
   'Fresh new additions added regularly',
-  'Premium access from UGX 2,000. Cancel anytime.',
+  isAppInReview
+    ? 'Browse trailers, VJ catalogs, genres, and movie details.'
+    : 'Premium access from UGX 2,000. Cancel anytime.',
 ] as const;
 
 function PosterTile({
@@ -163,7 +168,7 @@ export default function LandingPage() {
             <h1
               className={`${headingFont.className} text-[2.38rem] font-extrabold leading-[0.96] tracking-[-0.055em] text-white sm:text-[2.95rem] lg:text-[4.15rem]`}
             >
-              Ready for premium entertainment?
+              {isAppInReview ? 'Discover your next movie night.' : 'Ready for premium entertainment?'}
             </h1>
 
             <ul className="mx-auto mt-6 max-w-[23rem] space-y-4 text-left lg:mx-0">
@@ -176,7 +181,9 @@ export default function LandingPage() {
           <div className="w-full">
             <div className="rounded-[30px] border border-white/18 bg-white/[0.045] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-[18px] sm:p-6">
               <p className="text-center text-[1.05rem] leading-8 text-white/84 sm:text-[1.15rem]">
-                Create your UG Movies 247 account and start streaming with a smoother premium experience.
+                {isAppInReview
+                  ? 'Create your UG Movies 247 account to browse movie details, VJ categories, trailers, and curated discovery lists.'
+                  : 'Create your UG Movies 247 account and start streaming with a smoother premium experience.'}
               </p>
 
               <div className="mt-5">

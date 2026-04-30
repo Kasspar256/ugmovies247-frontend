@@ -5,9 +5,18 @@ import { Home, Search, User, Mic2, Film } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
+import { isAppInReview } from '@/lib/appReview';
 
 const MOBILE_NAV_HEIGHT_PX = 64;
-const MOBILE_NAV_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/downloads', '/notifications'];
+const MOBILE_NAV_PREFETCH_ROUTES = [
+  '/browse',
+  '/vjs',
+  '/genres',
+  '/search',
+  '/profile',
+  '/notifications',
+  ...(isAppInReview ? [] : ['/downloads']),
+];
 
 function shouldShowMobileNav(pathname: string) {
   if (!pathname) return false;

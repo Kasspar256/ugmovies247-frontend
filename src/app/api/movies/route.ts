@@ -34,28 +34,90 @@ function isPremiumAccessTier(accessTier: unknown) {
   return accessTier !== 'free';
 }
 
+function isPlaybackAssetReady(asset: Record<string, unknown>) {
+  const jobStatus = typeof asset.jobStatus === 'string' ? asset.jobStatus : '';
+  return !jobStatus || jobStatus === 'ready';
+}
+
 function sanitizeEpisodeForViewer(
   episode: Record<string, unknown>,
   entitlement: SubscriptionEntitlement
 ) {
   const subscriptionRequired = isPremiumAccessTier(episode.accessTier);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
+  const sanitizedEpisode = {
+    ...episode,
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    playbackType: 'mp4',
+  };
 
   if (!isLocked) {
+    if (!isPlaybackAssetReady(episode)) {
+      return {
+        ...sanitizedEpisode,
+        video_url: '',
+        sourceUrl: '',
+        sourceFileName: '',
+        subscriptionRequired,
+        isLocked: false,
+      };
+    }
+
     return {
-      ...episode,
+      ...sanitizedEpisode,
       subscriptionRequired,
       isLocked: false,
     };
   }
 
   return {
-    ...episode,
+    ...sanitizedEpisode,
     video_url: '',
     sourceUrl: '',
     sourceFileName: '',
+    subscriptionRequired,
+    isLocked: true,
+  };
+}
+
+function sanitizeMoviePartForViewer(
+  part: Record<string, unknown>,
+  entitlement: SubscriptionEntitlement
+) {
+  const subscriptionRequired = isPremiumAccessTier(part.accessTier);
+  const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
+  const sanitizedPart = {
+    ...part,
     masterPlaylistUrl: '',
     availableRenditions: [],
+    playbackType: 'mp4',
+  };
+
+  if (!isLocked) {
+    if (!isPlaybackAssetReady(part)) {
+      return {
+        ...sanitizedPart,
+        video_url: '',
+        sourceUrl: '',
+        sourceFileName: '',
+        subscriptionRequired,
+        isLocked: false,
+      };
+    }
+
+    return {
+      ...sanitizedPart,
+      subscriptionRequired,
+      isLocked: false,
+    };
+  }
+
+  return {
+    ...sanitizedPart,
+    video_url: '',
+    sourceUrl: '',
+    sourceFileName: '',
     subscriptionRequired,
     isLocked: true,
   };
@@ -67,6 +129,11 @@ function sanitizeMovieForViewerLocally(
 ) {
   const subscriptionRequired = isPremiumAccessTier(movie.accessTier);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
+  const parts = Array.isArray(movie.parts)
+    ? movie.parts.map((part) =>
+        sanitizeMoviePartForViewer(part as Record<string, unknown>, entitlement)
+      )
+    : [];
   const seasons = Array.isArray(movie.seasons)
     ? movie.seasons.map((season) => {
         const rawSeason = season as Record<string, unknown>;
@@ -84,9 +151,18 @@ function sanitizeMovieForViewerLocally(
     : [];
 
   if (!isLocked) {
+    const shouldExposePrimaryMovieSource = parts.length === 0 && isPlaybackAssetReady(movie);
+
     return {
       ...movie,
+      video_url: shouldExposePrimaryMovieSource ? String(movie.video_url || '') : '',
+      sourceUrl: shouldExposePrimaryMovieSource ? String(movie.sourceUrl || '') : '',
+      sourceFileName: shouldExposePrimaryMovieSource ? String(movie.sourceFileName || '') : '',
+      parts,
       seasons,
+      masterPlaylistUrl: '',
+      availableRenditions: [],
+      playbackType: 'mp4',
       accessTier: subscriptionRequired ? 'premium' : 'free',
       subscriptionRequired,
       isLocked: false,
@@ -98,8 +174,10 @@ function sanitizeMovieForViewerLocally(
     video_url: '',
     sourceUrl: '',
     sourceFileName: '',
+    parts,
     masterPlaylistUrl: '',
     availableRenditions: [],
+    playbackType: 'mp4',
     seasons,
     accessTier: 'premium',
     subscriptionRequired: true,
@@ -108,10 +186,22 @@ function sanitizeMovieForViewerLocally(
 }
 
 function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
-  const movieJobStatus = typeof movieDoc.jobStatus === 'string' ? movieDoc.jobStatus : '';
-  const hasPrimaryPlaybackAsset = Boolean(movieDoc.masterPlaylistUrl || movieDoc.video_url);
+  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
 
-  if ((!movieJobStatus || movieJobStatus === 'ready') && hasPrimaryPlaybackAsset) {
+  if (parts.length === 0) {
+    const hasPrimaryPlaybackAsset = Boolean(movieDoc.video_url);
+
+    if (isPlaybackAssetReady(movieDoc) && hasPrimaryPlaybackAsset) {
+      return true;
+    }
+  }
+
+  if (
+    parts.some((part) => {
+      const rawPart = part as Record<string, unknown>;
+      return isPlaybackAssetReady(rawPart) && Boolean(rawPart.video_url);
+    })
+  ) {
     return true;
   }
 
@@ -123,13 +213,7 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
 
     return episodes.some((episode) => {
       const rawEpisode = episode as Record<string, unknown>;
-      const episodeJobStatus =
-        typeof rawEpisode.jobStatus === 'string' ? rawEpisode.jobStatus : '';
-
-      return (
-        (!episodeJobStatus || episodeJobStatus === 'ready') &&
-        Boolean(rawEpisode.masterPlaylistUrl || rawEpisode.video_url)
-      );
+      return isPlaybackAssetReady(rawEpisode) && Boolean(rawEpisode.video_url);
     });
   });
 }

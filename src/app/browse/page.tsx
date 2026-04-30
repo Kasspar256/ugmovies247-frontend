@@ -13,7 +13,7 @@ import {
   readCachedHomePageCategories,
   warmHomePageArtwork,
 } from '@/lib/homePageClient';
-import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Loader2, Lock } from 'lucide-react';
+import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import {
   fetchAuthStatus,
@@ -30,6 +30,7 @@ import {
   markArtworkUrlLoaded,
   type ArtworkVariant,
 } from '@/lib/artwork';
+import { isAppInReview } from '@/lib/appReview';
 
 type SessionUser = {
   role: 'user' | 'admin';
@@ -74,46 +75,6 @@ const DESKTOP_CATEGORY_PILLS = [
     idleClass: 'bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/50',
   },
 ] as const;
-
-const HOME_SCROLL_STORAGE_KEY = 'ugmovies247.home-scroll-y.v1';
-const HOME_CATEGORY_STORAGE_KEY = 'ugmovies247.home-category.v1';
-
-function readStoredHomeCategory() {
-  if (typeof window === 'undefined') {
-    return 'ALL';
-  }
-
-  try {
-    return window.sessionStorage.getItem(HOME_CATEGORY_STORAGE_KEY) || 'ALL';
-  } catch {
-    return 'ALL';
-  }
-}
-
-function readStoredHomeScrollY() {
-  if (typeof window === 'undefined') {
-    return 0;
-  }
-
-  try {
-    const value = Number(window.sessionStorage.getItem(HOME_SCROLL_STORAGE_KEY) || '0');
-    return Number.isFinite(value) && value > 0 ? value : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function persistHomeScrollY() {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.sessionStorage.setItem(HOME_SCROLL_STORAGE_KEY, String(Math.max(0, window.scrollY)));
-  } catch {
-    // Ignore storage failures. The page still works normally.
-  }
-}
 
 function getMovieVjLabel(movie: Movie) {
   return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
@@ -204,11 +165,6 @@ const HomeCardImage = memo(function HomeCardImage({
     let active = true;
     const image = new window.Image();
     image.decoding = 'async';
-
-    if (priority) {
-      (image as HTMLImageElement & { fetchPriority?: 'high' | 'low' | 'auto' }).fetchPriority = 'high';
-    }
-
     image.src = normalizedSrc;
 
     if (image.complete && image.naturalWidth > 0) {
@@ -265,7 +221,7 @@ const HomeCardImage = memo(function HomeCardImage({
           srcSet={imageProps.srcSet}
           sizes={imageProps.sizes}
           alt={alt}
-          className={`${imageClassName} bg-[#111318] transition-opacity duration-300 ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
+          className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
           loading={priority ? 'eager' : 'lazy'}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
@@ -291,16 +247,13 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>(() => readStoredHomeCategory());
+  const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
-  const [heroInteractionPaused, setHeroInteractionPaused] = useState(false);
-  const [heroPlayLoading, setHeroPlayLoading] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
-  const restoredHomeScrollRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -384,67 +337,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      window.sessionStorage.setItem(HOME_CATEGORY_STORAGE_KEY, activeCategory);
-    } catch {
-      // Ignore storage failures.
-    }
-  }, [activeCategory]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const saveScroll = () => persistHomeScrollY();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        saveScroll();
-      }
-    };
-
-    window.addEventListener('pagehide', saveScroll);
-    window.addEventListener('beforeunload', saveScroll);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      saveScroll();
-      window.removeEventListener('pagehide', saveScroll);
-      window.removeEventListener('beforeunload', saveScroll);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || restoredHomeScrollRef.current || movies.length === 0) {
-      return;
-    }
-
-    restoredHomeScrollRef.current = true;
-    let firstFrame = 0;
-    let secondFrame = 0;
-
-    firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        const savedY = readStoredHomeScrollY();
-
-        if (savedY > 0) {
-          window.scrollTo(0, savedY);
-        }
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.cancelAnimationFrame(secondFrame);
-    };
-  }, [movies.length]);
-
-  useEffect(() => {
     const updateAndroidMobileState = () => {
       if (typeof window === 'undefined') {
         return;
@@ -506,9 +398,11 @@ export default function Home() {
     heroMovie?.masterPlaylistUrl && heroMovie?.playbackType === 'hls' ? 'hls' : 'mp4';
   const heroRuntimeLabel = formatRuntimeLabel(heroMovie);
   const heroPlayHref = heroMovie
-    ? heroMovie.isLocked
-      ? `/subscribe?returnTo=${encodeURIComponent(`/movie/${heroMovie.id}`)}`
-      : `/movie/${heroMovie.id}?autoplay=1`
+    ? isAppInReview
+      ? `/movie/${heroMovie.id}`
+      : heroMovie.isLocked
+        ? `/subscribe?returnTo=${encodeURIComponent(`/movie/${heroMovie.id}`)}`
+        : `/movie/${heroMovie.id}?autoplay=1`
     : '/browse';
   const unreadLatestUploadCount = useMemo(() => countUnreadLatestUploads(movies), [movies]);
   const heroPosterImageProps = useMemo(
@@ -527,7 +421,7 @@ export default function Home() {
 
   useEffect(() => {
     if (priorityArtworkMovies.length) {
-      warmHomePageArtwork(priorityArtworkMovies, 48);
+      warmHomePageArtwork(priorityArtworkMovies, 28);
     }
   }, [priorityArtworkMovies]);
 
@@ -541,6 +435,11 @@ export default function Home() {
 
   const handleHeaderCast = async () => {
     const videoElement = homeCastVideoRef.current;
+
+    if (isAppInReview) {
+      setHeaderActionMessage('Trailer discovery mode is active for this app build.');
+      return;
+    }
 
     if (!heroMovie) {
       setHeaderActionMessage('Pick a movie first before casting.');
@@ -584,7 +483,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-12">
+    <main className="min-h-screen bg-[#0B0C10] text-white font-sans overflow-x-hidden pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:pb-12">
       
       {/* Mobile Header (Two split floating pills) */}
       <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -601,25 +500,29 @@ export default function Home() {
           </Link>
 
           <div className="pointer-events-auto h-[46px] min-w-[138px] px-2.5 rounded-[24px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-3">
-            <button
-              className="flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
-              aria-label="Cast"
-              onClick={handleHeaderCast}
-            >
-              <Cast size={20} strokeWidth={2.2} />
-            </button>
+            {!isAppInReview && (
+              <>
+                <button
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+                  aria-label="Cast"
+                  onClick={handleHeaderCast}
+                >
+                  <Cast size={20} strokeWidth={2.2} />
+                </button>
 
-            <Link
-              href="/downloads"
-              className="flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
-              aria-label="Download"
-            >
-              <Download size={20} strokeWidth={2.2} />
-            </Link>
+                <Link
+                  href="/downloads"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
+                  aria-label="Download"
+                >
+                  <Download size={20} strokeWidth={2.2} />
+                </Link>
+              </>
+            )}
 
             <Link
               href="/notifications"
-              className="relative flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full text-white/92 transition-all duration-150 hover:bg-white/8 hover:text-white active:scale-90 active:opacity-70"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full text-white/92 transition-colors hover:bg-white/8 hover:text-white"
               aria-label="Notifications"
             >
               <Bell size={20} strokeWidth={2.2} />
@@ -702,19 +605,10 @@ export default function Home() {
             <div className="flex flex-row w-full gap-3 justify-center px-2">
               <Link
                 href={heroPlayHref}
-                onPointerDown={() => setHeroInteractionPaused(true)}
-                onClick={() => {
-                  setHeroInteractionPaused(true);
-                  setHeroPlayLoading(true);
-                }}
-                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-all active:scale-[0.96] shadow-lg shadow-red-900/30"
+                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
               >
-                {heroPlayLoading ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                )}
-                <span className="text-[11px]">{heroPlayLoading ? 'OPENING...' : 'PLAY NOW'}</span>
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <span className="text-[11px]">{isAppInReview ? 'WATCH TRAILER' : 'PLAY NOW'}</span>
               </Link>
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
@@ -761,7 +655,7 @@ export default function Home() {
               <div className="max-w-[760px] pt-14">
                 <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/26 px-4 py-2 text-[11px] font-black uppercase tracking-[0.28em] text-white/78 backdrop-blur-xl">
                   <span className="h-2 w-2 rounded-full bg-[#D90429]" />
-                  Now Streaming
+                  {isAppInReview ? 'Now Discovering' : 'Now Streaming'}
                   {sessionUser?.role === 'admin' && (
                     <Link
                       href="/admin"
@@ -795,19 +689,10 @@ export default function Home() {
                 <div className="mt-10 flex items-center gap-4">
                   <Link
                     href={heroPlayHref}
-                    onPointerDown={() => setHeroInteractionPaused(true)}
-                    onClick={() => {
-                      setHeroInteractionPaused(true);
-                      setHeroPlayLoading(true);
-                    }}
-                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-all hover:bg-[#F6121D] active:scale-[0.96]"
+                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
                   >
-                    {heroPlayLoading ? (
-                      <Loader2 size={20} className="animate-spin" />
-                    ) : (
-                      <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    )}
-                    <span>{heroPlayLoading ? 'OPENING...' : 'PLAY NOW'}</span>
+                    <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <span>{isAppInReview ? 'WATCH TRAILER' : 'PLAY NOW'}</span>
                   </Link>
                   <button
                     onClick={() => setShowHeroDetails((prev) => !prev)}
@@ -920,7 +805,7 @@ export default function Home() {
       {/* Floating Request Movie Button */}
       <Link
         href="/request"
-        className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] group md:bottom-8 md:right-6"
+        className="fixed bottom-[calc(7.5rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] group md:bottom-8 md:right-6"
         aria-label="Request a movie"
       >
         <div className="w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 hover:scale-105 active:scale-95 flex items-center justify-center shadow-[0_10px_25px_rgba(217,4,41,0.45)] ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 animate-[float_3s_ease-in-out_infinite]">

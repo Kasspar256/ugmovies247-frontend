@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Lock } from 'lucide-react';
 import { confirmPasswordReset } from '@/lib/auth/client';
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
   const [password, setPassword] = useState('');
@@ -119,3 +119,18 @@ export default function ResetPasswordPage() {
   );
 }
 
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-[#0B0C10] px-4 py-12 text-white">
+          <section className="w-full max-w-md rounded-[32px] border border-white/10 bg-[#11141C]/90 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+            <p className="text-sm font-bold text-white/70">Loading secure reset form...</p>
+          </section>
+        </main>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}

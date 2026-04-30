@@ -5,14 +5,57 @@ import LegalDocumentPage, {
   LegalSection,
   LegalSubsection,
 } from '@/components/legal/LegalDocumentPage';
+import { isAppInReview } from '@/lib/appReview';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy | UGMOVIES247',
-  description:
-    'Privacy Policy for UGMOVIES247 covering data collection, streaming infrastructure, subscriptions, payments, deletion requests, and legal compliance.',
+  description: isAppInReview
+    ? 'Privacy Policy for UGMOVIES247 covering account, discovery, support, and data deletion practices.'
+    : 'Privacy Policy for UGMOVIES247 covering data collection, streaming infrastructure, subscriptions, payments, deletion requests, and legal compliance.',
 };
 
 export default function PrivacyPage() {
+  if (isAppInReview) {
+    return (
+      <LegalDocumentPage
+        eyebrow="Privacy & Data Use"
+        title="Privacy Policy"
+        lastUpdated="April 21, 2026"
+        summary={
+          <>
+            This Privacy Policy explains how UGMOVIES247 collects, uses, stores, shares, and
+            protects personal information when you browse movie details, create an account, save
+            titles, contact support, or use connected discovery features.
+          </>
+        }
+      >
+        <LegalSection title="1. Information We Collect">
+          <LegalBulletList>
+            <li>Name, display name, email address, and account identifiers tied to login.</li>
+            <li>Profile preferences, saved lists, likes, notification preferences, and support requests.</li>
+            <li>Device, browser, app, IP-related request data, and technical diagnostics used for security and reliability.</li>
+          </LegalBulletList>
+        </LegalSection>
+
+        <LegalSection title="2. How We Use Information">
+          <LegalBulletList>
+            <li>To create and maintain accounts, keep users signed in, and protect account security.</li>
+            <li>To show movie catalogs, genres, VJ information, trailers, saved titles, and app notifications.</li>
+            <li>To respond to support requests, prevent abuse, improve performance, and comply with legal obligations.</li>
+          </LegalBulletList>
+        </LegalSection>
+
+        <LegalSection title="3. Account Deletion and Support">
+          <p>
+            You can request account deletion from the in-app profile security page. When deletion is
+            completed, account records and supported user-owned records are removed from active
+            systems, subject to security and legal retention needs.
+          </p>
+        </LegalSection>
+      </LegalDocumentPage>
+    );
+  }
+
   return (
     <LegalDocumentPage
       eyebrow="Privacy & Data Use"
@@ -105,14 +148,14 @@ export default function PrivacyPage() {
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="4.3 Payment Processors">
+        <LegalSubsection title="4.3 Payment processors">
           <p>
-            Card payments are processed through PayFast. We also utilize various secure regional
-            payment processors and wallet correspondents to manage subscriptions where available. We
-            do not store your full card details or sensitive wallet credentials directly on our
-            servers; these are handled by the relevant secure processor. We retain only the payment
-            metadata, provider references, and authorization records needed to manage your access
-            and provide support.
+            Card payments are processed through PayFast. Mobile Money payments are processed through
+            PawaPay and supported wallet correspondents made available during checkout. We do not
+            need your full card details to charge you directly through our own servers; payment
+            credentials are handled by the relevant processor, while we store the payment metadata,
+            provider references, and recurring authorization records needed to manage your
+            subscription.
           </p>
         </LegalSubsection>
       </LegalSection>

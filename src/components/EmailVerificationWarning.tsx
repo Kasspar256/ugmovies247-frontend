@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { resendVerificationEmail } from '@/lib/auth/client';
+import { isAppInReview } from '@/lib/appReview';
 
 type EmailVerificationWarningProps = {
   emailVerified?: boolean;
@@ -42,7 +43,9 @@ export default function EmailVerificationWarning({
     >
       <div className="text-sm font-bold">Your email is not verified.</div>
       <p className="mt-2 text-sm leading-6 text-amber-50/82">
-        Verify to receive payment receipts, subscription updates, and account recovery support.
+        {isAppInReview
+          ? 'Verify to receive account recovery support and important service notices.'
+          : 'Verify to receive payment receipts, subscription updates, and account recovery support.'}
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button

@@ -11,14 +11,63 @@ import {
   CARD_PAYMENT_PROCESSOR,
   SERVICE_BRAND,
 } from '@/lib/billingIdentity';
+import { isAppInReview } from '@/lib/appReview';
 
 export const metadata: Metadata = {
   title: 'Terms & Conditions | UGMOVIES247',
-  description:
-    'Terms & Conditions for UGMOVIES247 covering accounts, subscriptions, billing, auto-renewal, mobile money, streaming limitations, user conduct, and legal rights.',
+  description: isAppInReview
+    ? 'Terms & Conditions for UGMOVIES247 covering accounts, movie discovery, acceptable use, and legal rights.'
+    : 'Terms & Conditions for UGMOVIES247 covering accounts, subscriptions, billing, auto-renewal, mobile money, streaming limitations, user conduct, and legal rights.',
 };
 
 export default function TermsPage() {
+  if (isAppInReview) {
+    return (
+      <LegalDocumentPage
+        eyebrow="Platform Rules"
+        title="Terms & Conditions"
+        lastUpdated="April 21, 2026"
+        summary={
+          <>
+            These Terms &amp; Conditions govern your use of {SERVICE_BRAND} as a movie discovery
+            and trailer catalog, including account registration, saved lists, notifications,
+            content availability, and acceptable use.
+          </>
+        }
+      >
+        <LegalSection title="1. Acceptance of These Terms">
+          <p>
+            By accessing or using {SERVICE_BRAND}, you agree to be bound by these Terms &amp;
+            Conditions, our Privacy Policy, DMCA Policy, and any posted rules presented in the app.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="2. Nature of the Service">
+          <p>
+            {SERVICE_BRAND} provides movie discovery, VJ catalog information, trailers, genres,
+            search, saved lists, and related informational features. Content availability can change
+            based on operational, licensing, technical, or moderation needs.
+          </p>
+        </LegalSection>
+
+        <LegalSection title="3. Account and Acceptable Use">
+          <LegalBulletList>
+            <li>You must provide accurate account information and keep your login secure.</li>
+            <li>You may not abuse, scrape, attack, reverse-engineer, or disrupt the platform.</li>
+            <li>You may not upload, request, or share unlawful, infringing, harmful, or abusive material.</li>
+          </LegalBulletList>
+        </LegalSection>
+
+        <LegalSection title="4. Support and Account Deletion">
+          <p>
+            Account deletion is available from the profile security page. Support and legal notices
+            can be sent through the contact details provided in the app.
+          </p>
+        </LegalSection>
+      </LegalDocumentPage>
+    );
+  }
+
   return (
     <LegalDocumentPage
       eyebrow="Platform Rules"
@@ -131,21 +180,30 @@ export default function TermsPage() {
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="6.3 Regional and Local Payment Methods">
+        <LegalSubsection title="6.3 Mobile Money payments">
           <p>
-            Where supported, we may offer local payment methods or mobile wallet options during the
-            checkout process. The availability of these methods depends on your geographic region,
-            network support, and device compatibility. Transactions made through these methods may
-            remain pending until confirmed by the relevant provider; a pending or unconfirmed
-            transaction does not grant active subscription status.
+            Mobile Money payments are processed through supported providers made available at
+            checkout, including provider networks routed through PawaPay where enabled. Availability
+            depends on region, network support, provider uptime, and wallet authorization.
+          </p>
+          <p>
+            Mobile Money transactions may remain pending until your provider confirms them. A
+            pending, failed, cancelled, expired, or unconfirmed transaction does not create paid
+            entitlement.
           </p>
         </LegalSubsection>
 
-        <LegalSubsection title="6.4 Manual and One-Off Payments">
+        <LegalSubsection title="6.4 Auto-renewal">
           <p>
-            Payments made via local wallets or regional vouchers are generally treated as one-off
-            transactions. These do not support auto-renewal and require a new manual authorization
-            for each subsequent billing period.
+            Card subscriptions may support auto-renewal when you expressly authorize recurring
+            billing and a valid payment token is stored through the payment provider. In that case,
+            future renewals may be charged automatically before or when the current access period
+            expires.
+          </p>
+          <p>
+            Mobile Money purchases are generally one-off payments unless we clearly state otherwise.
+            They may require a new authorization for each renewal and should not be assumed to renew
+            automatically.
           </p>
         </LegalSubsection>
 
@@ -228,11 +286,6 @@ export default function TermsPage() {
         <p>
           We are not responsible for third-party websites, processors, telecom networks, wallet
           providers, or external source sites that are not controlled by us.
-        </p>
-        <p>
-          Please note that specific feature availability—including available payment methods,
-          content categories, and UI elements—is dynamic and may vary based on your geographic
-          location, device type, application version, and current regional support status.
         </p>
       </LegalSection>
 

@@ -15,6 +15,10 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
+import {
+  prepareMovieDocumentForDirectUploadProcessing,
+  queuePreparedDirectUploadJobs,
+} from '@/lib/server/adminVideoProcessing';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 
 export const runtime = 'nodejs';
@@ -160,6 +164,7 @@ export async function POST(request: Request) {
     if (
       createdMovie.contentType === 'movie' &&
       !createdMovie.video_url &&
+      !createdMovie.sourceUrl &&
       (!createdMovie.parts || createdMovie.parts.length === 0)
     ) {
       return NextResponse.json(
@@ -178,17 +183,21 @@ export async function POST(request: Request) {
       );
     }
 
-    await movieRef.set(createdMovie);
+    const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(createdMovie, movieRef.id);
+
+    await movieRef.set(preparedMovie.movie);
     await upsertMovieInCatalogCache({
       id: movieRef.id,
-      ...createdMovie,
+      ...preparedMovie.movie,
     });
+    await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
 
     return NextResponse.json({
       success: true,
+      queuedNormalizationCount: preparedMovie.queuedJobs.length,
       movie: {
         id: movieRef.id,
-        ...createdMovie,
+        ...preparedMovie.movie,
       },
     });
   } catch (error) {

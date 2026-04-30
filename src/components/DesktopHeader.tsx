@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Clock3, Download, Search, UserCircle2 } from 'lucide-react';
 import { isLegalRoute } from '@/lib/legalRoutes';
+import { isAppInReview } from '@/lib/appReview';
 
 function shouldShowDesktopHeader(pathname: string) {
   if (!pathname) {
@@ -52,9 +53,16 @@ const PRIMARY_LINKS = [
 
 const QUICK_ACTIONS = [
   { href: '/notifications', label: 'Notifications', icon: Bell },
-  { href: '/downloads', label: 'Downloads', icon: Download },
+  ...(
+    isAppInReview
+      ? []
+      : [{ href: '/downloads', label: 'Downloads', icon: Download }]
+  ),
 ];
 const DESKTOP_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/notifications', '/downloads'];
+const DESKTOP_SAFE_PREFETCH_ROUTES = isAppInReview
+  ? DESKTOP_PREFETCH_ROUTES.filter((href) => href !== '/downloads')
+  : DESKTOP_PREFETCH_ROUTES;
 
 type SubscriptionSnapshot = {
   status?: string;
@@ -107,12 +115,17 @@ export default function DesktopHeader() {
       return;
     }
 
-    DESKTOP_PREFETCH_ROUTES.forEach((href) => {
+    DESKTOP_SAFE_PREFETCH_ROUTES.forEach((href) => {
       router.prefetch(href);
     });
   }, [router, shouldShow]);
 
   useEffect(() => {
+    if (isAppInReview) {
+      setSubscription(null);
+      return;
+    }
+
     let cancelled = false;
 
     const loadSubscription = async () => {
@@ -148,7 +161,10 @@ export default function DesktopHeader() {
     };
   }, []);
 
-  const timeLeftLabel = useMemo(() => getTimeLeftLabel(subscription), [subscription]);
+  const timeLeftLabel = useMemo(
+    () => (isAppInReview ? '' : getTimeLeftLabel(subscription)),
+    [subscription]
+  );
 
   if (!shouldShow) {
     return null;
@@ -202,7 +218,7 @@ export default function DesktopHeader() {
                     key={action.href}
                     href={action.href}
                     aria-label={action.label}
-                    className={`flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full transition-all duration-150 active:scale-90 active:opacity-75 ${
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
                       active
                         ? 'bg-[#D90429] text-white'
                         : 'text-white/72 hover:bg-white/6 hover:text-white'
@@ -216,7 +232,7 @@ export default function DesktopHeader() {
               <Link
                 href="/search"
                 aria-label="Search"
-                className={`flex h-11 w-11 min-h-11 min-w-11 items-center justify-center rounded-full transition-all duration-150 active:scale-90 active:opacity-75 ${
+                className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
                   isActivePath(pathname, '/search')
                     ? 'bg-[#D90429] text-white'
                     : 'text-white/72 hover:bg-white/6 hover:text-white'

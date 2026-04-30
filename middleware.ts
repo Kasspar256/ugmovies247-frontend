@@ -1,9 +1,15 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { AUTH_ROLE_COOKIE, AUTH_SESSION_COOKIE } from '@/lib/auth/constants';
+import {
+  APP_REVIEW_HOME_PATH,
+  isAppInReview,
+  isReviewBlockedApiPath,
+  isReviewBlockedPath,
+} from '@/lib/appReview';
 
 const protectedPrefixes = [
-  '/',
+  '/browse',
   '/movie',
   '/downloads',
   '/likes',
@@ -21,11 +27,11 @@ const protectedPrefixes = [
 const authPages = ['/login', '/signup', '/forgot-password'];
 
 function matchesProtectedPath(pathname: string) {
-  if (pathname === '/') {
+  if (pathname === '/browse') {
     return true;
   }
 
-  return protectedPrefixes.some((prefix) => prefix !== '/' && pathname.startsWith(prefix));
+  return protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
 export function middleware(request: NextRequest) {
@@ -42,8 +48,18 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (isAppInReview) {
+    if (isReviewBlockedApiPath(pathname)) {
+      return NextResponse.json({ error: 'Subscriptions are unavailable in this app build.' }, { status: 404 });
+    }
+
+    if (isReviewBlockedPath(pathname)) {
+      return NextResponse.redirect(new URL(APP_REVIEW_HOME_PATH, request.url));
+    }
+  }
+
   if (authPages.includes(pathname) && hasSession) {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/browse', request.url));
   }
 
   if (pathname.startsWith('/admin')) {
@@ -83,15 +99,17 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/',
     '/login',
     '/signup',
     '/forgot-password',
+    '/browse/:path*',
     '/movie/:path*',
     '/downloads/:path*',
     '/likes/:path*',
     '/watchlist/:path*',
     '/profile/:path*',
+    '/mobile-checkout',
+    '/mobile-checkout/:path*',
     '/request/:path*',
     '/notifications/:path*',
     '/search/:path*',
@@ -101,6 +119,9 @@ export const config = {
     '/subscribe/:path*',
     '/admin/:path*',
     '/api/movies/:path*',
+    '/api/download',
+    '/api/download/:path*',
+    '/api/user/downloads/:path*',
     '/api/subscriptions/:path*',
     '/api/admin/:path*',
   ],

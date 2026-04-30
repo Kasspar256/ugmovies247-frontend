@@ -153,7 +153,7 @@ export default function SettingsPage() {
     AVATAR_PRESETS.find((preset) => preset.id === avatarPresetId)?.src || profile?.avatarUrl || '';
 
   return (
-    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
+    <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
       <MobilePageHeader title="Settings" fallbackHref="/profile" />
 
       <div className="mx-auto max-w-3xl">
@@ -319,7 +319,7 @@ export default function SettingsPage() {
                 />
               </div>
               <p className="mt-4 text-sm leading-6 text-white/50">
-                More granular alerts like new episode reminders, download completion, and followed-title
+                More granular alerts like new episode reminders, account notices, and followed-title
                 alerts will need additional preference fields plus a delivery pipeline.
               </p>
             </section>

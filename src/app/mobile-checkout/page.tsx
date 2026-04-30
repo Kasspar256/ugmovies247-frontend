@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { APP_REVIEW_HOME_PATH, isAppInReview } from '@/lib/appReview';
 
 type ExternalCheckoutResponse = {
   success?: boolean;
@@ -60,12 +61,11 @@ function submitHostedPaymentForm(redirect: NonNullable<ExternalCheckoutResponse[
 }
 
 export default function MobileCheckoutPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
   const returnedPaymentId = searchParams.get('paymentId') || '';
   const cancelled = searchParams.get('cancelled') === '1';
-  const rawReturnTo = searchParams.get('returnTo') || '/profile/payments';
-  const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile/payments';
   const [paymentId, setPaymentId] = useState(returnedPaymentId);
   const [status, setStatus] = useState(cancelled ? 'cancelled' : 'loading');
   const [message, setMessage] = useState(
@@ -74,10 +74,14 @@ export default function MobileCheckoutPage() {
       : 'Preparing secure checkout...'
   );
   const [error, setError] = useState('');
-  const [redirectCountdown, setRedirectCountdown] = useState(6);
   const submittedFormRef = useRef(false);
 
   useEffect(() => {
+    if (isAppInReview) {
+      router.replace(APP_REVIEW_HOME_PATH);
+      return;
+    }
+
     if (!token || cancelled) {
       if (!token) {
         setStatus('failed');
@@ -148,9 +152,13 @@ export default function MobileCheckoutPage() {
     return () => {
       active = false;
     };
-  }, [cancelled, returnedPaymentId, token]);
+  }, [cancelled, returnedPaymentId, router, token]);
 
   useEffect(() => {
+    if (isAppInReview) {
+      return;
+    }
+
     if (!token || !paymentId || ['completed', 'failed', 'cancelled', 'not_found'].includes(status)) {
       return;
     }
@@ -179,39 +187,16 @@ export default function MobileCheckoutPage() {
     return () => window.clearInterval(interval);
   }, [paymentId, status, token]);
 
+  if (isAppInReview) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#0B0C10] px-4 py-10 text-white">
+        <Loader2 size={30} className="animate-spin text-[#FFB3C1]" />
+      </main>
+    );
+  }
+
   const isSuccess = status === 'completed';
   const isFailure = Boolean(error) || status === 'failed' || status === 'cancelled' || status === 'not_found';
-  const shouldAutoReturn = isSuccess || isFailure;
-
-  useEffect(() => {
-    if (!shouldAutoReturn) {
-      setRedirectCountdown(6);
-      return;
-    }
-
-    setRedirectCountdown(6);
-
-    const interval = window.setInterval(() => {
-      setRedirectCountdown((current) => {
-        if (current <= 1) {
-          window.clearInterval(interval);
-
-          const appReturnUrl = `ugmovies247://open?path=${encodeURIComponent(returnTo)}`;
-          window.location.href = appReturnUrl;
-
-          window.setTimeout(() => {
-            window.location.replace(returnTo);
-          }, 2500);
-
-          return 0;
-        }
-
-        return current - 1;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [returnTo, shouldAutoReturn]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0B0C10] px-4 py-10 text-white">
@@ -242,15 +227,9 @@ export default function MobileCheckoutPage() {
           </div>
         ) : null}
 
-        {shouldAutoReturn ? (
-          <div className="mt-5 rounded-2xl border border-[#D90429]/25 bg-[#D90429]/10 px-4 py-3 text-xs font-bold leading-6 text-[#FFB3C1]">
-            Redirecting back to UG Movies 247 in {redirectCountdown} second{redirectCountdown === 1 ? '' : 's'}...
-          </div>
-        ) : (
-          <p className="mt-5 text-xs leading-6 text-white/46">
-            Keep this page open while we confirm your payment. You will be returned automatically when it finishes.
-          </p>
-        )}
+        <p className="mt-5 text-xs leading-6 text-white/46">
+          After payment confirms, close this tab and return to the UG Movies 247 app. The app will refresh your premium access automatically.
+        </p>
       </section>
     </main>
   );

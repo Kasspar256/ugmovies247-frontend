@@ -1,11 +1,9 @@
 import './globals.css';
 import AuthGate from '@/components/AuthGate';
+import AndroidBackButtonHandler from '@/components/AndroidBackButtonHandler';
 import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
-import CanonicalLink from '@/components/seo/CanonicalLink';
-import NativeDeepLinkHandler from '@/components/NativeDeepLinkHandler';
-import NativePushBridge from '@/components/NativePushBridge';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
 import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
 
@@ -50,15 +48,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="min-h-screen overflow-x-hidden bg-[#0B0C10] text-white antialiased">
-        <CanonicalLink />
         <PlaybackProvider>
+          <AndroidBackButtonHandler />
           <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
             <AuthGate>
-              <><NativePushBridge /><AppChrome>{children}</AppChrome></>
+              <AppChrome>{children}</AppChrome>
             </AuthGate>
             <EnvironmentBadge />
           </main>
-          <NativeDeepLinkHandler />
           <MobileBottomNav />
         </PlaybackProvider>
       </body>
