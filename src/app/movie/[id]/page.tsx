@@ -923,9 +923,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         <div className="relative z-10 mt-4 rounded-full border border-white/12 bg-black/28 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/86 backdrop-blur-md">
           Watch Trailer
         </div>
-        <p className="relative z-10 mt-3 max-w-lg text-xs leading-6 text-white/72 md:text-sm">
-          Discovery mode is enabled for this app build. Browse details, VJ info, genres, and related titles.
-        </p>
       </button>
     ) : isPlaybackLocked ? (
       <button

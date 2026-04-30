@@ -459,7 +459,7 @@ export default function Home() {
     const videoElement = homeCastVideoRef.current;
 
     if (isAppInReview) {
-      setHeaderActionMessage('Trailer discovery mode is active for this app build.');
+      setHeaderActionMessage('Trailers play directly in the app.');
       return;
     }
 

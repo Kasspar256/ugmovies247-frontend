@@ -1,12 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Play, Film } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { type Movie } from '@/types/movie';
-import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
+import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 
 function getGenreMovies(genreId: string, allMovies: Movie[]) {
   if (genreId.toLowerCase() === 'indian') {
@@ -42,7 +43,12 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cachedMovies = dedupeSeriesMovies(getGenreMovies(genreId, readCachedPublicMovies()));
+    const cachedCatalog = readCachedPublicMovies();
+    const cachedMovies = ensureReviewMinimumMovies(
+      `genre:${genreId}`,
+      getGenreMovies(genreId, cachedCatalog),
+      cachedCatalog
+    );
 
     if (cachedMovies.length) {
       setMovies(cachedMovies);
@@ -53,7 +59,13 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
       try {
         const allMovies = await fetchPublicMovies();
 
-        setMovies(dedupeSeriesMovies(getGenreMovies(genreId, allMovies)));
+        setMovies(
+          ensureReviewMinimumMovies(
+            `genre:${genreId}`,
+            getGenreMovies(genreId, allMovies),
+            allMovies
+          )
+        );
       } catch (err) {
         console.error("Error fetching genre movies:", err);
       } finally {
@@ -74,7 +86,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
   const genreIntro = getGenreIntro(genreId, movies.length);
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
 
       <MobilePageHeader
         title={genreId}

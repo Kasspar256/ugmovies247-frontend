@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { VJ_DIRECTORY } from '@/config/constants';
 import { ArrowLeft, Play } from 'lucide-react';
 import { type Movie } from '@/types/movie';
-import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
+import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 import MobilePageHeader from '@/components/MobilePageHeader';
 
 function getMoviesForVj(vjName: string, allMovies: Movie[]) {
@@ -32,7 +33,12 @@ export default function VJDetail({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const cachedMovies = dedupeSeriesMovies(getMoviesForVj(vjInfo.name, readCachedPublicMovies()));
+    const cachedCatalog = readCachedPublicMovies();
+    const cachedMovies = ensureReviewMinimumMovies(
+      `vj:${vjInfo.name}`,
+      getMoviesForVj(vjInfo.name, cachedCatalog),
+      cachedCatalog
+    );
 
     if (cachedMovies.length) {
       setMovies(cachedMovies);
@@ -43,7 +49,13 @@ export default function VJDetail({ params }: { params: { id: string } }) {
       try {
         const allMovies = await fetchPublicMovies();
 
-        setMovies(dedupeSeriesMovies(getMoviesForVj(vjInfo.name, allMovies)));
+        setMovies(
+          ensureReviewMinimumMovies(
+            `vj:${vjInfo.name}`,
+            getMoviesForVj(vjInfo.name, allMovies),
+            allMovies
+          )
+        );
       } catch (err) {
         console.error("Error fetching VJ movies:", err);
       } finally {
@@ -64,7 +76,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
   const vjIntro = getVjIntro(vjInfo.name, movies.length);
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10">
       <MobilePageHeader
         title={vjInfo.name}
         subtitle={`${movies.length} Dubbed Movies`}
