@@ -19,6 +19,8 @@ export type HomeRowRecord = {
   movies: Movie[];
 };
 
+const REVIEW_ROW_MIN_MOVIES = 5;
+
 export const DEFAULT_HOME_PAGE_CATEGORIES: HomePageCategoryRecord[] = HOME_PAGE_CATEGORY_CONFIG.map(
   (category) => ({
     id: slugifyHomeSection(category.name),
@@ -35,6 +37,50 @@ export function slugifyHomeSection(value: string) {
 
 function normalizeCatalogLabel(value: string) {
   return slugifyHomeSection(String(value || '').trim()).replace(/^-+|-+$/g, '');
+}
+
+function getMovieStableKey(movie: Movie) {
+  return String(movie.id || movie.movieId || movie.title || movie.name || movie.sourceFileName || '');
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function getReviewFallbackMovies(rowKey: string, sourceMovies: Movie[]) {
+  return [...sourceMovies].sort((left, right) => {
+    const leftKey = hashString(`${rowKey}:${getMovieStableKey(left)}`);
+    const rightKey = hashString(`${rowKey}:${getMovieStableKey(right)}`);
+
+    if (leftKey !== rightKey) {
+      return leftKey - rightKey;
+    }
+
+    return getMovieStableKey(left).localeCompare(getMovieStableKey(right));
+  });
+}
+
+function ensureReviewRowMinimum(row: HomeRowRecord, sourceMovies: Movie[]) {
+  if (!isAppInReview || row.movies.length >= REVIEW_ROW_MIN_MOVIES || !sourceMovies.length) {
+    return row.movies;
+  }
+
+  const existingMovieKeys = new Set(row.movies.map(getMovieStableKey));
+  const fallbackMovies = getReviewFallbackMovies(row.categoryKey, sourceMovies).filter(
+    (movie) => !existingMovieKeys.has(getMovieStableKey(movie))
+  );
+
+  return [...row.movies, ...fallbackMovies].slice(
+    0,
+    Math.min(REVIEW_ROW_MIN_MOVIES, sourceMovies.length)
+  );
 }
 
 function hasCategory(movie: Movie, category: string) {
@@ -156,6 +202,7 @@ export function buildHomeCollections(options: {
 }) {
   const homePageCategories = options.homePageCategories || DEFAULT_HOME_PAGE_CATEGORIES;
   const filteredMovies = filterMoviesByActiveCategory(options.movies, options.activeCategory || 'ALL');
+  const reviewFallbackMovies = isAppInReview ? dedupeSeriesMovies(filteredMovies) : [];
 
   const manualHomeRows: HomeRowRecord[] = homePageCategories
     .filter((category) => category.isVisible !== false)
@@ -183,10 +230,18 @@ export function buildHomeCollections(options: {
   }));
 
   const homeRows = [...manualHomeRows, ...autoRows]
-    .map((row) => ({
-      ...row,
-      movies: dedupeSeriesMovies(row.movies),
-    }))
+    .map((row) => {
+      const dedupedMovies = dedupeSeriesMovies(row.movies);
+      const normalizedRow = {
+        ...row,
+        movies: dedupedMovies,
+      };
+
+      return {
+        ...normalizedRow,
+        movies: ensureReviewRowMinimum(normalizedRow, reviewFallbackMovies),
+      };
+    })
     .sort((left, right) => left.sortOrder - right.sortOrder);
 
   const configuredRowMovieIds = new Set(homeRows.flatMap((row) => row.movies).map((movie) => movie.id));
