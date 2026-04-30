@@ -31,6 +31,7 @@ import {
   type ArtworkVariant,
 } from '@/lib/artwork';
 import { isAppInReview } from '@/lib/appReview';
+import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 
 type SessionUser = {
   role: 'user' | 'admin';
@@ -425,6 +426,26 @@ export default function Home() {
     }
   }, [priorityArtworkMovies]);
 
+  const handleHeroTrailerClick = () => {
+    if (!heroMovie) {
+      setHeaderActionMessage('Pick a title first before opening a trailer.');
+      return;
+    }
+
+    const trailerUrl = getReviewTrailerUrl(heroMovie);
+
+    if (!trailerUrl) {
+      setHeaderActionMessage('No trailer is available right now.');
+      return;
+    }
+
+    const popup = window.open(trailerUrl, '_blank', 'noopener,noreferrer');
+
+    if (!popup) {
+      window.location.href = trailerUrl;
+    }
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#0B0C10] flex flex-col items-center justify-center">
@@ -603,13 +624,24 @@ export default function Home() {
             </div>
 
             <div className="flex flex-row w-full gap-3 justify-center px-2">
-              <Link
-                href={heroPlayHref}
-                className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
-              >
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <span className="text-[11px]">{isAppInReview ? 'WATCH TRAILER' : 'PLAY NOW'}</span>
-              </Link>
+              {isAppInReview ? (
+                <button
+                  type="button"
+                  onClick={handleHeroTrailerClick}
+                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <span className="text-[11px]">WATCH TRAILER</span>
+                </button>
+              ) : (
+                <Link
+                  href={heroPlayHref}
+                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <span className="text-[11px]">PLAY NOW</span>
+                </Link>
+              )}
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
                 className="bg-[#1F2833] hover:bg-gray-800 text-white font-bold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/5"
@@ -687,13 +719,24 @@ export default function Home() {
                 </p>
 
                 <div className="mt-10 flex items-center gap-4">
-                  <Link
-                    href={heroPlayHref}
-                    className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
-                  >
-                    <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                    <span>{isAppInReview ? 'WATCH TRAILER' : 'PLAY NOW'}</span>
-                  </Link>
+                  {isAppInReview ? (
+                    <button
+                      type="button"
+                      onClick={handleHeroTrailerClick}
+                      className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
+                    >
+                      <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                      <span>WATCH TRAILER</span>
+                    </button>
+                  ) : (
+                    <Link
+                      href={heroPlayHref}
+                      className="flex h-14 min-w-[208px] items-center justify-center gap-2 rounded-md bg-[#E50914] px-6 text-[13px] font-extrabold text-white shadow-lg shadow-red-900/20 transition-colors hover:bg-[#F6121D]"
+                    >
+                      <svg className="h-6 w-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                      <span>PLAY NOW</span>
+                    </Link>
+                  )}
                   <button
                     onClick={() => setShowHeroDetails((prev) => !prev)}
                     className="flex h-14 min-w-[190px] items-center justify-center gap-2 rounded-md bg-[#3A4558] px-6 text-[13px] font-bold text-white transition-colors hover:bg-[#4C5A72]"
@@ -720,7 +763,7 @@ export default function Home() {
                   Browse
                 </div>
                 <h2 className="mt-2 text-[24px] font-black tracking-[-0.03em] text-white">
-                  Pick a lane and keep watching
+                  {isAppInReview ? 'Pick a trailer lane' : 'Pick a lane and keep watching'}
                 </h2>
 
                 <div className="relative mt-5">

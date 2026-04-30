@@ -1,5 +1,6 @@
 import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
+import { isAppInReview } from '@/lib/appReview';
 import type { Movie } from '@/types/movie';
 
 export type HomePageCategoryRecord = {
@@ -125,6 +126,21 @@ function usesSeriesBackdropCards(name: string) {
   );
 }
 
+function getReviewAwareRowTitle(category: HomePageCategoryRecord) {
+  const normalizedName = normalizeCatalogLabel(category.name);
+  const normalizedLabel = normalizeCatalogLabel(category.displayLabel);
+
+  if (
+    isAppInReview &&
+    (normalizedName === 'latest-movies-on-ugmovies24-7' ||
+      normalizedLabel === 'latest-movies-on-ugmovies24-7')
+  ) {
+    return 'LATEST TRAILERS ON UGMOVIES24_7';
+  }
+
+  return category.displayLabel;
+}
+
 export function filterMoviesByActiveCategory(movies: Movie[], activeCategory: string) {
   if (activeCategory === 'ALL') {
     return movies;
@@ -144,7 +160,7 @@ export function buildHomeCollections(options: {
   const manualHomeRows: HomeRowRecord[] = homePageCategories
     .filter((category) => category.isVisible !== false)
     .map((category) => ({
-      title: category.displayLabel,
+      title: getReviewAwareRowTitle(category),
       categoryKey: slugifyHomeSection(category.name),
       usesSeriesBackdropCards: usesSeriesBackdropCards(category.name),
       sortOrder: category.homeOrder,

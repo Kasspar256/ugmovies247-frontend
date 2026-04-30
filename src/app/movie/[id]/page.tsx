@@ -17,6 +17,7 @@ import {
   usePlayback,
 } from '@/components/player/PlaybackProvider';
 import { isAppInReview } from '@/lib/appReview';
+import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -783,6 +784,25 @@ const handleShare = async () => {
   }
 };
 
+const handleWatchTrailer = () => {
+  if (!movie) {
+    return;
+  }
+
+  const trailerUrl = getReviewTrailerUrl(movie);
+
+  if (!trailerUrl) {
+    setActionMessage('No trailer is available right now.');
+    return;
+  }
+
+  const popup = window.open(trailerUrl, '_blank', 'noopener,noreferrer');
+
+  if (!popup) {
+    window.location.href = trailerUrl;
+  }
+};
+
 const handleCast = async () => {
   if (isAppInReview) {
     setActionMessage('Casting is not available in this discovery build.');
@@ -878,7 +898,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
     {isAppInReview ? (
       <button
         type="button"
-        onClick={() => setActionMessage('Trailer preview mode is active for this app build.')}
+        onClick={handleWatchTrailer}
         className="absolute inset-0 z-10 flex flex-col items-center justify-center overflow-hidden bg-black/18 px-6 text-center transition-colors hover:bg-black/24"
         aria-label="Watch trailer"
       >
@@ -1247,3 +1267,4 @@ function DownloadIcon() {
 function LockedDownloadIcon() {
   return <Lock className="h-[18px] w-[18px] text-white/90" strokeWidth={2.1} aria-hidden="true" />;
 }
+

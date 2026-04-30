@@ -1,7 +1,7 @@
 export const HOME_PAGE_CATEGORY_CONFIG = [
   {
     name: 'Latest movies on Ugmovies24_7',
-    displayLabel: 'LATEST MOVIES ON UGMOVIES24_7',
+    displayLabel: 'LATEST TRAILERS ON UGMOVIES24_7',
     homeOrder: 10,
   },
   {

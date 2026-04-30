@@ -1,12 +1,15 @@
 import { normalizeMovie, type Movie } from '@/types/movie';
+import { isAppInReview } from '@/lib/appReview';
 
 type CachedPublicMovieCatalog = {
   movies: Movie[];
   cachedAt: number;
 };
 
-const PUBLIC_MOVIE_CACHE_KEY = 'ugmovies247.public-movies.v2';
-const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 30;
+const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
+  ? 'ugmovies247.public-movies.review.v1'
+  : 'ugmovies247.public-movies.v2';
+const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 2;
 
 let inMemoryMovieCatalog: CachedPublicMovieCatalog | null = null;
 let inFlightMovieCatalogRequest: Promise<Movie[]> | null = null;
@@ -53,7 +56,9 @@ export function clearPublicMovieCache() {
 
   try {
     window.sessionStorage.removeItem(PUBLIC_MOVIE_CACHE_KEY);
+    window.sessionStorage.removeItem('ugmovies247.public-movies.review.v1');
     window.sessionStorage.removeItem('ugmovies247.public-movies.v1');
+    window.sessionStorage.removeItem('ugmovies247.public-movies.v2');
   } catch {
     // Ignore session storage removal failures and keep the cache cleared in memory.
   }

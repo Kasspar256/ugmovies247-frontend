@@ -19,6 +19,8 @@ import {
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { isAppInReview } from '@/lib/appReview';
+import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -185,6 +187,44 @@ function sanitizeMovieForViewerLocally(
   };
 }
 
+function sanitizeMovieForReviewMode(movie: Record<string, unknown>) {
+  const stripPlaybackFields = (entry: Record<string, unknown>) => ({
+    ...entry,
+    video_url: '',
+    sourceUrl: '',
+    sourceFileName: '',
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    playbackType: 'mp4',
+    accessTier: 'free',
+    subscriptionRequired: false,
+    isLocked: false,
+  });
+
+  const parts = Array.isArray(movie.parts)
+    ? movie.parts.map((part) => stripPlaybackFields(part as Record<string, unknown>))
+    : [];
+  const seasons = Array.isArray(movie.seasons)
+    ? movie.seasons.map((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        const episodes = Array.isArray(rawSeason.episodes)
+          ? rawSeason.episodes.map((episode) => stripPlaybackFields(episode as Record<string, unknown>))
+          : [];
+
+        return {
+          ...rawSeason,
+          episodes,
+        };
+      })
+    : [];
+
+  return {
+    ...stripPlaybackFields(movie),
+    parts,
+    seasons,
+  };
+}
+
 function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
 
@@ -218,8 +258,11 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
-async function readMovieSnapshotWithFallback(hasFallback: boolean) {
-  const queryPromise = adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+async function readMovieSnapshotWithFallback(hasFallback: boolean, reviewOnly: boolean) {
+  const query = reviewOnly
+    ? adminDb.collection(MOVIES_COLLECTION).where('is_for_review', '==', true)
+    : adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc');
+  const queryPromise = query.get();
 
   if (!hasFallback) {
     return queryPromise;
@@ -243,35 +286,84 @@ async function readMovieSnapshotWithFallback(hasFallback: boolean) {
   }
 }
 
-async function fetchMovieCatalog() {
-  if (isFreshMovieCache(inMemoryMovieCache)) {
-    return inMemoryMovieCache;
+function matchesCatalogMode(cache: CachedMovieCatalog | null, reviewOnly: boolean) {
+  if (!cache) {
+    return null;
+  }
+
+  if (reviewOnly) {
+    return cache.reviewOnly === true ? cache : null;
+  }
+
+  return cache.reviewOnly === true ? null : cache;
+}
+
+function withReviewTrailerFallback(movieDoc: Record<string, unknown>) {
+  const trailerUrl =
+    String(movieDoc.trailer_url || '').trim() ||
+    getMappedTrailerUrlForTitle(String(movieDoc.title || '')) ||
+    getMappedTrailerUrlForTitle(String(movieDoc.name || '')) ||
+    getMappedTrailerUrlForTitle(String(movieDoc.original_title || '')) ||
+    getMappedTrailerUrlForTitle(String(movieDoc.file_name || '')) ||
+    getMappedTrailerUrlForTitle(String(movieDoc.sourceFileName || ''));
+
+  return {
+    ...movieDoc,
+    trailer_url: trailerUrl,
+  };
+}
+
+function getMovieTimestamp(movie: Record<string, unknown>) {
+  const dateAdded = String(movie.date_added || '');
+  const updatedAt = String(movie.updatedAt || '');
+  const createdAt = String(movie.createdAt || '');
+  const candidate = dateAdded || updatedAt || createdAt;
+  const timestamp = candidate ? new Date(candidate).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
+  return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
+}
+
+async function fetchMovieCatalog(reviewOnly: boolean) {
+  const inMemoryCacheForMode = matchesCatalogMode(inMemoryMovieCache, reviewOnly);
+
+  if (isFreshMovieCache(inMemoryCacheForMode)) {
+    return inMemoryCacheForMode;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
-  const staleCache = pickMovieCatalogCache(inMemoryMovieCache, diskCache);
+  const diskCacheForMode = matchesCatalogMode(diskCache, reviewOnly);
+  const staleCache = pickMovieCatalogCache(inMemoryCacheForMode, diskCacheForMode);
 
-  if (isFreshMovieCache(diskCache)) {
-    setInMemoryMovieCache(diskCache);
-    return diskCache;
+  if (isFreshMovieCache(diskCacheForMode)) {
+    setInMemoryMovieCache(diskCacheForMode);
+    return diskCacheForMode;
   }
 
   if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
-    if (diskCache) {
-      setInMemoryMovieCache(diskCache);
+    if (diskCacheForMode) {
+      setInMemoryMovieCache(diskCacheForMode);
     }
 
     return staleCache;
   }
 
   try {
-    const snapshot = await readMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length));
+    const snapshot = await readMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length), reviewOnly);
+    const movies = sortMovieDocsByUploadDate(
+      snapshot.docs.map((movieDoc) =>
+        withReviewTrailerFallback({
+          id: movieDoc.id,
+          ...movieDoc.data(),
+        })
+      )
+    );
     const cache: CachedMovieCatalog = {
-      movies: snapshot.docs.map((movieDoc) => ({
-        id: movieDoc.id,
-        ...movieDoc.data(),
-      })),
+      movies,
       cachedAt: new Date().toISOString(),
+      reviewOnly,
     };
 
     setInMemoryMovieCache(cache);
@@ -309,15 +401,13 @@ export async function GET(request: Request) {
       );
     }
 
-    const catalog = await fetchMovieCatalog();
+    const catalog = await fetchMovieCatalog(isAppInReview);
     const movies = catalog.movies
-      .filter((movieDoc) => hasPublicPlaybackAsset(movieDoc))
-      .map((movieDoc) =>
-        sanitizeMovieForViewerLocally(
-          movieDoc,
-          entitlement
-        )
-      );
+      .filter((movieDoc) => (isAppInReview ? movieDoc.is_for_review === true : hasPublicPlaybackAsset(movieDoc)))
+      .map((movieDoc) => {
+        const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
+        return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
+      });
 
     return NextResponse.json({ movies, entitlement });
   } catch (error) {

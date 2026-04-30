@@ -13,6 +13,7 @@ export const MOVIE_CACHE_PATH = path.join(
 export type CachedMovieCatalog = {
   movies: Array<Record<string, unknown>>;
   cachedAt: string;
+  reviewOnly?: boolean;
 };
 
 export let inMemoryMovieCache: CachedMovieCatalog | null = null;
@@ -112,6 +113,12 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
   }
 
   const currentCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+  const isReviewOnlyCache = currentCache?.reviewOnly === true;
+
+  if (isReviewOnlyCache && movie.is_for_review !== true) {
+    return;
+  }
+
   const existingMovies = currentCache?.movies || [];
   const nextMovies = sortCatalogMovies([
     { ...movie, id: movieId },
@@ -121,6 +128,7 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
   const nextCache: CachedMovieCatalog = {
     movies: nextMovies,
     cachedAt: new Date().toISOString(),
+    reviewOnly: isReviewOnlyCache ? true : undefined,
   };
 
   setInMemoryMovieCache(nextCache);
@@ -187,6 +195,7 @@ async function updateMovieInCatalogCache(
       })
       .filter((movie): movie is Record<string, unknown> => Boolean(movie)),
     cachedAt: new Date().toISOString(),
+    reviewOnly: currentCache.reviewOnly === true ? true : undefined,
   };
 
   setInMemoryMovieCache(nextCache);

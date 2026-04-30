@@ -120,12 +120,14 @@ export type Movie = {
   category?: string[];
   vj?: string;
   video_url?: string;
+  trailer_url?: string;
   release_date?: string;
   date_added?: string;
   country?: string;
   tmdb_id?: number | null;
   file_name?: string;
   status?: string;
+  is_for_review?: boolean;
   is_trending_tiktok?: boolean;
   parts?: MoviePart[];
   seasons?: Season[];
@@ -364,12 +366,14 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
       : [],
     vj: typeof data.vj === 'string' ? data.vj : '',
     video_url: typeof data.video_url === 'string' ? data.video_url : '',
+    trailer_url: typeof data.trailer_url === 'string' ? data.trailer_url : '',
     release_date: typeof data.release_date === 'string' ? data.release_date : '',
     date_added: typeof data.date_added === 'string' ? data.date_added : '',
     country: typeof data.country === 'string' ? data.country : '',
     tmdb_id: typeof data.tmdb_id === 'number' ? data.tmdb_id : null,
     file_name: typeof data.file_name === 'string' ? data.file_name : '',
     status: typeof data.status === 'string' ? data.status : '',
+    is_for_review: data.is_for_review === true,
     is_trending_tiktok: Boolean(data.is_trending_tiktok),
     parts,
     seasons,

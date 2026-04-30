@@ -25,6 +25,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const ADMIN_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
 
+function getAdminCatalogCache(cache: CachedMovieCatalog | null) {
+  return cache?.reviewOnly === true ? null : cache;
+}
+
 async function readAdminMovieSnapshotWithFallback(hasFallback: boolean) {
   const queryPromise = adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
 
@@ -70,12 +74,14 @@ export async function GET() {
       );
     }
 
-    if (isFreshMovieCache(inMemoryMovieCache)) {
-      return NextResponse.json({ movies: inMemoryMovieCache.movies, source: 'memory-cache' });
+    const inMemoryAdminCache = getAdminCatalogCache(inMemoryMovieCache);
+
+    if (isFreshMovieCache(inMemoryAdminCache)) {
+      return NextResponse.json({ movies: inMemoryAdminCache.movies, source: 'memory-cache' });
     }
 
-    const diskCache = await readMovieCatalogFromDisk();
-    const staleCache = pickMovieCatalogCache(inMemoryMovieCache, diskCache);
+    const diskCache = getAdminCatalogCache(await readMovieCatalogFromDisk());
+    const staleCache = pickMovieCatalogCache(inMemoryAdminCache, diskCache);
 
     if (isFreshMovieCache(diskCache)) {
       setInMemoryMovieCache(diskCache);
