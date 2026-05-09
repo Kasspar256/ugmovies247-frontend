@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { listPaymentsForAdminByProvider } from '@/lib/server/subscriptions';
+import { isAppInReview } from '@/lib/appReview';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,10 @@ async function requireAdmin() {
 
 export async function GET() {
   try {
+    if (isAppInReview) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const session = await requireAdmin();
 
     if (!session) {

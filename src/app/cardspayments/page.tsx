@@ -1,14 +1,16 @@
 import { redirect } from 'next/navigation';
-import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
-import { APP_REVIEW_HOME_PATH, isAppInReview } from '@/lib/appReview';
 import CardPaymentsAdminPage from '@/components/admin/CardPaymentsAdminPage';
+import { APP_REVIEW_HOME_PATH, isAppInReview } from '@/lib/appReview';
+import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 
-export default async function CardsPaymentsPage() {
-  if (isAppInReview) {
-    redirect(APP_REVIEW_HOME_PATH);
-  }
+export const dynamic = 'force-dynamic';
 
+export default async function CardPaymentsPage() {
   const session = await getCurrentAuthSession();
+
+  if (isAppInReview) {
+    redirect(session ? APP_REVIEW_HOME_PATH : '/login');
+  }
 
   if (!session) {
     redirect('/login');
