@@ -1,7 +1,7 @@
-'use client';
+import { requireAdminPage } from '@/lib/auth/server';
+import AdminControlCenter from '@/components/admin/AdminControlCenter';
 
-import { AdminSeriesUploadView } from '@/components/admin/AdminSeriesUploadView';
-
-export default function AdminSeriesPage() {
-  return <AdminSeriesUploadView />;
+export default async function AdminSeriesPage() {
+  await requireAdminPage('/admin/series');
+  return <AdminControlCenter section="series" />;
 }

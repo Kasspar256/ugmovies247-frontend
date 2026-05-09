@@ -46,6 +46,14 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
     case 'auth/network-request-failed':
       return 'Network request failed. Check your internet connection and try again.';
     default:
+      if (/doesn'?t support credential manager|credential manager/i.test(message)) {
+        return 'Google sign-in is not available on this device right now. Please sign in with email below, or update Google Play services and try Google again.';
+      }
+
+      if (/no credentials available|no credential/i.test(message)) {
+        return 'Google did not return an account on this device. Try Google again and choose an account, or sign in with email below.';
+      }
+
       if (/maximum number of allowed devices|maximum number of devices/i.test(message)) {
         return 'This account is already active on the maximum number of allowed devices. Please log out from another device and try again.';
       }
@@ -97,3 +105,4 @@ export function getAuthDevDiagnostics(error: unknown) {
 
   return diagnostics;
 }
+

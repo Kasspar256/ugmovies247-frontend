@@ -15,14 +15,12 @@ import {
   GoogleAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
-  signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
   signOut,
   type User,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 type SessionResponse = {
   success: boolean;
@@ -257,6 +255,12 @@ function getFirebaseErrorCode(error: unknown) {
     : '';
 }
 
+function getFirebaseErrorMessage(error: unknown) {
+  return typeof (error as { message?: string })?.message === 'string'
+    ? (error as { message: string }).message
+    : '';
+}
+
 function rememberGooglePreference(value: boolean) {
   if (typeof window === 'undefined') {
     return;
@@ -476,12 +480,14 @@ async function syncGoogleUserToSession(user: User, rememberMe: boolean) {
 
 function shouldFallbackToRedirect(error: unknown) {
   const code = getFirebaseErrorCode(error);
+  const message = getFirebaseErrorMessage(error);
 
   return (
     code === 'auth/popup-blocked' ||
     code === 'auth/popup-closed-by-user' ||
     code === 'auth/cancelled-popup-request' ||
-    code === 'auth/operation-not-supported-in-this-environment'
+    code === 'auth/operation-not-supported-in-this-environment' ||
+    /doesn'?t support credential manager|credential manager|no credentials available|no credential/i.test(message)
   );
 }
 
@@ -491,22 +497,53 @@ function createGoogleProvider() {
   return provider;
 }
 
-async function continueWithNativeGoogle(rememberMe: boolean) {
-  const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-  const result = await FirebaseAuthentication.signInWithGoogle();
-  const googleIdToken = result.credential?.idToken || '';
-  const googleAccessToken = result.credential?.accessToken || '';
-
-  if (!googleIdToken) {
-    throw Object.assign(new Error('Google did not return an authentication token. Please try again.'), {
-      code: 'auth/missing-google-token',
-    });
+async function signInWithNativeGoogle(rememberMe: boolean) {
+  if (typeof window === 'undefined') {
+    return null;
   }
 
-  const credential = GoogleAuthProvider.credential(googleIdToken, googleAccessToken || undefined);
-  const webResult = await signInWithCredential(auth, credential);
+  const capacitorModule = await import('@capacitor/core').catch(() => null);
 
-  return syncGoogleUserToSession(webResult.user, rememberMe);
+  if (!capacitorModule?.Capacitor?.isNativePlatform?.()) {
+    return null;
+  }
+
+  const authModule = await import('@capacitor-firebase/authentication').catch(() => null);
+  const FirebaseAuthentication = authModule?.FirebaseAuthentication;
+
+  if (!FirebaseAuthentication) {
+    return null;
+  }
+
+  try {
+    await FirebaseAuthentication.signInWithGoogle({
+      useCredentialManager: false,
+    });
+
+    const [{ token }, { user }] = await Promise.all([
+      FirebaseAuthentication.getIdToken({ forceRefresh: true }),
+      FirebaseAuthentication.getCurrentUser().catch(() => ({ user: null })),
+    ]);
+
+    if (!token) {
+      const error = new Error('Google sign-in did not return a secure Firebase token.') as Error & {
+        code?: string;
+      };
+      error.code = 'auth/native-google-token-missing';
+      throw error;
+    }
+
+    const session = await createSessionFromIdToken({
+      idToken: token,
+      name: user?.displayName || '',
+      email: user?.email || '',
+      rememberMe,
+    });
+
+    return { session, redirected: false as const };
+  } finally {
+    await FirebaseAuthentication.signOut().catch(() => undefined);
+  }
 }
 
 export async function loginWithEmailPassword(
@@ -561,16 +598,17 @@ export async function signupWithEmailPassword(options: {
 
 export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const rememberMe = options?.rememberMe !== false;
-
-  if (isNativeAndroidApp()) {
-    return continueWithNativeGoogle(rememberMe);
-  }
-
   const provider = createGoogleProvider();
 
   rememberGooglePreference(rememberMe);
 
   try {
+    const nativeResult = await signInWithNativeGoogle(rememberMe);
+
+    if (nativeResult) {
+      return nativeResult;
+    }
+
     const result = await signInWithPopup(auth, provider);
     return syncGoogleUserToSession(result.user, rememberMe);
   } catch (error) {

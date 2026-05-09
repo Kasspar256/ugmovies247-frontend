@@ -11,6 +11,7 @@ import type {
   ManualSubscriptionAccessType,
   PaymentAttemptDocument,
   PaymentAttemptStatus,
+  PaymentProvider,
   PaymentKind,
   PaymentTriggerSource,
   RecurringAgreementDocument,
@@ -109,7 +110,6 @@ function blankRecurringAgreementSummary(): RecurringAgreementSummary {
 }
 
 const STALE_RECURRING_SETUP_MS = 1000 * 60 * 60 * 2;
-const MAX_RECURRING_FAILURE_ATTEMPTS = 3;
 
 function getRecurringAgreementDocId(userId: string) {
   return userId;
@@ -669,14 +669,6 @@ export async function upsertRecurringAgreementForUser(
       typeof state.cancelledAt === 'string' ? state.cancelledAt : current?.cancelledAt || '',
     failureReason:
       typeof state.failureReason === 'string' ? state.failureReason : current?.failureReason || '',
-    failedChargeAttempts:
-      typeof state.failedChargeAttempts === 'number'
-        ? state.failedChargeAttempts
-        : Number(current?.failedChargeAttempts || 0),
-    firstFailedChargeAt:
-      typeof state.firstFailedChargeAt === 'string'
-        ? state.firstFailedChargeAt
-        : current?.firstFailedChargeAt || '',
     createdAt: current?.createdAt || timestamp,
     updatedAt: timestamp,
   };
@@ -837,8 +829,6 @@ export async function updateRecurringAgreementAfterSuccessfulPayment(options: {
     processingLockUntil: '',
     cancelledAt: '',
     failureReason: '',
-    failedChargeAttempts: 0,
-    firstFailedChargeAt: '',
     billingAnchorDay: billingAnchorDate.getUTCDate(),
   });
 
@@ -858,32 +848,21 @@ export async function updateRecurringAgreementAfterFailedPayment(options: {
   status: RecurringAgreementStatus;
   failureReason: string;
 }) {
-  const current = await getRecurringAgreementForUser(options.userId);
-  const failedChargeAttempts = Math.max(0, Number(current?.failedChargeAttempts || 0)) + 1;
-  const attemptsExhausted = failedChargeAttempts >= MAX_RECURRING_FAILURE_ATTEMPTS;
-  const autoRenewEnabled = attemptsExhausted === false;
-  const nextChargeAt = attemptsExhausted ? '' : options.nextChargeAt;
-  const failureReason = attemptsExhausted
-    ? `${options.failureReason} Auto-renew stopped after ${MAX_RECURRING_FAILURE_ATTEMPTS} failed attempts.`
-    : options.failureReason;
-
   const updated = await upsertRecurringAgreementForUser(options.userId, {
-    status: attemptsExhausted ? 'needs_attention' : options.status,
-    autoRenewEnabled,
+    status: options.status,
+    autoRenewEnabled: true,
     lastChargeStatus: options.status,
     lastPaymentId: options.paymentId,
     pendingPaymentId: '',
     processingLockUntil: '',
-    failureReason,
-    nextChargeAt,
-    failedChargeAttempts,
-    firstFailedChargeAt: current?.firstFailedChargeAt || nowIso(),
+    failureReason: options.failureReason,
+    nextChargeAt: options.nextChargeAt,
   });
 
   await updateSubscriptionRecurringState(options.userId, {
     recurringAgreementId: updated?.id || getRecurringAgreementDocId(options.userId),
-    autoRenewEnabled,
-    nextChargeAt,
+    autoRenewEnabled: true,
+    nextChargeAt: options.nextChargeAt,
   });
 
   return updated;
@@ -1002,6 +981,41 @@ export async function listPaymentsForAdmin(limit = 50) {
     id: doc.id,
     ...(doc.data() as PaymentAttemptDocument),
   }));
+}
+
+export async function listPaymentsForAdminByProvider(provider: PaymentProvider, limit = 50) {
+  try {
+    const snapshot = await adminDb
+      .collection(PAYMENTS_COLLECTION)
+      .where('paymentProvider', '==', provider)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
+
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as PaymentAttemptDocument),
+    }));
+  } catch (orderedReadError) {
+    console.warn(
+      '[subscriptions] ordered provider payment read failed, retrying without orderBy',
+      orderedReadError
+    );
+
+    const snapshot = await adminDb
+      .collection(PAYMENTS_COLLECTION)
+      .where('paymentProvider', '==', provider)
+      .limit(limit * 4)
+      .get();
+
+    return snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as PaymentAttemptDocument),
+      }))
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+      .slice(0, limit);
+  }
 }
 
 export async function listPaymentsForUser(userId: string, limit = 20) {
@@ -1203,8 +1217,12 @@ export async function applySuccessfulSubscriptionPayment(options: {
   }
 
   if (!result.alreadyApplied && result.payment) {
-    void import('@/lib/server/transactionalEmails').then(({ sendSubscriptionActivatedEmail }) =>
-      sendSubscriptionActivatedEmail(result.payment as PaymentAttemptDocument)
+    void import('@/lib/server/transactionalEmails').then(
+      ({ sendPaymentSuccessEmail, sendSubscriptionActivatedEmail }) =>
+        Promise.all([
+          sendPaymentSuccessEmail(result.payment as PaymentAttemptDocument),
+          sendSubscriptionActivatedEmail(result.payment as PaymentAttemptDocument),
+        ])
     ).catch((error) => {
       console.warn('[subscriptions] payment success email hook failed', error);
     });

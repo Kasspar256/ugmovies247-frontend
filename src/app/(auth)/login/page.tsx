@@ -23,6 +23,10 @@ function getSessionNoticeFromReason(reason: string) {
     return 'Your session has ended. Please sign in again to continue.';
   }
 
+  if (reason === 'session-missing') {
+    return 'Please sign in again. Your secure session could not be restored on this device.';
+  }
+
   return '';
 }
 

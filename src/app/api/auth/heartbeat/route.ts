@@ -6,7 +6,7 @@ import {
   getRequestAuthSessionValidation,
   recoverManagedAuthSessionFromRequest,
 } from '@/lib/auth/server';
-import { AUTH_DEVICE_COOKIE_MAX_AGE_MS } from '@/lib/auth/constants';
+import { AUTH_DEVICE_COOKIE_MAX_AGE_MS, AUTH_SESSION_MAX_AGE_MS } from '@/lib/auth/constants';
 import {
   AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
   AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
@@ -40,7 +40,10 @@ export async function POST(request: Request) {
           response.cookies.set(
             AUTH_DEVICE_SESSION_COOKIE,
             recovered.managedSession.sessionCookieValue,
-            getAuthCookieConfig()
+            {
+              ...getAuthCookieConfig(),
+              maxAge: AUTH_SESSION_MAX_AGE_MS / 1000,
+            }
           );
 
           return response;

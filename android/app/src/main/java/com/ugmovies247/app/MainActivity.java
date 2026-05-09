@@ -33,6 +33,10 @@ public class MainActivity extends BridgeActivity {
       getActionBar().hide();
     }
 
+    if (getSupportActionBar() != null) {
+      getSupportActionBar().hide();
+    }
+
     getWindow().setStatusBarColor(Color.BLACK);
 
     Bridge currentBridge = this.bridge;

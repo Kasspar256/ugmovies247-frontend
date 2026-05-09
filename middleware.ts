@@ -63,8 +63,8 @@ export function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith('/admin')) {
-    if (pathname === '/admin/login') {
-      if (hasSession && role === 'admin') {
+    if (hasSession && role === 'admin') {
+      if (pathname === '/admin/login') {
         return NextResponse.redirect(new URL('/admin', request.url));
       }
 
@@ -72,13 +72,19 @@ export function middleware(request: NextRequest) {
     }
 
     if (!hasSession) {
-      const loginUrl = new URL('/admin/login', request.url);
-      loginUrl.searchParams.set('redirect', `${pathname}${search}`);
-      return NextResponse.redirect(loginUrl);
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+
+    return NextResponse.redirect(new URL('/browse', request.url));
+  }
+
+  if (pathname === '/cardspayments' || pathname.startsWith('/cardspayments/')) {
+    if (!hasSession) {
+      return NextResponse.redirect(new URL('/login', request.url));
     }
 
     if (role !== 'admin') {
-      return NextResponse.redirect(new URL('/login', request.url));
+      return NextResponse.redirect(new URL('/browse', request.url));
     }
 
     return NextResponse.next();
@@ -91,7 +97,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith('/api/admin') && (!hasSession || role !== 'admin')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
   return NextResponse.next();
@@ -118,6 +124,8 @@ export const config = {
     '/vjs/:path*',
     '/subscribe/:path*',
     '/admin/:path*',
+    '/cardspayments',
+    '/cardspayments/:path*',
     '/api/movies/:path*',
     '/api/download',
     '/api/download/:path*',

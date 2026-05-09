@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
-import { listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
+import { listPaymentsForAdminByProvider, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export async function GET() {
   }
 
   const [payments, subscriptions] = await Promise.all([
-    listPaymentsForAdmin(100),
+    listPaymentsForAdminByProvider('pawapay', 100),
     listSubscriptionsForAdmin(100),
   ]);
 

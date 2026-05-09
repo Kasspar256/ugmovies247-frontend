@@ -1,4 +1,5 @@
-import { BarChart3, Tags, Users } from 'lucide-react';
+import Link from 'next/link';
+import { BarChart3, CreditCard, Tags, Users } from 'lucide-react';
 import type { AdminRevenueSummary } from '@/types/admin';
 import { Card, StatTile } from '@/components/admin/controlCenterFields';
 import { formatDate } from '@/components/admin/controlCenterUtils';
@@ -7,23 +8,32 @@ export function AdminRevenueTab({ revenue }: { revenue: AdminRevenueSummary }) {
   return (
     <>
       <Card
-        title="Revenue Dashboard"
-        description="Real subscription money and active access pulled from current payment and subscription data."
+        title="Mobile Money Revenue"
+        description="PawaPay mobile money payments only. Card payments are tracked separately."
       >
+        <div className="mb-4 flex justify-end">
+          <Link
+            href="/cardspayments"
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:border-[#D90429]/35 hover:bg-[#D90429]/10"
+          >
+            <CreditCard size={14} />
+            Card Payments
+          </Link>
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <StatTile
-            title="Month Revenue"
+            title="Mobile Money Month"
             value={`UGX ${revenue.monthRevenue.toLocaleString()}`}
             icon={<BarChart3 size={18} />}
             subcopy={revenue.monthLabel}
           />
           <StatTile
-            title="Active Subscribers"
+            title="Mobile Money Subscribers"
             value={revenue.activeSubscriberCount}
             icon={<Users size={18} />}
           />
           <StatTile
-            title="Active Plans Value"
+            title="Mobile Money Plans Value"
             value={`UGX ${revenue.activeSubscriptionRevenue.toLocaleString()}`}
             icon={<Tags size={18} />}
           />
@@ -31,7 +41,7 @@ export function AdminRevenueTab({ revenue }: { revenue: AdminRevenueSummary }) {
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.25fr]">
-        <Card title="Plan Breakdown" description="Active subscriptions grouped by plan.">
+        <Card title="Mobile Money Plan Breakdown" description="Active PawaPay subscriptions grouped by plan.">
           <div className="space-y-3">
             {revenue.activePlanBreakdown.map((plan) => (
               <div
@@ -55,8 +65,8 @@ export function AdminRevenueTab({ revenue }: { revenue: AdminRevenueSummary }) {
         </Card>
 
         <Card
-          title="Recent Payments"
-          description="Latest completed, pending, or failed payments from the real payments collection."
+          title="Recent Mobile Money Payments"
+          description="Latest PawaPay payments from the real payments collection."
         >
           <div className="space-y-3 md:hidden">
             {revenue.recentPayments.map((payment) => (

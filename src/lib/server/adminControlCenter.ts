@@ -1,7 +1,11 @@
 import { randomUUID } from 'crypto';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
-import { getSubscriptionSnapshotFromData, listPaymentsForAdmin, listSubscriptionsForAdmin } from '@/lib/server/subscriptions';
+import {
+  getSubscriptionSnapshotFromData,
+  listPaymentsForAdminByProvider,
+  listSubscriptionsForAdmin,
+} from '@/lib/server/subscriptions';
 import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import {
   clearMovieCatalogQuotaFailure,
@@ -1065,20 +1069,25 @@ export async function getRevenueSummaryForAdmin(): Promise<AdminRevenueSummary> 
     },
     fallback: () => createEmptyRevenueSummary(),
     loader: async () => {
-      const [payments, subscriptions] = await Promise.all([
-        listPaymentsForAdmin(500),
+      const [mobileMoneyPayments, subscriptions] = await Promise.all([
+        listPaymentsForAdminByProvider('pawapay', 500),
         listSubscriptionsForAdmin(500),
       ]);
 
       const now = new Date();
       const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      const monthRevenue = payments
+      const monthRevenue = mobileMoneyPayments
         .filter((payment) => payment.status === 'completed')
         .filter((payment) => String(payment.createdAt || '').startsWith(monthKey))
         .reduce((total, payment) => total + Number(payment.amount || 0), 0);
 
       const activeSubscriptions = subscriptions.filter((subscription) => {
-        if (!subscription.isActive || subscription.status !== 'active' || !subscription.expiresAt) {
+        if (
+          subscription.paymentProvider !== 'pawapay' ||
+          !subscription.isActive ||
+          subscription.status !== 'active' ||
+          !subscription.expiresAt
+        ) {
           return false;
         }
 
@@ -1112,7 +1121,7 @@ export async function getRevenueSummaryForAdmin(): Promise<AdminRevenueSummary> 
         activePlanBreakdown: [...activePlanBreakdown.values()].sort(
           (left, right) => right.totalAmount - left.totalAmount
         ),
-        recentPayments: payments.slice(0, 20).map((payment) => ({
+        recentPayments: mobileMoneyPayments.slice(0, 20).map((payment) => ({
           id: payment.id,
           userId: payment.userId,
           planType: payment.planType,

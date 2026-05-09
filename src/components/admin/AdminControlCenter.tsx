@@ -504,7 +504,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         id: 'revenue' as AdminTab,
         href: '/admin/revenue',
         label: 'Revenue',
-        description: 'Track subscriptions, payments, and active plans.',
+        description: 'Track mobile money payments and active PawaPay plans.',
         meta: payload?.revenue.monthLabel
           ? `Month: ${payload.revenue.monthLabel}`
           : 'Revenue summary',
@@ -1322,7 +1322,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">
                 Direct MP4 publishing for movies, long multi-part titles, series seasons and
-                episodes, library reuse, categories, users, requests, and revenue.
+                episodes, library reuse, categories, users, requests, and mobile money revenue.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -1422,7 +1422,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                     <StatTile title="Movies" value={movieItems.length} icon={<Film size={18} />} />
                     <StatTile title="Series" value={seriesItems.length} icon={<Clapperboard size={18} />} />
                     <StatTile title="Users" value={payload?.users.length || 0} icon={<Users size={18} />} />
-                    <StatTile title="Monthly Revenue" value={`UGX ${(payload?.revenue.monthRevenue || 0).toLocaleString()}`} icon={<DollarSign size={18} />} subcopy={payload?.revenue.monthLabel || ''} />
+                    <StatTile title="Mobile Money Revenue" value={`UGX ${(payload?.revenue.monthRevenue || 0).toLocaleString()}`} icon={<DollarSign size={18} />} subcopy={payload?.revenue.monthLabel || ''} />
                   </div>
                 </Card>
 
@@ -1443,7 +1443,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                     </div>
                   </Card>
 
-                  <Card title="Latest Payments" description="Most recent real subscription payments.">
+                  <Card title="Latest Mobile Money Payments" description="Most recent PawaPay subscription payments.">
                     <div className="space-y-3">
                       {(payload?.revenue.recentPayments || []).slice(0, 5).map((payment) => (
                         <div key={payment.id} className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4">

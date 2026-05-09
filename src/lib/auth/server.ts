@@ -418,11 +418,11 @@ export async function requireAdminPage(redirectTo = '/admin') {
   const session = await getCurrentAuthSession();
 
   if (!session) {
-    redirect(`/admin/login?redirect=${encodeURIComponent(redirectTo)}`);
+    redirect(`/login?redirect=${encodeURIComponent(redirectTo)}`);
   }
 
   if (session.role !== 'admin') {
-    redirect('/login');
+    redirect('/browse');
   }
 
   return session;

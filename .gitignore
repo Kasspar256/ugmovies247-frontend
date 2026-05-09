@@ -25,3 +25,13 @@ coverage
 *.m3u8
 tsconfig.tsbuildinfo
 android/app/google-services.json
+
+# Local backups and generated files
+.env*.bak*
+.runtime-cache/
+android/.idea/
+android/app/google-services.json.bak.*
+public/404.html
+public/index.html
+.firebaserc
+firebase.json

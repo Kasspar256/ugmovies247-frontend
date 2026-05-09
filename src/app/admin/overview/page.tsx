@@ -1,7 +1,7 @@
-'use client';
-
+import { requireAdminPage } from '@/lib/auth/server';
 import AdminControlCenter from '@/components/admin/AdminControlCenter';
 
-export default function AdminOverviewPage() {
+export default async function AdminOverviewPage() {
+  await requireAdminPage('/admin/overview');
   return <AdminControlCenter section="overview" />;
 }
