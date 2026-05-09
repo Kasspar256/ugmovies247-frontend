@@ -49,6 +49,14 @@ export function middleware(request: NextRequest) {
   }
 
   if (isAppInReview) {
+    if (pathname === '/api/admin/card-payments') {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    if (pathname === '/cardspayments' || pathname.startsWith('/cardspayments/')) {
+      return NextResponse.redirect(new URL(hasSession ? APP_REVIEW_HOME_PATH : '/login', request.url));
+    }
+
     if (isReviewBlockedApiPath(pathname)) {
       return NextResponse.json({ error: 'Subscriptions are unavailable in this app build.' }, { status: 404 });
     }
