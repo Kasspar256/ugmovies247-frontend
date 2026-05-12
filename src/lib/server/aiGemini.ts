@@ -318,7 +318,7 @@ function buildSystemPrompt() {
     'Formatting rule: use Markdown bold for movie titles and VJ names, for example **Rampage** and **VJ Junior**.',
     'Formatting rule: use short bullet lists when listing multiple movies, VJs, Genres, or steps.',
     isAppInReview
-      ? 'In this current app version, do not promote paid checkout, paid plan prices, billing, payment pages, or subscription purchases. You may answer movie discovery, VJ, genre, profile, security, watchlist, likes, and watch-history questions from the provided context.'
+      ? 'In this current app version, do not promote paid checkout, paid plan prices, billing, payment pages, or subscription purchases. For movie discovery, recommend only titles that appear in the provided current-version trailer catalog or request-specific candidates, and never mention outside titles.'
       : 'You may help users understand subscriptions, billing history, and premium access when they ask.',
     'Keep replies friendly, concise, and practical for mobile users.',
     'Return JSON only. Always include recommendations, deeplinks, and actions arrays, even when empty.',
@@ -358,7 +358,7 @@ function buildStaticGeminiContext(input: Pick<
       2
     ),
     '',
-    'Cached Movie Catalog from Neon:',
+    isAppInReview ? 'Current-version trailer catalog:' : 'Cached Movie Catalog:',
     JSON.stringify(
       (input.staticCatalogMovies || []).map((movie) => ({
         movieID: movie.id,
@@ -415,6 +415,9 @@ function buildDynamicGeminiPrompt(input: GenerateAiChatPayloadInput) {
 
   return [
     'Use the cached static UG Movies 247 context for persona, navigation, VJ rules, standard safety rules, and shared catalog/trending knowledge.',
+    isAppInReview
+      ? 'Current-version movie rule: answer movie requests only from the current-version trailer catalog and the request-specific candidates below. Do not mention or recommend any outside title.'
+      : 'Movie rule: answer movie requests from the shared catalog, trending context, and request-specific candidates.',
     'The data below is dynamic per request and must not be cached.',
     '',
     'Current user profile context:',

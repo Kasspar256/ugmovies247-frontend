@@ -585,7 +585,7 @@ async function getTrendingNeonVjs(limit: number) {
 export async function recordAiMoviePlay(movieId: string) {
   const normalizedMovieId = movieId.trim();
 
-  if (!normalizedMovieId) {
+  if (!normalizedMovieId || isAppInReview) {
     return;
   }
 
@@ -738,6 +738,10 @@ async function getTrendingFirestoreHomeCategories(rowsLimit: number, moviesPerRo
 }
 
 export async function getAiMovieCandidates(query: string, limit = 8) {
+  if (isAppInReview) {
+    return searchFirestoreMovies(query, limit);
+  }
+
   try {
     const neonMovies = await searchNeonMovies(query, limit);
 
@@ -752,6 +756,10 @@ export async function getAiMovieCandidates(query: string, limit = 8) {
 }
 
 export async function getAiTrendingMovieCandidates(limit = 6) {
+  if (isAppInReview) {
+    return getTrendingFirestoreMovies(limit);
+  }
+
   try {
     const neonMovies = await getTrendingNeonMovies(limit);
 
@@ -769,6 +777,10 @@ export async function getAiStaticCatalogCandidates(limit = Number(process.env.GE
   const normalizedLimit =
     Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 600) : 250;
 
+  if (isAppInReview) {
+    return getStaticFirestoreCatalogMovies(normalizedLimit);
+  }
+
   try {
     const neonMovies = await getStaticNeonCatalogMovies(normalizedLimit);
 
@@ -783,6 +795,10 @@ export async function getAiStaticCatalogCandidates(limit = Number(process.env.GE
 }
 
 export async function getAiTrendingVjCandidates(limit = 6) {
+  if (isAppInReview) {
+    return getTrendingFirestoreVjs(limit);
+  }
+
   try {
     const neonVjs = await getTrendingNeonVjs(limit);
 
@@ -797,6 +813,10 @@ export async function getAiTrendingVjCandidates(limit = 6) {
 }
 
 export async function getAiTrendingHomeCategoryCandidates(rowsLimit = 10, moviesPerRow = 3) {
+  if (isAppInReview) {
+    return getTrendingFirestoreHomeCategories(rowsLimit, moviesPerRow);
+  }
+
   try {
     const neonRows = await getTrendingNeonHomeCategories(rowsLimit, moviesPerRow);
 
