@@ -5,9 +5,7 @@ import Link from 'next/link';
 import {
   ChevronDown,
   Film,
-  Play,
   Search as SearchIcon,
-  Sparkles,
   X,
 } from 'lucide-react';
 import { type Movie } from '@/types/movie';
@@ -243,27 +241,22 @@ function FilterDropdown({
 }
 
 function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
-  const genre = getMovieGenres(movie)[0] || 'Movie';
-  const releaseYear =
-    movie.releaseYear ||
-    (movie.release_date ? new Date(movie.release_date).getFullYear() : null);
-
   return (
     <Link
       href={`/movie/${movie.id}`}
-      className="group relative min-w-0 rounded-[18px] border border-white/[0.14] bg-white/[0.07] p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-cyan-200/40 hover:bg-white/[0.11] hover:shadow-[0_24px_55px_rgba(10,25,42,0.48)] md:rounded-[22px] md:p-2"
+      className="group min-w-0"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] bg-[#111827] md:rounded-[18px]">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-[#D90429]/35 bg-[#111827] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
         {movie.poster ? (
           <img
             src={getOptimizedArtworkUrl(movie.poster, 'card')}
             alt={movie.title}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-105 group-hover:saturate-110"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(22,35,55,0.95),rgba(7,10,18,1))]">
+          <div className="flex h-full w-full items-center justify-center bg-[#111827]">
             <img
               src="/logow.png"
               alt=""
@@ -273,36 +266,21 @@ function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean 
           </div>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-[#030712]/90 via-[#030712]/20 to-transparent" />
-        <div className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-          <div className="absolute inset-0 bg-cyan-300/10 backdrop-blur-[1px]" />
-          <div className="absolute left-1/2 top-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-white/15 pl-0.5 text-white shadow-[0_0_28px_rgba(125,211,252,0.42)] backdrop-blur-xl md:h-12 md:w-12">
-            <Play size={18} fill="currentColor" />
-          </div>
+        <div className="absolute left-0 top-0 max-w-[76%] rounded-br-2xl bg-[#D90429] px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-white shadow-[0_6px_16px_rgba(217,4,41,0.32)] md:px-3 md:text-[10px]">
+          <span className="block truncate">{getVjLabel(movie)}</span>
         </div>
 
         {isSeriesMovie(movie) && (
-          <div className="absolute right-1.5 top-1.5 rounded-full border border-white/30 bg-[#07101C]/75 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.2em] text-white shadow-[0_8px_22px_rgba(0,0,0,0.35)] backdrop-blur-md md:right-2 md:top-2 md:px-2 md:text-[9px]">
+          <div className="absolute right-1.5 top-1.5 rounded-full bg-white px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.16em] text-[#0B0C10] shadow-[0_4px_14px_rgba(0,0,0,0.35)] md:right-2 md:top-2 md:px-2 md:text-[9px]">
             EPS
           </div>
         )}
-
-        <div className="absolute bottom-2 left-2 right-2">
-          <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-cyan-100/20 bg-[#07101C]/70 px-2 py-1 text-[7px] font-black uppercase tracking-[0.18em] text-cyan-100 backdrop-blur-md md:text-[9px]">
-            <Sparkles size={10} />
-            <span className="truncate">{getVjLabel(movie)}</span>
-          </div>
-        </div>
       </div>
 
-      <div className="px-0.5 pb-1 pt-2 md:px-1 md:pt-3">
-        <h3 className="line-clamp-2 min-h-[2.2rem] text-[11px] font-black leading-[1.15] text-white transition-colors group-hover:text-cyan-100 md:min-h-[2.75rem] md:text-sm md:leading-tight">
+      <div className="pt-2">
+        <h3 className="line-clamp-2 min-h-[2rem] text-[11px] font-black leading-[1.15] text-white transition-colors group-hover:text-[#FFB3C1] md:min-h-[2.45rem] md:text-sm md:leading-tight">
           {movie.title}
         </h3>
-        <div className="mt-2 flex min-w-0 items-center justify-between gap-1 text-[8px] font-bold uppercase tracking-[0.12em] text-white/50 md:text-[10px]">
-          <span className="truncate">{genre}</span>
-          {releaseYear ? <span className="shrink-0">{releaseYear}</span> : null}
-        </div>
       </div>
     </Link>
   );
@@ -310,16 +288,15 @@ function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean 
 
 function SearchSkeletonGrid() {
   return (
-    <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 md:gap-4 2xl:grid-cols-6">
+    <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
       {Array.from({ length: 24 }).map((_, index) => (
         <div
           // eslint-disable-next-line react/no-array-index-key
           key={index}
-          className="rounded-[18px] border border-white/[0.12] bg-white/[0.06] p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.22)] backdrop-blur-md md:rounded-[22px] md:p-2"
+          className="min-w-0"
         >
-          <div className="aspect-[2/3] animate-pulse rounded-[14px] bg-white/[0.08] md:rounded-[18px]" />
+          <div className="aspect-[2/3] animate-pulse rounded-[14px] border border-[#D90429]/20 bg-white/[0.08] md:rounded-[17px]" />
           <div className="mt-3 h-3 w-4/5 animate-pulse rounded-full bg-white/[0.08]" />
-          <div className="mt-2 h-2 w-1/2 animate-pulse rounded-full bg-white/[0.06]" />
         </div>
       ))}
     </div>
@@ -797,7 +774,7 @@ export default function SearchPage() {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 md:gap-4 2xl:grid-cols-6">
+            <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
               {visibleMovies.map((movie, index) => (
                 <SearchMovieCard key={movie.id} movie={movie} priority={index < 18} />
               ))}
@@ -806,7 +783,7 @@ export default function SearchPage() {
             {visibleCount < filteredMovies.length ? (
               <div ref={loadMoreRef} className="flex justify-center py-8">
                 <div className="rounded-full border border-white/10 bg-white/[0.06] px-5 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white/50 backdrop-blur-xl">
-                  Loading more glass cards
+                  Loading more movies
                 </div>
               </div>
             ) : (
