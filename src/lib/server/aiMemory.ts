@@ -295,7 +295,10 @@ export async function syncAiLibraryToNeon(options: {
 }
 
 export async function readAiLibraryFromNeon(userId: string) {
-  return withPool(
+  return withPool<{
+    watchlist: AiMemoryLibraryItem[];
+    downloads: AiMemoryLibraryItem[];
+  }>(
     {
       watchlist: [] as AiMemoryLibraryItem[],
       downloads: [] as AiMemoryLibraryItem[],
