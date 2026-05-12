@@ -246,7 +246,7 @@ function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean 
       href={`/movie/${movie.id}`}
       className="group min-w-0"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-[#D90429]/35 bg-[#111827] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
         {movie.poster ? (
           <img
             src={getOptimizedArtworkUrl(movie.poster, 'card')}
@@ -266,19 +266,26 @@ function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean 
           </div>
         )}
 
-        <div className="absolute left-0 top-0 max-w-[76%] rounded-br-2xl bg-[#D90429] px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-white shadow-[0_6px_16px_rgba(217,4,41,0.32)] md:px-3 md:text-[10px]">
+        <div className="absolute left-0 top-0 z-10 max-w-[76%] rounded-br-lg bg-[#D90429] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white shadow-[2px_2px_10px_rgba(0,0,0,0.5)] md:text-[9px]">
           <span className="block truncate">{getVjLabel(movie)}</span>
         </div>
 
         {isSeriesMovie(movie) && (
-          <div className="absolute right-1.5 top-1.5 rounded-full bg-white px-1.5 py-0.5 text-[7px] font-black uppercase tracking-[0.16em] text-[#0B0C10] shadow-[0_4px_14px_rgba(0,0,0,0.35)] md:right-2 md:top-2 md:px-2 md:text-[9px]">
+          <div className="absolute right-1.5 top-1.5 z-10 rounded-full bg-white/95 px-1.5 py-0.5 text-[7px] font-black uppercase tracking-widest text-[#0B0C10] shadow-[0_4px_12px_rgba(0,0,0,0.35)] md:right-2 md:top-2 md:text-[9px]">
             EPS
           </div>
         )}
       </div>
 
       <div className="pt-2">
-        <h3 className="line-clamp-2 min-h-[2rem] text-[11px] font-black leading-[1.15] text-white transition-colors group-hover:text-[#FFB3C1] md:min-h-[2.45rem] md:text-sm md:leading-tight">
+        <h3
+          className="line-clamp-2 min-h-[2rem] overflow-hidden text-[11px] font-black leading-[1.15] text-white transition-colors group-hover:text-[#FFB3C1] md:min-h-[2.45rem] md:text-sm md:leading-tight"
+          style={{
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
+          }}
+        >
           {movie.title}
         </h3>
       </div>
@@ -295,7 +302,7 @@ function SearchSkeletonGrid() {
           key={index}
           className="min-w-0"
         >
-          <div className="aspect-[2/3] animate-pulse rounded-[14px] border border-[#D90429]/20 bg-white/[0.08] md:rounded-[17px]" />
+          <div className="aspect-[2/3] animate-pulse rounded-[14px] border border-white/8 bg-white/[0.08] md:rounded-[17px]" />
           <div className="mt-3 h-3 w-4/5 animate-pulse rounded-full bg-white/[0.08]" />
         </div>
       ))}
@@ -312,7 +319,6 @@ export default function SearchPage() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [scrollProgress, setScrollProgress] = useState(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const deferredQuery = useDeferredValue(query);
 
@@ -441,30 +447,6 @@ export default function SearchPage() {
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
   }, [activeGenre, activeVj, deferredQuery]);
-
-  useEffect(() => {
-    let frame = 0;
-
-    const updateScrollProgress = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        const maxScroll =
-          document.documentElement.scrollHeight - document.documentElement.clientHeight;
-        const nextProgress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
-        setScrollProgress(Math.min(1, Math.max(0, nextProgress)));
-      });
-    };
-
-    updateScrollProgress();
-    window.addEventListener('scroll', updateScrollProgress, { passive: true });
-    window.addEventListener('resize', updateScrollProgress);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('scroll', updateScrollProgress);
-      window.removeEventListener('resize', updateScrollProgress);
-    };
-  }, []);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -597,16 +579,6 @@ export default function SearchPage() {
         <div className="absolute right-[-18%] top-[10%] h-[26rem] w-[26rem] rounded-full bg-indigo-500/10 blur-[100px]" />
         <div className="absolute bottom-[-14%] left-[20%] h-[22rem] w-[22rem] rounded-full bg-amber-300/10 blur-[100px]" />
       </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed right-1.5 top-1/2 z-[70] h-24 w-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/10 shadow-[0_0_18px_rgba(125,211,252,0.16)] md:right-3 md:h-32"
-      >
-        <div
-          className="w-full rounded-full bg-gradient-to-b from-cyan-200 via-fuchsia-300 to-amber-200 shadow-[0_0_18px_rgba(125,211,252,0.5)] transition-[height] duration-150"
-          style={{ height: `${Math.max(8, Math.round(scrollProgress * 100))}%` }}
-        />
-      </div>
-
       <section className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#060912]/80 px-4 pb-4 pt-4 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur-2xl md:static md:border-b-0 md:bg-transparent md:px-8 md:pb-2 md:pt-[118px] md:shadow-none lg:px-10">
         <div className="mx-auto max-w-[1380px]">
           <div className="flex items-center gap-3 md:hidden">
