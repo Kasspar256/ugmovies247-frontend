@@ -56,6 +56,30 @@ export const VJ_DIRECTORY = [
   { id: 'vj-waza', name: 'VJ Waza', image: '/images/vjs/default.jpg' }
 ];
 
+export const GENRE_DIRECTORY = [
+  'Action',
+  'Adventure',
+  'Animation',
+  'Biography',
+  'Comedy',
+  'Crime',
+  'Documentary',
+  'Drama',
+  'Family',
+  'Fantasy',
+  'History',
+  'Horror',
+  'K-Drama',
+  'Mystery',
+  'Romance',
+  'Sci-Fi',
+  'Series',
+  'Thriller',
+  'VJ Movies',
+  'War',
+  'Western',
+];
+
 export const THEME = {
   colors: {
     background: '#0B0C10', // OLED Black
