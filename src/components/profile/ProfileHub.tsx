@@ -221,19 +221,76 @@ function NavigationGroup({
   title: string;
   items: Array<{
     href: string;
-    icon: ComponentType<{ className?: string; size?: number }>;
+    icon?: ComponentType<{ className?: string; size?: number }>;
     label: string;
     description: string;
   }>;
 }) {
   return (
     <section className="rounded-[24px] border border-white/10 bg-[#11141C]/72 p-2 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+      <style jsx global>{`
+        @keyframes profile-ai-border-spin {
+          0% {
+            transform: rotate(0deg);
+          }
+
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        .profile-ai-entry::before {
+          content: '';
+          position: absolute;
+          inset: -120%;
+          background: conic-gradient(
+            from 0deg,
+            #073bff,
+            #8b5cf6,
+            #ec4899,
+            #ff002f,
+            #ffd166,
+            #ff002f,
+            #073bff
+          );
+          animation: profile-ai-border-spin 3.8s linear infinite;
+        }
+
+        .profile-ai-entry {
+          background: transparent;
+          box-shadow:
+            0 0 14px rgba(255, 0, 47, 0.16),
+            0 0 22px rgba(139, 92, 246, 0.1);
+        }
+
+        .profile-ai-entry-core {
+          background:
+            linear-gradient(180deg, rgba(17, 20, 28, 0.98), rgba(8, 10, 15, 0.98));
+        }
+      `}</style>
       <div className="px-3 pb-2 pt-1 text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
         {title}
       </div>
       <div className="space-y-[14px]">
         {items.map((item) => {
           const Icon = item.icon;
+          const isAiEntry = item.href === '/search/ai-chat';
+
+          if (isAiEntry) {
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex items-center justify-center rounded-[20px] px-3 py-3 transition-colors hover:bg-white/[0.025]"
+              >
+                <span className="profile-ai-entry relative inline-flex overflow-hidden rounded-full p-[1.5px]">
+                  <span className="profile-ai-entry-core relative z-10 inline-flex min-h-[42px] min-w-[8.25rem] items-center justify-center rounded-full border border-white/[0.03] px-5 text-sm font-black uppercase tracking-[0.22em] text-white shadow-[inset_0_0_18px_rgba(255,255,255,0.035)]">
+                    {item.label}
+                  </span>
+                </span>
+              </Link>
+            );
+          }
 
           return (
             <Link
@@ -242,7 +299,7 @@ function NavigationGroup({
               className="flex items-center gap-4 rounded-[20px] px-3 py-3.5 transition-colors hover:bg-white/5"
             >
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-[#D90429]">
-                <Icon size={18} />
+                {Icon ? <Icon size={18} /> : null}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-base font-semibold text-white">{item.label}</div>
@@ -309,6 +366,11 @@ export default function ProfileHub() {
   };
 
   const accountItems = [
+    {
+      href: '/search/ai-chat',
+      label: 'Ask AI',
+      description: '',
+    },
     {
       href: '/profile/settings',
       icon: PencilLine,

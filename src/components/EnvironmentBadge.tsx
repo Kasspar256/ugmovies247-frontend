@@ -15,7 +15,7 @@ export default function EnvironmentBadge() {
         : 'border-sky-400/25 bg-sky-400/10 text-sky-100';
 
   return (
-    <div className="fixed bottom-20 left-4 z-[70] md:bottom-6 md:left-6">
+    <div className="environment-badge fixed bottom-20 left-4 z-[70] md:bottom-6 md:left-6">
       <div
         className={`rounded-2xl border px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl ${tone}`}
       >
@@ -29,3 +29,4 @@ export default function EnvironmentBadge() {
     </div>
   );
 }
+

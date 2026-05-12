@@ -51,7 +51,52 @@ export default function SearchPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 md:px-8 md:pb-16 md:pt-[118px] lg:px-10 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-16 md:px-8 md:pb-16 md:pt-[118px] lg:px-10 font-sans">
+      <style jsx global>{`
+        @keyframes ai-border-orbit {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes ai-border-pulse {
+          0%,
+          100% {
+            box-shadow:
+              0 0 16px rgba(85, 140, 255, 0.28),
+              0 0 24px rgba(236, 72, 153, 0.18);
+          }
+          50% {
+            box-shadow:
+              0 0 22px rgba(147, 51, 234, 0.36),
+              0 0 34px rgba(59, 130, 246, 0.28),
+              0 0 38px rgba(236, 72, 153, 0.22);
+          }
+        }
+
+        .ai-mode-button::before {
+          content: '';
+          position: absolute;
+          inset: -80%;
+          background: conic-gradient(
+            from 0deg,
+            #8b5cf6,
+            #38bdf8,
+            #60a5fa,
+            #ec4899,
+            #f472b6,
+            #8b5cf6
+          );
+          animation: ai-border-orbit 4.5s linear infinite;
+        }
+
+        .ai-mode-button {
+          animation: ai-border-pulse 2.8s ease-in-out infinite;
+        }
+      `}</style>
 
       {/* Search Bar Container (Mobile) */}
       <div className="md:hidden fixed top-4 left-4 right-4 z-50">
@@ -77,18 +122,27 @@ export default function SearchPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search VJs, Movies, Genres..." 
-              className="w-full bg-transparent py-2 pl-3 pr-10 text-sm text-white focus:outline-none placeholder:text-white/45"
+              className="w-full bg-transparent py-2 pl-3 pr-[5.8rem] text-sm text-white focus:outline-none placeholder:text-white/45"
               autoFocus
             />
             {query && (
               <button
                 onClick={() => setQuery('')}
-                className="absolute right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/65 transition-colors hover:bg-white/10 hover:text-white"
+                className="absolute right-[5.25rem] flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-white/65 transition-colors hover:bg-white/10 hover:text-white"
                 aria-label="Clear search"
               >
                 <X size={16} />
               </button>
             )}
+            <Link
+              href="/search/ai-chat"
+              className="ai-mode-button absolute right-2 flex h-8 min-w-[4.35rem] items-center justify-center overflow-hidden rounded-full p-[1px] text-[10px] font-black uppercase tracking-[0.16em] text-white"
+              aria-label="Ask AI"
+            >
+              <span className="relative z-10 flex h-full w-full items-center justify-center rounded-full bg-[#0B0F18]/94 px-3 text-white shadow-[inset_0_0_18px_rgba(255,255,255,0.05)]">
+                Ask AI
+              </span>
+            </Link>
           </div>
         </div>
       </div>
@@ -101,14 +155,23 @@ export default function SearchPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search specific VJs (e.g. VJ Ice P), Action Movies, or K-Drama..." 
-          className="w-full bg-[#1F2833]/50 text-white rounded-full py-5 pl-16 pr-16 text-lg focus:outline-none focus:ring-2 focus:ring-[#D90429]/40 placeholder-[#888888]/60 border border-white/5 focus:border-[#D90429] transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+          className="w-full bg-[#1F2833]/50 text-white rounded-full py-5 pl-16 pr-36 text-lg focus:outline-none focus:ring-2 focus:ring-[#D90429]/40 placeholder-[#888888]/60 border border-white/5 focus:border-[#D90429] transition-all shadow-[0_0_20px_rgba(0,0,0,0.5)] backdrop-blur-xl"
           autoFocus
         />
         {query && (
-          <button onClick={() => setQuery('')} className="absolute right-6 top-1/2 -translate-y-1/2 text-white bg-black/60 hover:bg-[#D90429] p-2 rounded-full transition-colors">
+          <button onClick={() => setQuery('')} className="absolute right-[7.8rem] top-1/2 -translate-y-1/2 text-white bg-black/60 hover:bg-[#D90429] p-2 rounded-full transition-colors">
             <X size={20} />
           </button>
         )}
+        <Link
+          href="/search/ai-chat"
+          className="ai-mode-button absolute right-5 top-1/2 flex h-11 min-w-[6.1rem] -translate-y-1/2 items-center justify-center overflow-hidden rounded-full p-[1px] text-xs font-black uppercase tracking-[0.18em] text-white"
+          aria-label="Ask AI"
+        >
+          <span className="relative z-10 flex h-full w-full items-center justify-center rounded-full bg-[#0B0F18]/94 px-4 text-white shadow-[inset_0_0_18px_rgba(255,255,255,0.05)]">
+            Ask AI
+          </span>
+        </Link>
       </div>
 
       {/* Results Area */}

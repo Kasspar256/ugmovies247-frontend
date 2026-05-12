@@ -2,12 +2,13 @@ import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebaseAdmin';
 import type { DownloadMovieInput, DownloadRecord } from '@/types/downloads';
 import type { LikeMovieInput, LikeRecord } from '@/types/likes';
+import type { WatchHistoryMovieInput, WatchHistoryRecord } from '@/types/watchHistory';
 import type { WatchlistMovieInput, WatchlistRecord } from '@/types/watchlist';
 
 const DOWNLOADS_COLLECTION = 'downloads';
-const DOWNLOAD_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7;
 const WATCHLIST_COLLECTION = 'watchlist';
 const LIKES_COLLECTION = 'likes';
+const WATCH_HISTORY_COLLECTION = 'watch_history';
 
 function buildLibraryDocumentId(userId: string, movieId: string) {
   return encodeURIComponent(`${userId}__${movieId}`);
@@ -74,20 +75,6 @@ function getTimestampSeconds(value: { seconds?: number; nanoseconds?: number } |
   return value?.seconds || 0;
 }
 
-function getTimestampMs(value: unknown) {
-  const timestamp = serializeTimestamp(value);
-  return timestamp?.seconds ? timestamp.seconds * 1000 : 0;
-}
-
-function isExpiredDownload(data: Record<string, unknown>) {
-  const expiresAtMs = getTimestampMs(data.expiresAt);
-  return expiresAtMs > 0 && expiresAtMs <= Date.now();
-}
-
-function getDownloadExpiryTimestamp() {
-  return admin.firestore.Timestamp.fromMillis(Date.now() + DOWNLOAD_EXPIRY_MS);
-}
-
 function normalizeDownloadRecord(id: string, data: Record<string, unknown>): DownloadRecord {
   return {
     id,
@@ -99,7 +86,6 @@ function normalizeDownloadRecord(id: string, data: Record<string, unknown>): Dow
     status: data.status === 'downloading' || data.status === 'failed' ? data.status : 'completed',
     description: typeof data.description === 'string' ? data.description : '',
     downloadedAt: serializeTimestamp(data.downloadedAt),
-    expiresAt: serializeTimestamp(data.expiresAt),
   };
 }
 
@@ -126,6 +112,28 @@ function normalizeLikeRecord(id: string, data: Record<string, unknown>): LikeRec
   };
 }
 
+function normalizeWatchHistoryRecord(id: string, data: Record<string, unknown>): WatchHistoryRecord {
+  const progressSeconds = Number(data.progressSeconds || 0);
+  const durationSeconds = Number(data.durationSeconds || 0);
+  const progressPercent = Number(data.progressPercent || 0);
+
+  return {
+    id,
+    movieId: String(data.movieId || ''),
+    title: String(data.title || 'Untitled movie'),
+    poster: String(data.poster || ''),
+    watchHref: String(data.watchHref || ''),
+    userId: String(data.userId || ''),
+    progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0,
+    durationSeconds: Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0,
+    progressPercent: Number.isFinite(progressPercent)
+      ? Math.min(Math.max(progressPercent, 0), 100)
+      : 0,
+    completed: data.completed === true,
+    lastWatchedAt: serializeTimestamp(data.lastWatchedAt),
+  };
+}
+
 export async function getUserDownload(uid: string, movieId: string) {
   const snapshot = await adminDb
     .collection(DOWNLOADS_COLLECTION)
@@ -136,14 +144,7 @@ export async function getUserDownload(uid: string, movieId: string) {
     return null;
   }
 
-  const data = snapshot.data() || {};
-
-  if (isExpiredDownload(data)) {
-    await snapshot.ref.delete();
-    return null;
-  }
-
-  return normalizeDownloadRecord(snapshot.id, data);
+  return normalizeDownloadRecord(snapshot.id, snapshot.data() || {});
 }
 
 export async function listUserDownloads(uid: string) {
@@ -152,24 +153,7 @@ export async function listUserDownloads(uid: string) {
     .where('userId', '==', uid)
     .get();
 
-  const activeDocs = [];
-  const expiredDocs = [];
-
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
-
-    if (isExpiredDownload(data)) {
-      expiredDocs.push(doc);
-    } else {
-      activeDocs.push(doc);
-    }
-  }
-
-  if (expiredDocs.length) {
-    await Promise.all(expiredDocs.map((doc) => doc.ref.delete()));
-  }
-
-  return activeDocs
+  return snapshot.docs
     .map((doc) => normalizeDownloadRecord(doc.id, doc.data()))
     .sort((left, right) => getTimestampSeconds(right.downloadedAt) - getTimestampSeconds(left.downloadedAt));
 }
@@ -180,14 +164,10 @@ export async function saveUserDownload(uid: string, movie: DownloadMovieInput) {
   const existing = await documentRef.get();
 
   if (existing.exists) {
-    const existingData = existing.data() || {};
-
-    if (!isExpiredDownload(existingData)) {
-      return {
-        alreadyExists: true,
-        record: normalizeDownloadRecord(existing.id, existingData),
-      };
-    }
+    return {
+      alreadyExists: true,
+      record: normalizeDownloadRecord(existing.id, existing.data() || {}),
+    };
   }
 
   await documentRef.set({
@@ -198,7 +178,6 @@ export async function saveUserDownload(uid: string, movie: DownloadMovieInput) {
     userId: uid,
     status: 'completed',
     downloadedAt: admin.firestore.FieldValue.serverTimestamp(),
-    expiresAt: getDownloadExpiryTimestamp(),
   });
 
   const created = await documentRef.get();
@@ -339,4 +318,54 @@ export async function removeUserLike(uid: string, movieId: string) {
     .delete();
 
   return { removed: true };
+}
+
+export async function listUserWatchHistory(uid: string) {
+  const snapshot = await adminDb
+    .collection(WATCH_HISTORY_COLLECTION)
+    .where('userId', '==', uid)
+    .get();
+
+  return snapshot.docs
+    .map((doc) => normalizeWatchHistoryRecord(doc.id, doc.data()))
+    .sort((left, right) => getTimestampSeconds(right.lastWatchedAt) - getTimestampSeconds(left.lastWatchedAt));
+}
+
+export async function saveUserWatchHistory(uid: string, movie: WatchHistoryMovieInput) {
+  const documentId = buildLibraryDocumentId(uid, movie.movieId);
+  const documentRef = adminDb.collection(WATCH_HISTORY_COLLECTION).doc(documentId);
+  const existing = await documentRef.get();
+  const progressSeconds = Number(movie.progressSeconds || 0);
+  const durationSeconds = Number(movie.durationSeconds || 0);
+  const progressPercent =
+    Number.isFinite(movie.progressPercent) && movie.progressPercent !== undefined
+      ? movie.progressPercent
+      : durationSeconds > 0
+        ? Math.round((progressSeconds / durationSeconds) * 100)
+        : 0;
+
+  await documentRef.set(
+    {
+      movieId: String(movie.movieId),
+      title: String(movie.title || 'Untitled movie'),
+      poster: String(movie.poster || ''),
+      watchHref: String(movie.watchHref || ''),
+      userId: uid,
+      progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0,
+      durationSeconds: Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0,
+      progressPercent: Number.isFinite(progressPercent)
+        ? Math.min(Math.max(progressPercent, 0), 100)
+        : 0,
+      completed: movie.completed === true,
+      lastWatchedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const saved = await documentRef.get();
+
+  return {
+    record: normalizeWatchHistoryRecord(saved.id, saved.data() || {}),
+    countedAsNewPlay: !existing.exists,
+  };
 }
