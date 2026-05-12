@@ -12,6 +12,11 @@ const EMBEDDING_MODEL = process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-
 const EMBEDDING_DIMENSIONS = Number(process.env.GEMINI_EMBEDDING_DIMENSIONS || 768);
 const SYNC_LIMIT = Number(process.env.SYNC_AI_CATALOG_LIMIT || 0);
 const EMBED_DELAY_MS = Number(process.env.AI_SYNC_EMBED_DELAY_MS || 250);
+const CLI_ARGS = new Set(process.argv.slice(2));
+const SYNC_MODE = CLI_ARGS.has('--new')
+  ? 'new'
+  : String(process.env.AI_SYNC_MODE || 'changed').trim().toLowerCase();
+const LOG_SKIPPED_MOVIES = String(process.env.AI_SYNC_LOG_SKIPPED || 'true').trim().toLowerCase() !== 'false';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -170,6 +175,11 @@ async function readExistingHashes(pool) {
   return new Map(result.rows.map((row) => [row.movie_id, row.source_hash]));
 }
 
+async function readExistingMovieIds(pool) {
+  const result = await pool.query('select movie_id from ai_movie_embeddings');
+  return new Set(result.rows.map((row) => String(row.movie_id || '').trim()).filter(Boolean));
+}
+
 async function embedMovie(movie) {
   const apiKey = getRequiredEnv('GEMINI_API_KEY');
   const documentText = buildEmbeddingDocument(movie);
@@ -290,7 +300,10 @@ async function main() {
 
   try {
     await createSchema(pool);
+    console.log(`[ai-sync] mode=${SYNC_MODE === 'new' ? 'new-only' : 'changed-or-new'}`);
+    console.log(`[ai-sync] embedding model=${EMBEDDING_MODEL}, dimensions=${EMBEDDING_DIMENSIONS}`);
     const existingHashes = await readExistingHashes(pool);
+    const existingMovieIds = await readExistingMovieIds(pool);
     const snapshot = await admin.firestore().collection(getMoviesCollectionName()).get();
     const movies = snapshot.docs.map(normalizeMovie).filter((movie) => movie.title && movie.movie_id);
     const selectedMovies = SYNC_LIMIT > 0 ? movies.slice(0, SYNC_LIMIT) : movies;
@@ -298,15 +311,32 @@ async function main() {
     let skipped = 0;
 
     for (const movie of selectedMovies) {
+      if (SYNC_MODE === 'new' && existingMovieIds.has(movie.movie_id)) {
+        skipped += 1;
+
+        if (LOG_SKIPPED_MOVIES) {
+          console.log(`[ai-sync] Skipping ${movie.movie_id} - already synced`);
+        }
+
+        continue;
+      }
+
       const hash = sourceHash(movie);
 
       if (existingHashes.get(movie.movie_id) === hash) {
         skipped += 1;
+
+        if (LOG_SKIPPED_MOVIES) {
+          console.log(`[ai-sync] Skipping ${movie.movie_id} - already synced`);
+        }
+
         continue;
       }
 
       const embedding = await embedMovie(movie);
       await upsertMovie(pool, movie, embedding, hash);
+      existingMovieIds.add(movie.movie_id);
+      existingHashes.set(movie.movie_id, hash);
       synced += 1;
       console.log(`[ai-sync] synced ${movie.movie_id}: ${movie.title}`);
       await sleep(EMBED_DELAY_MS);
