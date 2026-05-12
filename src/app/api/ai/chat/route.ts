@@ -10,6 +10,7 @@ import {
 import {
   buildAiUserProfileContext,
   getAiMovieCandidates,
+  getAiStaticCatalogCandidates,
   getAiTrendingHomeCategoryCandidates,
   getAiTrendingMovieCandidates,
   getAiTrendingVjCandidates,
@@ -210,6 +211,7 @@ export async function POST(request: Request) {
 
     const [
       movies,
+      staticCatalogMovies,
       trendingMovies,
       trendingVjs,
       trendingHomeCategories,
@@ -218,6 +220,7 @@ export async function POST(request: Request) {
       firebaseAuthUser,
     ] = await Promise.all([
       getAiMovieCandidates(latestUserMessage.content),
+      getAiStaticCatalogCandidates(),
       getAiTrendingMovieCandidates(),
       getAiTrendingVjCandidates(),
       getAiTrendingHomeCategoryCandidates(),
@@ -235,6 +238,7 @@ export async function POST(request: Request) {
     const rawPayload = await generateAiChatPayload({
       messages: geminiMessages,
       movies,
+      staticCatalogMovies,
       profile,
       personalization,
       trendingMovies,
@@ -244,6 +248,7 @@ export async function POST(request: Request) {
     const payload = normalizeAiPayload({
       rawPayload,
       movies,
+      staticCatalogMovies,
       trendingMovies,
       trendingVjs,
       trendingHomeCategories,

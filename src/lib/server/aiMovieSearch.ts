@@ -465,6 +465,40 @@ async function getTrendingNeonMovies(limit: number) {
   return result.rows.map((row) => normalizeMovieCandidate(row)).filter((movie) => movie.id);
 }
 
+async function getStaticNeonCatalogMovies(limit: number) {
+  const pool = await getPool();
+
+  if (!pool) {
+    return [];
+  }
+
+  await ensureAiCatalogRuntimeSchema(pool);
+
+  const result = await pool.query(
+    `
+      select
+        movie_id,
+        title,
+        description,
+        genres,
+        category,
+        poster,
+        release_date,
+        vj,
+        country,
+        is_trending_tiktok,
+        play_count,
+        row_number() over (order by play_count desc, updated_at desc) as trending_rank
+      from ai_movie_embeddings
+      order by play_count desc, updated_at desc
+      limit $1
+    `,
+    [limit]
+  );
+
+  return result.rows.map((row) => normalizeMovieCandidate(row)).filter((movie) => movie.id);
+}
+
 async function getTrendingNeonHomeCategories(rowsLimit: number, moviesPerRow: number) {
   const pool = await getPool();
 
@@ -633,6 +667,23 @@ async function getTrendingFirestoreMovies(limit: number) {
     }));
 }
 
+async function getStaticFirestoreCatalogMovies(limit: number) {
+  const collection = adminDb.collection(MOVIES_COLLECTION);
+  const snapshot = await (isAppInReview
+    ? collection.where('is_for_review', '==', true).limit(Math.min(limit, 250)).get()
+    : collection.limit(Math.min(limit, 500)).get());
+
+  return snapshot.docs
+    .map((doc) => normalizeMovieCandidate({ id: doc.id, ...doc.data() }))
+    .filter((movie) => movie.id)
+    .sort((left, right) => (right.playCount || 0) - (left.playCount || 0))
+    .slice(0, limit)
+    .map((movie, index) => ({
+      ...movie,
+      trendingRank: index + 1,
+    }));
+}
+
 async function getTrendingFirestoreVjs(limit: number) {
   const movies = await getTrendingFirestoreMovies(250);
   const vjMap = new Map<
@@ -712,6 +763,23 @@ export async function getAiTrendingMovieCandidates(limit = 6) {
   }
 
   return getTrendingFirestoreMovies(limit);
+}
+
+export async function getAiStaticCatalogCandidates(limit = Number(process.env.GEMINI_STATIC_CATALOG_LIMIT || 250)) {
+  const normalizedLimit =
+    Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 600) : 250;
+
+  try {
+    const neonMovies = await getStaticNeonCatalogMovies(normalizedLimit);
+
+    if (neonMovies.length) {
+      return neonMovies;
+    }
+  } catch (error) {
+    console.warn('[ai-chat] Neon static catalog read failed, falling back to Firestore', error);
+  }
+
+  return getStaticFirestoreCatalogMovies(normalizedLimit);
 }
 
 export async function getAiTrendingVjCandidates(limit = 6) {

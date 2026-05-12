@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { AiChatRequestMessage, AiChatResponsePayload } from '@/types/aiChat';
 import type {
   AiMovieCandidate,
@@ -10,6 +11,9 @@ import { VJ_DIRECTORY } from '@/config/constants';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_CACHE_API_URL = 'https://generativelanguage.googleapis.com/v1beta/cachedContents';
+const GEMINI_STATIC_CACHE_TTL_SECONDS = 60 * 60;
+const GEMINI_STATIC_CACHE_REFRESH_BUFFER_MS = 60 * 1000;
 
 export const AI_RATE_LIMIT_FALLBACK_MESSAGE =
   'The AI is taking a quick break! Please use the standard search.';
@@ -45,6 +49,32 @@ type RawGeminiAiPayload = {
   recommendations?: RawAiRecommendation[];
   deeplinks?: RawAiDeeplink[];
   actions?: RawAiAction[];
+};
+
+type GeminiStaticCacheRecord = {
+  name: string;
+  signature: string;
+  expiresAtMs: number;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __ugmoviesGeminiStaticCache: GeminiStaticCacheRecord | undefined;
+  // eslint-disable-next-line no-var
+  var __ugmoviesGeminiStaticCachePromise: Promise<GeminiStaticCacheRecord | null> | undefined;
+  // eslint-disable-next-line no-var
+  var __ugmoviesGeminiStaticCacheDisabledUntilMs: number | undefined;
+}
+
+type GenerateAiChatPayloadInput = {
+  messages: AiChatRequestMessage[];
+  movies: AiMovieCandidate[];
+  staticCatalogMovies?: AiMovieCandidate[];
+  profile: AiUserProfileContext | null;
+  personalization?: AiPersonalizationContext | null;
+  trendingMovies?: AiMovieCandidate[];
+  trendingVjs?: AiTrendingVj[];
+  trendingHomeCategories?: AiTrendingHomeCategory[];
 };
 
 export type AiPersonalizationMovieItem = {
@@ -179,6 +209,36 @@ function getGeminiEndpoint(model: string, action: 'generateContent' | 'embedCont
   return `${GEMINI_API_BASE_URL}/${encodeURIComponent(model)}:${action}`;
 }
 
+function getGeminiModelResourceName(model: string) {
+  return model.startsWith('models/') ? model : `models/${model}`;
+}
+
+function isGeminiContextCacheEnabled() {
+  const value = String(process.env.GEMINI_CONTEXT_CACHE_ENABLED || 'true').trim().toLowerCase();
+
+  return value !== '0' && value !== 'false' && value !== 'off';
+}
+
+function getGeminiStaticCacheTtlSeconds() {
+  const value = Number(process.env.GEMINI_CONTEXT_CACHE_TTL_SECONDS || GEMINI_STATIC_CACHE_TTL_SECONDS);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return GEMINI_STATIC_CACHE_TTL_SECONDS;
+  }
+
+  return Math.min(Math.floor(value), GEMINI_STATIC_CACHE_TTL_SECONDS);
+}
+
+function getCacheSignature(model: string, staticContext: string) {
+  return createHash('sha256')
+    .update(model)
+    .update('\n')
+    .update(buildSystemPrompt())
+    .update('\n')
+    .update(staticContext)
+    .digest('hex');
+}
+
 async function parseGeminiResponseText(response: Response) {
   const payload = (await response.json().catch(() => ({}))) as {
     error?: {
@@ -221,7 +281,7 @@ function buildSystemPrompt() {
     'Use UG Movies 247 language naturally: VJs, Dubs, Genres, watchlist, downloads, and premium access.',
     'Contextual awareness rule: for "why" or "how" questions, explain the benefit first, then mention the user account state only as a secondary detail.',
     'Never repeat account state mechanically. Do not start every account answer with "Yes, your email is verified". Prefer natural phrasing like "I see you are already all set with verification."',
-    'Use only the provided movie catalog candidates when recommending movies.',
+    'Use only the provided Cached Movie Catalog, Trending Catalog Context, or request-specific movie candidates when recommending movies.',
     'If the user asks for movies, recommend the most relevant titles and include movieID values exactly as provided.',
     'If the user asks for app/account help, answer clearly using the provided App Knowledge and Navigation Map.',
     isAppInReview
@@ -247,7 +307,7 @@ function buildSystemPrompt() {
     'For trending or popular movie requests, prefer Trending Movies from the Catalog Context and mention that they are popular in UG Movies 247 without exposing raw play_count numbers.',
     'For most watched, trending, or popular VJ requests, use Trending VJs from the Catalog Context. Do not guess from the VJ directory and do not expose raw watch/play counts.',
     'For best, most watched, or trending movies across home rows/categories, use Trending Home Categories from the Catalog Context. List the category and the top movies inside it.',
-    'For detailed movie searches, use titles, descriptions, genres, VJ names, and release dates from the Catalog Context. Do not guess beyond the provided catalog candidates.',
+    'For detailed movie searches, use titles, descriptions, genres, VJ names, and release dates from the Cached Movie Catalog, Trending Catalog Context, and request-specific candidates. Do not guess beyond those provided catalog records.',
     'For Watchlist, Downloads, Likes, and Watch History questions, inspect the Personalization Context before answering.',
     'Personal library rule: if Personalization Context signedIn is true, you have read-only access to the summarized Downloads, Watchlist, Likes, and Watch History arrays in that context.',
     'If a personal list contains items, name the actual titles and counts. If the list total is larger than the items shown, say you are showing the most recent items.',
@@ -265,21 +325,14 @@ function buildSystemPrompt() {
   ].join('\n');
 }
 
-function buildGeminiPrompt(input: {
-  messages: AiChatRequestMessage[];
-  movies: AiMovieCandidate[];
-  profile: AiUserProfileContext | null;
-  personalization?: AiPersonalizationContext | null;
-  trendingMovies?: AiMovieCandidate[];
-  trendingVjs?: AiTrendingVj[];
-  trendingHomeCategories?: AiTrendingHomeCategory[];
-}) {
-  const conversation = input.messages.slice(-8).map((message) => ({
-    role: message.role,
-    content: message.content.slice(0, 1200),
-  }));
-
+function buildStaticGeminiContext(input: Pick<
+  GenerateAiChatPayloadInput,
+  'staticCatalogMovies' | 'trendingMovies' | 'trendingVjs' | 'trendingHomeCategories'
+>) {
   return [
+    'UG Movies 247 Shared Static Context.',
+    'This cached context is shared across users. It must never contain personal names, emails, watchlists, downloads, likes, watch history, conversations, Firebase UIDs, tokens, or account state.',
+    '',
     'UG Movies 247 App Knowledge:',
     JSON.stringify(
       {
@@ -304,6 +357,65 @@ function buildGeminiPrompt(input: {
       null,
       2
     ),
+    '',
+    'Cached Movie Catalog from Neon:',
+    JSON.stringify(
+      (input.staticCatalogMovies || []).map((movie) => ({
+        movieID: movie.id,
+        title: movie.title,
+        genres: movie.genres,
+        category: movie.category,
+        vj: movie.vj,
+        release_date: movie.release_date,
+        description: movie.description,
+        popularity: movie.playCount && movie.playCount > 0 ? 'popular' : 'standard',
+        trendingRank: movie.trendingRank,
+      })),
+      null,
+      2
+    ),
+    '',
+    'Catalog Context - Trending Movies:',
+    JSON.stringify(
+      (input.trendingMovies || []).map((movie) => ({
+        movieID: movie.id,
+        title: movie.title,
+        genres: movie.genres,
+        vj: movie.vj,
+        release_date: movie.release_date,
+        description: movie.description,
+        trendingRank: movie.trendingRank,
+      })),
+      null,
+      2
+    ),
+    '',
+    'Catalog Context - Trending VJs:',
+    JSON.stringify(
+      (input.trendingVjs || []).map((vj) => ({
+        name: vj.name,
+        route: vj.route,
+        trendingRank: vj.trendingRank,
+        popularMovies: vj.movieSamples,
+      })),
+      null,
+      2
+    ),
+    '',
+    'Catalog Context - Trending Home Categories:',
+    JSON.stringify(input.trendingHomeCategories || [], null, 2),
+  ].join('\n');
+}
+
+function buildDynamicGeminiPrompt(input: GenerateAiChatPayloadInput) {
+  const conversation = input.messages.slice(-8).map((message) => ({
+    role: message.role,
+    content: message.content.slice(0, 1200),
+  }));
+
+  return [
+    'Use the cached static UG Movies 247 context for persona, navigation, VJ rules, standard safety rules, and shared catalog/trending knowledge.',
+    'The data below is dynamic per request and must not be cached.',
     '',
     'Current user profile context:',
     JSON.stringify(input.profile || { signedIn: false }, null, 2),
@@ -344,41 +456,15 @@ function buildGeminiPrompt(input: {
       2
     ),
     '',
-    'Catalog Context - Trending Movies:',
-    JSON.stringify(
-      (input.trendingMovies || []).map((movie) => ({
-        movieID: movie.id,
-        title: movie.title,
-        genres: movie.genres,
-        vj: movie.vj,
-        release_date: movie.release_date,
-        description: movie.description,
-        trendingRank: movie.trendingRank,
-      })),
-      null,
-      2
-    ),
-    '',
-    'Catalog Context - Trending VJs:',
-    JSON.stringify(
-      (input.trendingVjs || []).map((vj) => ({
-        name: vj.name,
-        route: vj.route,
-        trendingRank: vj.trendingRank,
-        popularMovies: vj.movieSamples,
-      })),
-      null,
-      2
-    ),
-    '',
-    'Catalog Context - Trending Home Categories:',
-    JSON.stringify(input.trendingHomeCategories || [], null, 2),
-    '',
     'Conversation:',
     JSON.stringify(conversation, null, 2),
     '',
     'Return JSON only. Include recommendations only when they help the user. Include deeplinks whenever your reply mentions or recommends opening any mapped app section. Include actions for verification and password reset tasks.',
   ].join('\n');
+}
+
+function buildGeminiPrompt(input: GenerateAiChatPayloadInput) {
+  return [buildStaticGeminiContext(input), '', buildDynamicGeminiPrompt(input)].join('\n');
 }
 
 const aiResponseSchema = {
@@ -390,13 +476,13 @@ const aiResponseSchema = {
     },
     recommendations: {
       type: 'array',
-      description: 'Movie recommendations using exact movieID values from the provided candidates.',
+      description: 'Movie recommendations using exact movieID values from the provided static or request-specific catalog records.',
       items: {
         type: 'object',
         properties: {
           movieID: {
             type: 'string',
-            description: 'Exact movieID from the provided candidates.',
+            description: 'Exact movieID from the provided static or request-specific catalog records.',
           },
           title: {
             type: 'string',
@@ -458,45 +544,181 @@ const aiResponseSchema = {
   required: ['reply', 'recommendations', 'deeplinks', 'actions'],
 };
 
-export async function generateAiChatPayload(input: {
-  messages: AiChatRequestMessage[];
-  movies: AiMovieCandidate[];
-  profile: AiUserProfileContext | null;
-  personalization?: AiPersonalizationContext | null;
-  trendingMovies?: AiMovieCandidate[];
-  trendingVjs?: AiTrendingVj[];
-  trendingHomeCategories?: AiTrendingHomeCategory[];
-}) {
+async function createGeminiStaticCache(input: GenerateAiChatPayloadInput, apiKey: string) {
+  const model = getGeminiChatModel();
+  const staticContext = buildStaticGeminiContext(input);
+  const signature = getCacheSignature(model, staticContext);
+  const ttlSeconds = getGeminiStaticCacheTtlSeconds();
+  const currentCache = globalThis.__ugmoviesGeminiStaticCache;
+
+  if (
+    currentCache?.signature === signature &&
+    currentCache.expiresAtMs > Date.now() + GEMINI_STATIC_CACHE_REFRESH_BUFFER_MS
+  ) {
+    return currentCache;
+  }
+
+  if (globalThis.__ugmoviesGeminiStaticCachePromise) {
+    const pendingCache = await globalThis.__ugmoviesGeminiStaticCachePromise;
+
+    if (
+      pendingCache?.signature === signature &&
+      pendingCache.expiresAtMs > Date.now() + GEMINI_STATIC_CACHE_REFRESH_BUFFER_MS
+    ) {
+      return pendingCache;
+    }
+  }
+
+  globalThis.__ugmoviesGeminiStaticCachePromise = (async () => {
+    const response = await fetch(GEMINI_CACHE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        model: getGeminiModelResourceName(model),
+        systemInstruction: {
+          parts: [{ text: buildSystemPrompt() }],
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: staticContext }],
+          },
+        ],
+        ttl: `${ttlSeconds}s`,
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      name?: string;
+      error?: {
+        message?: string;
+        status?: string;
+      };
+    };
+
+    if (!response.ok || !payload.name) {
+      throw new Error(payload.error?.message || `Gemini context cache create failed with ${response.status}.`);
+    }
+
+    const cache = {
+      name: payload.name,
+      signature,
+      expiresAtMs: Date.now() + ttlSeconds * 1000,
+    };
+    globalThis.__ugmoviesGeminiStaticCache = cache;
+    globalThis.__ugmoviesGeminiStaticCacheDisabledUntilMs = undefined;
+
+    return cache;
+  })()
+    .catch((error) => {
+      console.warn('[ai-chat] Gemini context cache unavailable; using direct prompt', error);
+      globalThis.__ugmoviesGeminiStaticCacheDisabledUntilMs = Date.now() + 5 * 60 * 1000;
+      return null;
+    })
+    .finally(() => {
+      globalThis.__ugmoviesGeminiStaticCachePromise = undefined;
+    });
+
+  return globalThis.__ugmoviesGeminiStaticCachePromise;
+}
+
+async function getGeminiStaticCacheName(input: GenerateAiChatPayloadInput, apiKey: string) {
+  if (!isGeminiContextCacheEnabled()) {
+    return null;
+  }
+
+  if (
+    globalThis.__ugmoviesGeminiStaticCacheDisabledUntilMs &&
+    globalThis.__ugmoviesGeminiStaticCacheDisabledUntilMs > Date.now()
+  ) {
+    return null;
+  }
+
+  const cache = await createGeminiStaticCache(input, apiKey);
+
+  return cache?.name || null;
+}
+
+function buildGeminiGenerateBody(input: GenerateAiChatPayloadInput, cachedContent?: string | null) {
+  return {
+    ...(cachedContent
+      ? {
+          cachedContent,
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: buildDynamicGeminiPrompt(input) }],
+            },
+          ],
+        }
+      : {
+          systemInstruction: {
+            parts: [{ text: buildSystemPrompt() }],
+          },
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: buildGeminiPrompt(input) }],
+            },
+          ],
+        }),
+    generationConfig: {
+      temperature: 0.45,
+      maxOutputTokens: 1400,
+      responseMimeType: 'application/json',
+      responseJsonSchema: aiResponseSchema,
+    },
+  };
+}
+
+async function shouldRetryWithoutGeminiCache(response: Response) {
+  if (response.ok) {
+    return false;
+  }
+
+  const payload = (await response.clone().json().catch(() => ({}))) as {
+    error?: {
+      message?: string;
+      status?: string;
+    };
+  };
+  const message = `${payload.error?.status || ''} ${payload.error?.message || ''}`;
+
+  return response.status === 404 || /cached\s*content|cachedContent|cache/i.test(message);
+}
+
+export async function generateAiChatPayload(input: GenerateAiChatPayloadInput) {
   const apiKey = getGeminiApiKey();
 
   if (!apiKey) {
     throw new Error('Missing GEMINI_API_KEY.');
   }
 
-  const response = await fetch(getGeminiEndpoint(getGeminiChatModel(), 'generateContent'), {
+  const cachedContent = await getGeminiStaticCacheName(input, apiKey);
+  const endpoint = getGeminiEndpoint(getGeminiChatModel(), 'generateContent');
+  let response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-goog-api-key': apiKey,
     },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: buildSystemPrompt() }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: buildGeminiPrompt(input) }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.45,
-        maxOutputTokens: 1400,
-        responseMimeType: 'application/json',
-        responseJsonSchema: aiResponseSchema,
-      },
-    }),
+    body: JSON.stringify(buildGeminiGenerateBody(input, cachedContent)),
   });
+
+  if (cachedContent && (await shouldRetryWithoutGeminiCache(response))) {
+    globalThis.__ugmoviesGeminiStaticCache = undefined;
+    globalThis.__ugmoviesGeminiStaticCacheDisabledUntilMs = Date.now() + 5 * 60 * 1000;
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(buildGeminiGenerateBody(input)),
+    });
+  }
 
   const text = await parseGeminiResponseText(response);
   return JSON.parse(text) as RawGeminiAiPayload;
@@ -561,13 +783,20 @@ export async function createGeminiEmbedding(text: string, purpose: 'query' | 'do
 export function normalizeAiPayload(input: {
   rawPayload: RawGeminiAiPayload;
   movies: AiMovieCandidate[];
+  staticCatalogMovies?: AiMovieCandidate[];
   trendingMovies?: AiMovieCandidate[];
   trendingVjs?: AiTrendingVj[];
   trendingHomeCategories?: AiTrendingHomeCategory[];
   profile?: AiUserProfileContext | null;
   latestUserMessage?: string;
 }): AiChatResponsePayload {
-  const movieById = new Map(input.movies.map((movie) => [movie.id, movie]));
+  const movieById = new Map<string, AiMovieCandidate>(
+    [
+      ...(input.staticCatalogMovies || []),
+      ...(input.trendingMovies || []),
+      ...input.movies,
+    ].map((movie) => [movie.id, movie] as const)
+  );
   const movieCards = (input.rawPayload.recommendations || [])
     .map((recommendation) => {
       const id = String(recommendation.movieID || recommendation.movieId || '').trim();
