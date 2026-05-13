@@ -883,19 +883,114 @@ export default function Home() {
       </div>
 
       {/* Floating Request Movie Button */}
+      <style jsx global>{`
+        @keyframes request-movie-fab-ripple {
+          0% {
+            opacity: 0.42;
+            transform: scale(0.72);
+          }
+
+          70% {
+            opacity: 0.12;
+          }
+
+          100% {
+            opacity: 0;
+            transform: scale(1.9);
+          }
+        }
+
+        @keyframes request-movie-fab-breathe {
+          0%,
+          100% {
+            transform: translate3d(0, 0, 0) scale(var(--request-fab-scale, 1));
+          }
+
+          50% {
+            transform: translate3d(0, -4px, 0) scale(var(--request-fab-scale, 1));
+          }
+        }
+
+        .request-movie-fab {
+          isolation: isolate;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .request-movie-fab::before,
+        .request-movie-fab::after {
+          content: '';
+          position: absolute;
+          inset: -10px;
+          z-index: -1;
+          border-radius: 9999px;
+          pointer-events: none;
+          background:
+            radial-gradient(circle, rgba(217, 4, 41, 0.3) 0%, rgba(217, 4, 41, 0.16) 44%, rgba(217, 4, 41, 0) 70%),
+            radial-gradient(circle, rgba(255, 58, 92, 0.24) 0%, rgba(255, 58, 92, 0) 68%);
+          box-shadow:
+            0 0 22px rgba(217, 4, 41, 0.28),
+            0 0 44px rgba(217, 4, 41, 0.16);
+          transform: scale(0.72);
+          animation: request-movie-fab-ripple 2.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+          will-change: transform, opacity;
+        }
+
+        .request-movie-fab::after {
+          animation-delay: 1.4s;
+        }
+
+        .request-movie-fab-core {
+          --request-fab-scale: 1;
+          animation: request-movie-fab-breathe 3.2s ease-in-out infinite;
+          transform: translate3d(0, 0, 0) scale(var(--request-fab-scale, 1));
+          will-change: transform, box-shadow;
+        }
+
+        .request-movie-fab:hover::before,
+        .request-movie-fab:hover::after,
+        .request-movie-fab:focus-visible::before,
+        .request-movie-fab:focus-visible::after {
+          background:
+            radial-gradient(circle, rgba(217, 4, 41, 0.42) 0%, rgba(217, 4, 41, 0.2) 44%, rgba(217, 4, 41, 0) 70%),
+            radial-gradient(circle, rgba(255, 91, 122, 0.3) 0%, rgba(255, 91, 122, 0) 68%);
+          box-shadow:
+            0 0 28px rgba(217, 4, 41, 0.42),
+            0 0 58px rgba(217, 4, 41, 0.22);
+        }
+
+        .request-movie-fab:hover .request-movie-fab-core,
+        .request-movie-fab:focus-visible .request-movie-fab-core {
+          --request-fab-scale: 1.06;
+          box-shadow:
+            0 12px 28px rgba(217, 4, 41, 0.58),
+            0 0 24px rgba(255, 91, 122, 0.28);
+        }
+
+        .request-movie-fab:active .request-movie-fab-core {
+          --request-fab-scale: 0.96;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .request-movie-fab::before,
+          .request-movie-fab::after,
+          .request-movie-fab-core {
+            animation: none;
+          }
+        }
+      `}</style>
       <Link
         href="/request"
-        className="fixed bottom-[calc(7.5rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] group md:bottom-8 md:right-6"
+        className="request-movie-fab fixed bottom-[calc(7.5rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] inline-flex rounded-full group md:bottom-8 md:right-6"
         aria-label="Request a movie"
       >
-        <div className="w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 hover:scale-105 active:scale-95 flex items-center justify-center shadow-[0_10px_25px_rgba(217,4,41,0.45)] ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 animate-[float_3s_ease-in-out_infinite]">
+        <div className="request-movie-fab-core relative z-10 w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 flex items-center justify-center shadow-[0_10px_25px_rgba(217,4,41,0.45)] ring-1 ring-white/10 backdrop-blur-sm transition-[box-shadow,transform] duration-300">
           <Clapperboard
             className="w-[22px] h-[22px] md:w-[26px] md:h-[26px] text-white"
             strokeWidth={2.2}
             aria-hidden="true"
           />
         </div>
-</Link>
+      </Link>
 
       {/* Main Content Rows Container */}
       <div className="relative z-20 space-y-5 md:space-y-12 md:pt-2">
