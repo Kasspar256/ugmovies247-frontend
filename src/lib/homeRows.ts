@@ -85,8 +85,14 @@ function ensureReviewRowMinimum(row: HomeRowRecord, sourceMovies: Movie[]) {
 
 function hasCategory(movie: Movie, category: string) {
   const normalizedCategory = normalizeCatalogLabel(category);
+  const categoryAliases =
+    normalizedCategory === 'latest-movies-on-ugmovies247' ||
+    normalizedCategory === 'latest-movies-on-ugmovies24-7'
+      ? new Set(['latest-movies-on-ugmovies247', 'latest-movies-on-ugmovies24-7'])
+      : new Set([normalizedCategory]);
+
   return (movie.category || []).some(
-    (entry) => normalizeCatalogLabel(entry) === normalizedCategory
+    (entry) => categoryAliases.has(normalizeCatalogLabel(entry))
   );
 }
 
@@ -177,11 +183,18 @@ function getReviewAwareRowTitle(category: HomePageCategoryRecord) {
   const normalizedLabel = normalizeCatalogLabel(category.displayLabel);
 
   if (
-    isAppInReview &&
     (normalizedName === 'latest-movies-on-ugmovies24-7' ||
-      normalizedLabel === 'latest-movies-on-ugmovies24-7')
+      normalizedName === 'latest-movies-on-ugmovies247' ||
+      normalizedLabel === 'latest-movies-on-ugmovies24-7' ||
+      normalizedLabel === 'latest-trailers-on-ugmovies24-7' ||
+      normalizedLabel === 'latest-trailers-on-ugmovies247' ||
+      normalizedLabel === 'latest-on-ugmovies247')
   ) {
-    return 'LATEST TRAILERS ON UGMOVIES24_7';
+    return 'LATEST ON UGMOVIES247';
+  }
+
+  if (normalizedName === 'ongoing-series' || normalizedLabel === 'ongoing-series') {
+    return 'ONGOING SERIES';
   }
 
   return category.displayLabel;

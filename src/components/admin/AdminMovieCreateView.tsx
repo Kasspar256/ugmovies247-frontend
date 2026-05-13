@@ -45,7 +45,7 @@ type TmdbMovieDetails = {
 const TRENDING_CATEGORY = 'Trending on tiktok';
 const MANUAL_CATEGORY_ORDER = [
   'Trending on tiktok',
-  'Latest movies on Ugmovies24_7',
+  'Latest movies on UGMOVIES247',
   'Ongoing Series',
   'Recently added',
   'Latest series',

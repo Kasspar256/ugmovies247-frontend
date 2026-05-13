@@ -1,12 +1,12 @@
 export const HOME_PAGE_CATEGORY_CONFIG = [
   {
-    name: 'Latest movies on Ugmovies24_7',
-    displayLabel: 'LATEST TRAILERS ON UGMOVIES24_7',
+    name: 'Latest movies on UGMOVIES247',
+    displayLabel: 'LATEST ON UGMOVIES247',
     homeOrder: 10,
   },
   {
     name: 'Ongoing Series',
-    displayLabel: 'Ongoing Series',
+    displayLabel: 'ONGOING SERIES',
     homeOrder: 20,
   },
   {

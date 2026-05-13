@@ -26,7 +26,6 @@ import {
 import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
 import type {
   CheckoutPaymentMethod,
-  PaymentAttemptStatus,
   PaymentMethodProvider,
   SubscriptionPlanType,
 } from '@/types/subscriptions';
@@ -112,12 +111,12 @@ export async function startMobileMoneyCheckoutForUser(options: {
     provider: options.paymentMethodProvider,
     planType: plan.type,
     userId: options.userId,
-    customerMessage: `UGMovies247 ${plan.name}`,
+    customerMessage: `UGMOVIES247 ${plan.name}`,
     clientReferenceId,
   });
 
   const mappedStatus = mapPawaPayStatusToPaymentState(String(providerResponse.status || 'ACCEPTED'));
-  const status: PaymentAttemptStatus = mappedStatus === 'pending' ? 'initiated' : (mappedStatus as PaymentAttemptStatus);
+  let status = mappedStatus === 'pending' ? 'initiated' : mappedStatus;
   let message = 'Payment request sent. Complete the Mobile Money prompt on your phone.';
 
   if (mappedStatus === 'completed') {
@@ -134,7 +133,7 @@ export async function startMobileMoneyCheckoutForUser(options: {
       getPawaPayFailureMessage(providerResponse as unknown as Record<string, unknown>) ||
       String(providerResponse.status || 'Payment failed.');
     await updatePaymentAttempt(paymentId, {
-      status,
+      status: mappedStatus,
       providerStatus: String(providerResponse.status || 'FAILED'),
       providerMessage: message,
       failureReason: message,
