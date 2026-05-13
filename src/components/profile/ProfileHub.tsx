@@ -15,7 +15,6 @@ import {
   PencilLine,
   ReceiptText,
   Shield,
-  Tv2,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import {
@@ -271,7 +270,7 @@ function NavigationGroup({
       <div className="px-3 pb-2 pt-1 text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
         {title}
       </div>
-      <div className="space-y-[14px]">
+      <div className="flex flex-col gap-3 md:gap-4">
         {items.map((item) => {
           const Icon = item.icon;
           const isAiEntry = item.href === '/search/ai-chat';
@@ -296,9 +295,9 @@ function NavigationGroup({
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-4 rounded-[20px] px-3 py-3.5 transition-colors hover:bg-white/5"
+              className="flex items-center gap-4 rounded-[22px] border border-white/10 bg-white/[0.045] px-4 py-4 shadow-[0_14px_32px_rgba(0,0,0,0.2)] backdrop-blur-md transition-all duration-200 hover:border-white/20 hover:bg-white/[0.07] md:px-5"
             >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/5 text-[#D90429]">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.055] text-[#D90429]">
                 {Icon ? <Icon size={18} /> : null}
               </div>
               <div className="min-w-0 flex-1">
@@ -382,12 +381,6 @@ export default function ProfileHub() {
       icon: Bookmark,
       label: 'My List',
       description: 'Saved titles you want to come back to.',
-    },
-    {
-      href: '/series',
-      icon: Tv2,
-      label: 'Series',
-      description: 'Browse all series currently available in the app.',
     },
     {
       href: '/likes',

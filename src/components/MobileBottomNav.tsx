@@ -68,8 +68,8 @@ function NavItem({
   active: boolean;
   children: ReactNode;
 }) {
-  const itemColor = active ? 'text-[#D90429]' : 'text-white/62 hover:text-white';
-  const iconColor = active ? '[&_svg]:text-[#D90429]' : '[&_svg]:text-white/62';
+  const itemColor = active ? 'text-[#D90429]' : 'text-gray-400 hover:text-gray-200';
+  const iconColor = active ? '[&_svg]:text-[#D90429]' : '[&_svg]:text-gray-400';
 
   return (
     <Link
@@ -118,19 +118,19 @@ export default function MobileBottomNav() {
       aria-label="Mobile navigation"
     >
       <NavItem href="/browse" label="Home" active={activeTab === 'home'}>
-        <Home className="h-6 w-6" strokeWidth={2.8} />
+        <Home className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
       <NavItem href="/movies" label="Movies" active={activeTab === 'movies'}>
-        <Film className="h-6 w-6" strokeWidth={2.8} />
+        <Film className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
       <NavItem href="/series" label="Series" active={activeTab === 'series'}>
-        <Tv2 className="h-6 w-6" strokeWidth={2.8} />
+        <Tv2 className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
       <NavItem href="/search" label="Search" active={activeTab === 'search'}>
-        <Search className="h-6 w-6" strokeWidth={2.8} />
+        <Search className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
       <NavItem href="/profile" label="Profile" active={activeTab === 'profile'}>
-        <User className="h-6 w-6" strokeWidth={2.8} />
+        <User className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
     </nav>
   );
