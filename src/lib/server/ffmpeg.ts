@@ -218,6 +218,43 @@ export async function convertVideoToMp4(
   });
 }
 
+export async function copyVideoToMp4WithAacAudio(
+  inputPath: string,
+  outputPath: string,
+  timeoutMs: number,
+  options?: {
+    durationSeconds?: number;
+    onProgress?: (progressPercent: number) => void | Promise<void>;
+  }
+) {
+  return runFfmpegWithProgress({
+    timeoutMs,
+    durationSeconds: options?.durationSeconds,
+    onProgress: options?.onProgress,
+    args: [
+      '-y',
+      '-i',
+      inputPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-sn',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-ac',
+      '2',
+      '-b:a',
+      '160k',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ],
+  });
+}
+
 export async function rewriteMp4ForStreaming(
   inputPath: string,
   outputPath: string,

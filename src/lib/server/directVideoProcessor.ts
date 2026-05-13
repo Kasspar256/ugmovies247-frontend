@@ -1,6 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { ffprobeMedia, convertVideoToMp4, rewriteMp4ForStreaming } from './ffmpeg';
+import {
+  ffprobeMedia,
+  convertVideoToMp4,
+  copyVideoToMp4WithAacAudio,
+  rewriteMp4ForStreaming,
+} from './ffmpeg';
 import { uploadFileToR2 } from './r2';
 
 function isoNow() {
@@ -54,6 +59,58 @@ function isSafariCompatibleMp4(probe: Awaited<ReturnType<typeof ffprobeMedia>>) 
   );
 }
 
+type DirectVideoCompatibilityInfo = {
+  codecName?: string;
+  audioCodecName?: string;
+  audioProfile?: string;
+  audioChannels?: number;
+  pixelFormat?: string;
+  isSafariCompatibleMp4?: boolean;
+};
+
+function isH264VideoCopySafe(info: DirectVideoCompatibilityInfo) {
+  const videoCodec = String(info.codecName || '').toLowerCase();
+  const pixelFormat = String(info.pixelFormat || '').toLowerCase();
+
+  return (
+    videoCodec === 'h264' &&
+    (!pixelFormat || pixelFormat === 'yuv420p' || pixelFormat === 'yuvj420p')
+  );
+}
+
+function isAudioCopySafe(info: DirectVideoCompatibilityInfo) {
+  const audioCodec = String(info.audioCodecName || '').toLowerCase();
+  const audioProfile = String(info.audioProfile || '').toLowerCase();
+  const audioChannels = Number(info.audioChannels || 0);
+
+  return (
+    !audioCodec ||
+    (audioCodec === 'aac' && (!audioProfile || audioProfile.includes('lc')) && audioChannels <= 2)
+  );
+}
+
+export function getDirectMp4PreparationStrategy(info: DirectVideoCompatibilityInfo) {
+  if (info.isSafariCompatibleMp4 || (isH264VideoCopySafe(info) && isAudioCopySafe(info))) {
+    return {
+      mode: 'remux' as const,
+      jobLogMessage: 'Applying fast MP4 remux without re-encoding the video stream.',
+    };
+  }
+
+  if (isH264VideoCopySafe(info)) {
+    return {
+      mode: 'copy_video_transcode_audio' as const,
+      jobLogMessage:
+        'Keeping the H264 video stream intact and only normalizing audio/container for faster publishing.',
+    };
+  }
+
+  return {
+    mode: 'full_transcode' as const,
+    jobLogMessage: 'Processing the MP4 for wider browser and mobile compatibility.',
+  };
+}
+
 export async function inspectDirectVideoSource(sourcePath: string) {
   const probe = await ffprobeMedia(sourcePath);
   const videoStream = probe.streams?.find((stream) => stream.codec_type === 'video');
@@ -69,6 +126,8 @@ export async function inspectDirectVideoSource(sourcePath: string) {
     formatName: probe.format?.format_name || '',
     codecName: videoStream?.codec_name || '',
     audioCodecName: audioStream?.codec_name || '',
+    audioProfile: audioStream?.profile || '',
+    audioChannels: Number(audioStream?.channels || 0),
     pixelFormat: videoStream?.pix_fmt || '',
     isSafariCompatibleMp4: isSafariCompatibleMp4(probe),
   };
@@ -86,11 +145,17 @@ export async function prepareDirectMp4Source(options: {
     `${sanitizePathPart(path.basename(options.sourcePath, sourceExtension) || 'video')}.mp4`
   );
   const sourceInfo = await inspectDirectVideoSource(options.sourcePath);
+  const strategy = getDirectMp4PreparationStrategy(sourceInfo);
 
   await fs.mkdir(options.outputDirectory, { recursive: true });
 
-  if (sourceExtension === '.mp4' && sourceInfo.isSafariCompatibleMp4) {
+  if (strategy.mode === 'remux') {
     await rewriteMp4ForStreaming(options.sourcePath, outputPath, options.timeoutMs, {
+      durationSeconds: sourceInfo.durationSeconds,
+      onProgress: options.onProgress,
+    });
+  } else if (strategy.mode === 'copy_video_transcode_audio') {
+    await copyVideoToMp4WithAacAudio(options.sourcePath, outputPath, options.timeoutMs, {
       durationSeconds: sourceInfo.durationSeconds,
       onProgress: options.onProgress,
     });

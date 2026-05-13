@@ -29,6 +29,7 @@ import {
 } from './downloadSource';
 import { getFreeDiskSpace } from './system';
 import {
+  getDirectMp4PreparationStrategy,
   inspectDirectVideoSource,
   prepareDirectMp4Source,
   uploadDirectMp4Asset,
@@ -880,12 +881,8 @@ export async function processNextVideoJob() {
       videoResolution: sourceInspection.videoResolution,
       errorMessage: '',
     });
-    await appendJobLog(
-      job.id!,
-      sourceInspection.isSafariCompatibleMp4
-        ? 'Applying light MP4 normalization for streaming playback.'
-        : 'Processing the MP4 for wider browser and mobile compatibility.'
-    );
+    const preparationStrategy = getDirectMp4PreparationStrategy(sourceInspection);
+    await appendJobLog(job.id!, preparationStrategy.jobLogMessage);
 
     let lastProcessingProgress = 60;
     let lastProcessingUpdateAt = 0;
