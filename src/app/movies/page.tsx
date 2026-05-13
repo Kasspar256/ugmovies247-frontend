@@ -1,12 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
+import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  CATALOG_FILTER_ALL,
+  buildCatalogEmptyMessage,
+  buildCatalogGenreOptions,
+  buildCatalogVjOptions,
+  filterCatalogBySelection,
+  getCatalogVjLabel,
+  type CatalogFilterKind,
+} from '@/lib/catalogFilters';
 import type { Movie } from '@/types/movie';
 
 const PAGE_TITLE = 'Movies';
@@ -83,20 +93,6 @@ function AskAiButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function stripVjPrefix(value?: string | null) {
-  return String(value || '').replace(/^vj\s+/i, '').replace(/\s+/g, ' ').trim();
-}
-
-function getVjName(movie: Movie) {
-  const vj = stripVjPrefix(movie.vj);
-  return vj && vj.toLowerCase() !== 'unknown' ? vj : '';
-}
-
-function getVjLabel(movie: Movie) {
-  const vj = getVjName(movie);
-  return vj ? `VJ ${vj}` : 'VJ HD';
-}
-
 function getStandaloneMovies(catalog: Movie[]) {
   return dedupeSeriesMovies(catalog).filter(
     (movie) => movie.contentType === 'movie' && !isSeriesMovie(movie)
@@ -144,7 +140,7 @@ function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean
         )}
 
         <div className="absolute left-0 top-0 z-10 max-w-[76%] rounded-br-lg bg-[#D90429] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white shadow-[2px_2px_10px_rgba(0,0,0,0.5)] md:text-[9px]">
-          <span className="block truncate">{getVjLabel(movie)}</span>
+          <span className="block truncate">{getCatalogVjLabel(movie)}</span>
         </div>
       </div>
 
@@ -168,6 +164,9 @@ export default function MoviesPage() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [selectedVj, setSelectedVj] = useState(CATALOG_FILTER_ALL);
+  const [selectedGenre, setSelectedGenre] = useState(CATALOG_FILTER_ALL);
+  const [openFilter, setOpenFilter] = useState<CatalogFilterKind | null>(null);
 
   useEffect(() => {
     const cachedMovies = getStandaloneMovies(readCachedPublicMovies());
@@ -192,6 +191,66 @@ export default function MoviesPage() {
 
     void loadMovies();
   }, []);
+
+  useEffect(() => {
+    if (!openFilter || typeof window === 'undefined') {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest('[data-catalog-filter-menu]')) {
+        return;
+      }
+
+      setOpenFilter(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenFilter(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openFilter]);
+
+  const vjOptions = useMemo(() => buildCatalogVjOptions(movies), [movies]);
+  const genreOptions = useMemo(() => buildCatalogGenreOptions(movies), [movies]);
+  const filteredMovies = useMemo(
+    () => filterCatalogBySelection(movies, selectedVj, selectedGenre),
+    [movies, selectedGenre, selectedVj]
+  );
+  const hasActiveFilters =
+    selectedVj !== CATALOG_FILTER_ALL || selectedGenre !== CATALOG_FILTER_ALL;
+  const emptyMessage = buildCatalogEmptyMessage('movies', selectedVj, selectedGenre);
+
+  useEffect(() => {
+    if (selectedVj !== CATALOG_FILTER_ALL && !vjOptions.includes(selectedVj)) {
+      setSelectedVj(CATALOG_FILTER_ALL);
+    }
+  }, [selectedVj, vjOptions]);
+
+  useEffect(() => {
+    if (selectedGenre !== CATALOG_FILTER_ALL && !genreOptions.includes(selectedGenre)) {
+      setSelectedGenre(CATALOG_FILTER_ALL);
+    }
+  }, [selectedGenre, genreOptions]);
+
+  const handleToggleFilter = (kind: CatalogFilterKind) => {
+    setOpenFilter((current) => (current === kind ? null : kind));
+  };
+
+  const handleResetFilters = () => {
+    setSelectedVj(CATALOG_FILTER_ALL);
+    setSelectedGenre(CATALOG_FILTER_ALL);
+    setOpenFilter(null);
+  };
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#060912] pb-[calc(8rem+env(safe-area-inset-bottom))] text-white md:pb-16">
@@ -232,20 +291,61 @@ export default function MoviesPage() {
           </div>
         )}
 
+        <div className="relative z-40 mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-1 gap-3">
+            <CatalogFilterDropdown
+              kind="vj"
+              label="VJ"
+              value={selectedVj}
+              options={vjOptions}
+              isOpen={openFilter === 'vj'}
+              onToggle={handleToggleFilter}
+              onSelect={(value) => {
+                setSelectedVj(value);
+                setOpenFilter(null);
+              }}
+            />
+            <CatalogFilterDropdown
+              kind="genre"
+              label="Genre"
+              value={selectedGenre}
+              options={genreOptions}
+              isOpen={openFilter === 'genre'}
+              onToggle={handleToggleFilter}
+              onSelect={(value) => {
+                setSelectedGenre(value);
+                setOpenFilter(null);
+              }}
+            />
+          </div>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="self-start rounded-full border border-white/[0.14] bg-white/[0.07] px-5 py-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/75 shadow-[0_12px_30px_rgba(0,0,0,0.22)] backdrop-blur-lg transition-all hover:border-white/[0.24] hover:bg-white/[0.1] hover:text-white sm:self-center"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+
         {loading && !movies.length ? (
           <CatalogSkeletonGrid />
-        ) : movies.length === 0 ? (
+        ) : filteredMovies.length === 0 ? (
           <div className="rounded-[32px] border border-white/10 bg-white/[0.06] p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl md:p-12">
             <h2 className="text-lg font-black text-white md:text-xl">
-              No movies found right now.
+              {emptyMessage}
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-white/60">
-              Standalone movies will appear here as soon as they are available.
+              {hasActiveFilters
+                ? 'Try another VJ or genre, or reset the filters to return to all movies.'
+                : 'Standalone movies will appear here as soon as they are available.'}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
-            {movies.map((movie, index) => (
+            {filteredMovies.map((movie, index) => (
               <CatalogMovieCard key={movie.id} movie={movie} priority={index < 18} />
             ))}
           </div>
