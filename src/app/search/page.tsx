@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronDown,
@@ -44,6 +44,14 @@ function normalizeVjForMatch(value: string) {
   return normalizeForSearch(stripVjPrefix(value));
 }
 
+function normalizeCompact(value: string) {
+  return normalizeForSearch(value).replace(/\s+/g, '');
+}
+
+function getNormalizedTokens(value: string) {
+  return normalizeForSearch(value).split(' ').filter(Boolean);
+}
+
 function getMovieGenres(movie: Movie) {
   return Array.from(
     new Set([...(movie.genres || []), ...(movie.category || [])].map(cleanOption).filter(Boolean))
@@ -61,11 +69,41 @@ function getVjLabel(movie: Movie) {
 }
 
 function matchesSelectedValue(value: string, selectedValue: string) {
-  return normalizeForSearch(value) === normalizeForSearch(selectedValue);
+  const normalizedValue = normalizeForSearch(value);
+  const normalizedSelected = normalizeForSearch(selectedValue);
+
+  if (!normalizedValue || !normalizedSelected) {
+    return false;
+  }
+
+  if (
+    normalizedValue === normalizedSelected ||
+    normalizeCompact(value) === normalizeCompact(selectedValue)
+  ) {
+    return true;
+  }
+
+  const valueTokens = new Set(getNormalizedTokens(value));
+  return getNormalizedTokens(selectedValue).every((token) => valueTokens.has(token));
 }
 
 function matchesSelectedVj(value: string, selectedValue: string) {
-  return normalizeVjForMatch(value) === normalizeVjForMatch(selectedValue);
+  const normalizedValue = normalizeVjForMatch(value);
+  const normalizedSelected = normalizeVjForMatch(selectedValue);
+
+  if (!normalizedValue || !normalizedSelected) {
+    return false;
+  }
+
+  if (
+    normalizedValue === normalizedSelected ||
+    normalizeCompact(normalizedValue) === normalizeCompact(normalizedSelected)
+  ) {
+    return true;
+  }
+
+  const valueTokens = new Set(getNormalizedTokens(normalizedValue));
+  return getNormalizedTokens(normalizedSelected).every((token) => valueTokens.has(token));
 }
 
 function uniqueOptionsInOrder(values: string[]) {
@@ -87,61 +125,79 @@ function uniqueOptionsInOrder(values: string[]) {
   return options;
 }
 
-function findMatchingVjOption(query: string, options: string[]) {
-  const search = normalizeForSearch(query);
-  const searchVj = normalizeVjForMatch(query);
+function getFieldMatchRank(values: Array<string | null | undefined>, searchTerm: string) {
+  let bestRank = Number.POSITIVE_INFINITY;
 
-  if (searchVj.length < 2) {
-    return '';
-  }
+  values.forEach((value) => {
+    const normalizedValue = normalizeForSearch(String(value || ''));
 
-  return (
-    options.find((option) => {
-      const optionVj = normalizeVjForMatch(option);
+    if (!normalizedValue) {
+      return;
+    }
 
-      if (!optionVj) {
-        return false;
-      }
+    if (normalizedValue === searchTerm) {
+      bestRank = Math.min(bestRank, 1);
+      return;
+    }
 
-      if (optionVj.length <= 2) {
-        return searchVj === optionVj || search.includes(optionVj);
-      }
+    if (normalizedValue.startsWith(searchTerm)) {
+      bestRank = Math.min(bestRank, 2);
+      return;
+    }
 
-      return (
-        optionVj === searchVj ||
-        optionVj.startsWith(searchVj) ||
-        searchVj.includes(optionVj) ||
-        search.includes(optionVj)
-      );
-    }) || ''
-  );
+    if (normalizedValue.includes(searchTerm)) {
+      bestRank = Math.min(bestRank, 3);
+    }
+  });
+
+  return Number.isFinite(bestRank) ? bestRank : null;
 }
 
-function findMatchingGenreOption(query: string, options: string[]) {
-  const search = normalizeForSearch(query);
+function getMovieSearchRank(movie: Movie, searchTerm: string) {
+  const titleRank = getFieldMatchRank(
+    [movie.title, movie.name, movie.original_title],
+    searchTerm
+  );
 
-  if (search.length < 3) {
-    return '';
+  if (titleRank) {
+    return titleRank;
   }
 
-  return (
-    options.find((option) => {
-      const genre = normalizeForSearch(option);
+  const vjRank = getFieldMatchRank([getVjName(movie), getVjLabel(movie)], searchTerm);
 
-      return genre === search || genre.startsWith(search) || search.includes(genre);
-    }) || ''
-  );
+  if (vjRank) {
+    return 10 + vjRank;
+  }
+
+  const genreRank = getFieldMatchRank(getMovieGenres(movie), searchTerm);
+
+  if (genreRank) {
+    return 20 + genreRank;
+  }
+
+  return null;
+}
+
+function formatSearchTermForMessage(query: string) {
+  const searchTerm = cleanOption(query);
+  return searchTerm.length > 42 ? `${searchTerm.slice(0, 42)}...` : searchTerm;
 }
 
 function buildNoMoviesMessage({
   hasQuery,
+  query,
   selectedVj,
   selectedGenre,
 }: {
   hasQuery: boolean;
+  query: string;
   selectedVj: string;
   selectedGenre: string;
 }) {
+  if (hasQuery) {
+    return `No movies found matching '${formatSearchTermForMessage(query)}'. Try a different keyword.`;
+  }
+
   if (selectedVj !== FILTER_ALL && selectedGenre !== FILTER_ALL) {
     return 'No movies found for the selected VJ and Genre.';
   }
@@ -154,7 +210,7 @@ function buildNoMoviesMessage({
     return 'No movies found for the selected Genre.';
   }
 
-  return hasQuery ? 'No movies found for your search.' : 'No movies found right now.';
+  return 'No movies found right now.';
 }
 
 function FilterDropdown({
@@ -177,7 +233,7 @@ function FilterDropdown({
   const selectedLabel = value === FILTER_ALL ? 'All' : value;
 
   return (
-    <div className="relative min-w-0 flex-1 md:max-w-[260px]" data-search-filter-menu>
+    <div className="relative z-[120] min-w-0 flex-1 md:max-w-[260px]" data-search-filter-menu>
       <button
         type="button"
         onClick={() => onToggle(kind)}
@@ -201,7 +257,7 @@ function FilterDropdown({
       </button>
 
       <div
-        className={`absolute left-0 top-[calc(100%+0.6rem)] z-[80] w-full overflow-hidden rounded-3xl border border-white/20 bg-[#09101D]/95 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl transition-all duration-300 md:w-[min(34rem,calc(100vw-5rem))] ${
+        className={`absolute left-0 top-[calc(100%+0.6rem)] z-[130] w-full overflow-hidden rounded-3xl border border-white/20 bg-[#09101D]/95 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl transition-all duration-300 md:w-[min(34rem,calc(100vw-5rem))] ${
           isOpen
             ? 'pointer-events-auto translate-y-0 opacity-100'
             : 'pointer-events-none -translate-y-2 opacity-0'
@@ -312,6 +368,7 @@ function SearchSkeletonGrid() {
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedVj, setSelectedVj] = useState(FILTER_ALL);
   const [selectedGenre, setSelectedGenre] = useState(FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<FilterKind | null>(null);
@@ -320,7 +377,14 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const deferredQuery = useDeferredValue(query);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
@@ -401,52 +465,41 @@ export default function SearchPage() {
     }
   }, [selectedGenre, genreOptions]);
 
-  const queryInferredVj = useMemo(
-    () => findMatchingVjOption(deferredQuery, vjOptions),
-    [deferredQuery, vjOptions]
-  );
-  const queryInferredGenre = useMemo(
-    () => findMatchingGenreOption(deferredQuery, genreOptions),
-    [deferredQuery, genreOptions]
-  );
-
-  const activeVj = selectedVj !== FILTER_ALL ? selectedVj : queryInferredVj || FILTER_ALL;
-  const activeGenre =
-    selectedGenre !== FILTER_ALL ? selectedGenre : queryInferredGenre || FILTER_ALL;
-
   const filteredMovies = useMemo(() => {
-    const searchTerm = normalizeForSearch(deferredQuery);
-    const shouldUseTextSearch = Boolean(searchTerm && !queryInferredVj && !queryInferredGenre);
+    const searchTerm = normalizeForSearch(debouncedQuery);
 
-    return allMovies.filter((movie) => {
-      const matchesText =
-        !shouldUseTextSearch ||
-        [
-          movie.title,
-          movie.name,
-          movie.original_title,
-          movie.description,
-          movie.overview,
-          getVjLabel(movie),
-          ...getMovieGenres(movie),
-          ...(movie.tags || []),
-        ]
-          .filter(Boolean)
-          .some((value) => normalizeForSearch(String(value)).includes(searchTerm));
+    return allMovies
+      .map((movie, index) => {
+        const matchesVj =
+          selectedVj === FILTER_ALL || matchesSelectedVj(getVjName(movie), selectedVj);
+        const matchesGenre =
+          selectedGenre === FILTER_ALL ||
+          getMovieGenres(movie).some((genre) => matchesSelectedValue(genre, selectedGenre));
 
-      const matchesVj =
-        activeVj === FILTER_ALL || matchesSelectedVj(getVjName(movie), activeVj);
-      const matchesGenre =
-        activeGenre === FILTER_ALL ||
-        getMovieGenres(movie).some((genre) => matchesSelectedValue(genre, activeGenre));
+        if (!matchesVj || !matchesGenre) {
+          return null;
+        }
 
-      return matchesText && matchesVj && matchesGenre;
-    });
-  }, [activeGenre, activeVj, allMovies, deferredQuery, queryInferredGenre, queryInferredVj]);
+        if (!searchTerm) {
+          return { movie, index, rank: 0 };
+        }
+
+        const rank = getMovieSearchRank(movie, searchTerm);
+
+        if (!rank) {
+          return null;
+        }
+
+        return { movie, index, rank };
+      })
+      .filter((entry): entry is { movie: Movie; index: number; rank: number } => Boolean(entry))
+      .sort((left, right) => left.rank - right.rank || left.index - right.index)
+      .map((entry) => entry.movie);
+  }, [allMovies, debouncedQuery, selectedGenre, selectedVj]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [activeGenre, activeVj, deferredQuery]);
+  }, [debouncedQuery, selectedGenre, selectedVj]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -476,11 +529,12 @@ export default function SearchPage() {
   const visibleMovies = filteredMovies.slice(0, visibleCount);
   const hasActiveFilters =
     query.trim().length > 0 || selectedVj !== FILTER_ALL || selectedGenre !== FILTER_ALL;
-  const isFilteringPending = query !== deferredQuery;
+  const isFilteringPending = query !== debouncedQuery;
   const noMoviesMessage = buildNoMoviesMessage({
     hasQuery: query.trim().length > 0,
-    selectedVj: activeVj,
-    selectedGenre: activeGenre,
+    query,
+    selectedVj,
+    selectedGenre,
   });
 
   const handleToggleFilter = (kind: FilterKind) => {
@@ -499,6 +553,7 @@ export default function SearchPage() {
 
   const handleClearFilters = () => {
     setQuery('');
+    setDebouncedQuery('');
     setSelectedVj(FILTER_ALL);
     setSelectedGenre(FILTER_ALL);
     setOpenFilter(null);
@@ -506,18 +561,7 @@ export default function SearchPage() {
 
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
-    const nextVj = findMatchingVjOption(query, vjOptions);
-    const nextGenre = findMatchingGenreOption(query, genreOptions);
-
-    if (nextVj) {
-      setSelectedVj(nextVj);
-    }
-
-    if (nextGenre) {
-      setSelectedGenre(nextGenre);
-    }
-
+    setDebouncedQuery(query);
     setVisibleCount(PAGE_SIZE);
     setOpenFilter(null);
 
@@ -579,7 +623,7 @@ export default function SearchPage() {
         <div className="absolute right-[-18%] top-[10%] h-[26rem] w-[26rem] rounded-full bg-indigo-500/10 blur-[100px]" />
         <div className="absolute bottom-[-14%] left-[20%] h-[22rem] w-[22rem] rounded-full bg-amber-300/10 blur-[100px]" />
       </div>
-      <section className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#060912]/80 px-4 pb-4 pt-4 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur-2xl md:static md:border-b-0 md:bg-transparent md:px-8 md:pb-2 md:pt-[118px] md:shadow-none lg:px-10">
+      <section className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#060912]/80 px-4 pb-4 pt-4 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur-2xl md:relative md:z-[90] md:border-b-0 md:bg-transparent md:px-8 md:pb-2 md:pt-[118px] md:shadow-none lg:px-10">
         <div className="mx-auto max-w-[1380px]">
           <div className="flex items-center gap-3 md:hidden">
             <Link
@@ -740,9 +784,11 @@ export default function SearchPage() {
             <h3 className="mx-auto mt-5 max-w-xl break-words text-lg font-extrabold leading-7 text-white md:text-xl md:font-black md:leading-8">
               {noMoviesMessage}
             </h3>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-white/60">
-              Try a different VJ, genre, or movie name. The full movie grid returns as soon as you reset the filters.
-            </p>
+            {!query.trim() && (
+              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-white/60">
+                Try a different VJ, genre, or movie name. The full movie grid returns as soon as you reset the filters.
+              </p>
+            )}
           </div>
         ) : (
           <>
