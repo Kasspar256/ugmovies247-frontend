@@ -443,7 +443,7 @@ export default function Home() {
 
     setActiveTrailer({
       url: trailerUrl,
-      title: `${heroMovie.title || heroMovie.name || 'UG Movies 247'} trailer`,
+      title: `${heroMovie.title || heroMovie.name || 'UGMOVIES247'} trailer`,
     });
   };
 
@@ -552,7 +552,7 @@ export default function Home() {
           >
             <img
               src="/logow.png"
-              alt="UG Movies 247"
+              alt="UGMOVIES247"
               className="w-14 h-14 object-cover scale-125 translate-y-2"
             />
           </Link>
@@ -886,17 +886,17 @@ export default function Home() {
       <style jsx global>{`
         @keyframes request-movie-fab-ripple {
           0% {
-            opacity: 0.42;
-            transform: scale(0.72);
+            opacity: 0.72;
+            transform: scale(0.66);
           }
 
-          70% {
-            opacity: 0.12;
+          62% {
+            opacity: 0.24;
           }
 
           100% {
             opacity: 0;
-            transform: scale(1.9);
+            transform: scale(1.72);
           }
         }
 
@@ -920,17 +920,18 @@ export default function Home() {
         .request-movie-fab::after {
           content: '';
           position: absolute;
-          inset: -10px;
+          inset: -8px;
           z-index: -1;
           border-radius: 9999px;
           pointer-events: none;
           background:
-            radial-gradient(circle, rgba(217, 4, 41, 0.3) 0%, rgba(217, 4, 41, 0.16) 44%, rgba(217, 4, 41, 0) 70%),
-            radial-gradient(circle, rgba(255, 58, 92, 0.24) 0%, rgba(255, 58, 92, 0) 68%);
+            radial-gradient(circle, rgba(255, 61, 92, 0.52) 0%, rgba(217, 4, 41, 0.3) 38%, rgba(217, 4, 41, 0.1) 62%, rgba(217, 4, 41, 0) 78%),
+            radial-gradient(circle, rgba(255, 122, 145, 0.34) 0%, rgba(255, 48, 88, 0.16) 48%, rgba(255, 48, 88, 0) 72%);
           box-shadow:
-            0 0 22px rgba(217, 4, 41, 0.28),
-            0 0 44px rgba(217, 4, 41, 0.16);
-          transform: scale(0.72);
+            0 0 22px rgba(255, 31, 72, 0.46),
+            0 0 42px rgba(217, 4, 41, 0.32),
+            0 0 64px rgba(217, 4, 41, 0.14);
+          transform: scale(0.66);
           animation: request-movie-fab-ripple 2.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
           will-change: transform, opacity;
         }
@@ -951,19 +952,21 @@ export default function Home() {
         .request-movie-fab:focus-visible::before,
         .request-movie-fab:focus-visible::after {
           background:
-            radial-gradient(circle, rgba(217, 4, 41, 0.42) 0%, rgba(217, 4, 41, 0.2) 44%, rgba(217, 4, 41, 0) 70%),
-            radial-gradient(circle, rgba(255, 91, 122, 0.3) 0%, rgba(255, 91, 122, 0) 68%);
+            radial-gradient(circle, rgba(255, 78, 112, 0.62) 0%, rgba(217, 4, 41, 0.36) 38%, rgba(217, 4, 41, 0.14) 62%, rgba(217, 4, 41, 0) 78%),
+            radial-gradient(circle, rgba(255, 139, 160, 0.42) 0%, rgba(255, 48, 88, 0.2) 48%, rgba(255, 48, 88, 0) 72%);
           box-shadow:
-            0 0 28px rgba(217, 4, 41, 0.42),
-            0 0 58px rgba(217, 4, 41, 0.22);
+            0 0 28px rgba(255, 31, 72, 0.64),
+            0 0 54px rgba(217, 4, 41, 0.38),
+            0 0 76px rgba(217, 4, 41, 0.18);
         }
 
         .request-movie-fab:hover .request-movie-fab-core,
         .request-movie-fab:focus-visible .request-movie-fab-core {
           --request-fab-scale: 1.06;
           box-shadow:
-            0 12px 28px rgba(217, 4, 41, 0.58),
-            0 0 24px rgba(255, 91, 122, 0.28);
+            0 12px 30px rgba(217, 4, 41, 0.68),
+            0 0 24px rgba(255, 91, 122, 0.4),
+            0 0 42px rgba(217, 4, 41, 0.24);
         }
 
         .request-movie-fab:active .request-movie-fab-core {
@@ -983,7 +986,7 @@ export default function Home() {
         className="request-movie-fab fixed bottom-[calc(7.5rem+env(safe-area-inset-bottom)+0.75rem)] right-4 z-[10000] inline-flex rounded-full group md:bottom-8 md:right-6"
         aria-label="Request a movie"
       >
-        <div className="request-movie-fab-core relative z-10 w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 flex items-center justify-center shadow-[0_10px_25px_rgba(217,4,41,0.45)] ring-1 ring-white/10 backdrop-blur-sm transition-[box-shadow,transform] duration-300">
+        <div className="request-movie-fab-core relative z-10 w-11 h-[38px] md:w-12 md:h-12 rounded-full bg-gradient-to-br from-[#D90429] to-red-700 flex items-center justify-center shadow-[0_12px_30px_rgba(217,4,41,0.62),0_0_26px_rgba(255,48,88,0.32)] ring-1 ring-white/10 backdrop-blur-sm transition-[box-shadow,transform] duration-300">
           <Clapperboard
             className="w-[22px] h-[22px] md:w-[26px] md:h-[26px] text-white"
             strokeWidth={2.2}
@@ -1252,3 +1255,4 @@ const MovieRow = memo(function MovieRow({
     </section>
   );
 });
+
