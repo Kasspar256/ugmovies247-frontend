@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Home, Search, User, Mic2, Film } from 'lucide-react';
+import { Film, Home, Search, Tv2, User } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
@@ -10,8 +10,8 @@ import { isAppInReview } from '@/lib/appReview';
 const MOBILE_NAV_HEIGHT_PX = 64;
 const MOBILE_NAV_PREFETCH_ROUTES = [
   '/browse',
-  '/vjs',
-  '/genres',
+  '/movies',
+  '/series',
   '/search',
   '/profile',
   '/notifications',
@@ -38,8 +38,8 @@ function shouldShowMobileNav(pathname: string) {
 }
 
 function getActiveTab(pathname: string) {
-  if (pathname.startsWith('/vjs')) return 'vjs';
-  if (pathname.startsWith('/genres')) return 'genres';
+  if (pathname.startsWith('/movies')) return 'movies';
+  if (pathname.startsWith('/series')) return 'series';
   if (pathname.startsWith('/search')) return 'search';
 
   if (
@@ -120,11 +120,11 @@ export default function MobileBottomNav() {
       <NavItem href="/browse" label="Home" active={activeTab === 'home'}>
         <Home className="h-6 w-6" strokeWidth={2.8} />
       </NavItem>
-      <NavItem href="/vjs" label="VJs" active={activeTab === 'vjs'}>
-        <Mic2 className="h-6 w-6" strokeWidth={2.8} />
-      </NavItem>
-      <NavItem href="/genres" label="Genres" active={activeTab === 'genres'}>
+      <NavItem href="/movies" label="Movies" active={activeTab === 'movies'}>
         <Film className="h-6 w-6" strokeWidth={2.8} />
+      </NavItem>
+      <NavItem href="/series" label="Series" active={activeTab === 'series'}>
+        <Tv2 className="h-6 w-6" strokeWidth={2.8} />
       </NavItem>
       <NavItem href="/search" label="Search" active={activeTab === 'search'}>
         <Search className="h-6 w-6" strokeWidth={2.8} />

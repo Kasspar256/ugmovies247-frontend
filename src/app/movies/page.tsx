@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
-import { dedupeSeriesMovies } from '@/lib/moviePresentation';
+import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import type { Movie } from '@/types/movie';
 
-const PAGE_TITLE = 'Series';
+const PAGE_TITLE = 'Movies';
 
 function AiModeStyles() {
   return (
@@ -97,8 +97,10 @@ function getVjLabel(movie: Movie) {
   return vj ? `VJ ${vj}` : 'VJ HD';
 }
 
-function getAllSeries(catalog: Movie[]) {
-  return dedupeSeriesMovies(catalog).filter((movie) => movie.contentType === 'series');
+function getStandaloneMovies(catalog: Movie[]) {
+  return dedupeSeriesMovies(catalog).filter(
+    (movie) => movie.contentType === 'movie' && !isSeriesMovie(movie)
+  );
 }
 
 function CatalogSkeletonGrid() {
@@ -118,14 +120,14 @@ function CatalogSkeletonGrid() {
   );
 }
 
-function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) {
+function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
   return (
-    <Link href={`/movie/${series.id}`} className="group min-w-0">
+    <Link href={`/movie/${movie.id}`} className="group min-w-0">
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
-        {series.poster ? (
+        {movie.poster ? (
           <img
-            src={getOptimizedArtworkUrl(series.poster, 'card')}
-            alt={series.title}
+            src={getOptimizedArtworkUrl(movie.poster, 'card')}
+            alt={movie.title}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
@@ -142,7 +144,7 @@ function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) 
         )}
 
         <div className="absolute left-0 top-0 z-10 max-w-[76%] rounded-br-lg bg-[#D90429] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white shadow-[2px_2px_10px_rgba(0,0,0,0.5)] md:text-[9px]">
-          <span className="block truncate">{getVjLabel(series)}</span>
+          <span className="block truncate">{getVjLabel(movie)}</span>
         </div>
       </div>
 
@@ -155,40 +157,40 @@ function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) 
             WebkitLineClamp: 2,
           }}
         >
-          {series.title}
+          {movie.title}
         </h3>
       </div>
     </Link>
   );
 }
 
-export default function SeriesDirectoryPage() {
-  const [series, setSeries] = useState<Movie[]>([]);
+export default function MoviesPage() {
+  const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    const cachedSeries = getAllSeries(readCachedPublicMovies());
+    const cachedMovies = getStandaloneMovies(readCachedPublicMovies());
 
-    if (cachedSeries.length) {
-      setSeries(cachedSeries);
+    if (cachedMovies.length) {
+      setMovies(cachedMovies);
       setLoading(false);
     }
 
-    const loadSeries = async () => {
+    const loadMovies = async () => {
       try {
         const catalog = await fetchPublicMovies({ force: true });
-        setSeries(getAllSeries(catalog));
+        setMovies(getStandaloneMovies(catalog));
         setLoadError('');
       } catch (error) {
-        console.error('[series-page] failed to load series catalog', error);
-        setLoadError('We could not refresh the series right now. Showing any cached series available.');
+        console.error('[movies-page] failed to load movie catalog', error);
+        setLoadError('We could not refresh the movies right now. Showing any cached movies available.');
       } finally {
         setLoading(false);
       }
     };
 
-    void loadSeries();
+    void loadMovies();
   }, []);
 
   return (
@@ -203,7 +205,7 @@ export default function SeriesDirectoryPage() {
 
       <MobilePageHeader
         title={PAGE_TITLE}
-        subtitle="Browse series only"
+        subtitle="Browse standalone movies"
         fallbackHref="/browse"
         actionHref="/search"
         actionIcon={<SearchIcon size={18} />}
@@ -215,10 +217,10 @@ export default function SeriesDirectoryPage() {
         <header className="mb-6 hidden items-start justify-between gap-6 md:flex">
           <div>
             <h1 className="text-4xl font-black uppercase tracking-[0.18em] text-white">
-              Series
+              Movies
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-white/55">
-              Browse your favorite series. Standalone movies stay in the Movies section.
+              Browse standalone movies only. Series and episodes stay in the Series section.
             </p>
           </div>
           <AskAiButton />
@@ -230,21 +232,21 @@ export default function SeriesDirectoryPage() {
           </div>
         )}
 
-        {loading && !series.length ? (
+        {loading && !movies.length ? (
           <CatalogSkeletonGrid />
-        ) : series.length === 0 ? (
+        ) : movies.length === 0 ? (
           <div className="rounded-[32px] border border-white/10 bg-white/[0.06] p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl md:p-12">
             <h2 className="text-lg font-black text-white md:text-xl">
-              No series found right now.
+              No movies found right now.
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-white/60">
-              Series will appear here as soon as they are available.
+              Standalone movies will appear here as soon as they are available.
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
-            {series.map((item, index) => (
-              <SeriesCard key={item.id} series={item} priority={index < 18} />
+            {movies.map((movie, index) => (
+              <CatalogMovieCard key={movie.id} movie={movie} priority={index < 18} />
             ))}
           </div>
         )}

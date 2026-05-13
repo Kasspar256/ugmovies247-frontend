@@ -13,6 +13,7 @@ type MobilePageHeaderProps = {
   actionLabel?: string;
   actionIcon?: ReactNode;
   actionAriaLabel?: string;
+  inlineAction?: ReactNode;
   tone?: 'dark' | 'light';
 };
 
@@ -25,6 +26,7 @@ export default function MobilePageHeader({
   actionLabel,
   actionIcon,
   actionAriaLabel,
+  inlineAction,
   tone = 'dark',
 }: MobilePageHeaderProps) {
   const isLight = tone === 'light';
@@ -63,6 +65,7 @@ export default function MobilePageHeader({
               </p>
             ) : null}
           </div>
+          {inlineAction ? <div className="flex-shrink-0">{inlineAction}</div> : null}
         </div>
 
         {actionHref && (actionLabel || actionIcon) ? (

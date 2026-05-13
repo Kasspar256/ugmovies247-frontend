@@ -623,7 +623,7 @@ export default function SearchPage() {
         <div className="absolute right-[-18%] top-[10%] h-[26rem] w-[26rem] rounded-full bg-indigo-500/10 blur-[100px]" />
         <div className="absolute bottom-[-14%] left-[20%] h-[22rem] w-[22rem] rounded-full bg-amber-300/10 blur-[100px]" />
       </div>
-      <section className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#060912]/80 px-4 pb-4 pt-4 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur-2xl md:relative md:z-[90] md:border-b-0 md:bg-transparent md:px-8 md:pb-2 md:pt-[118px] md:shadow-none lg:px-10">
+      <section className="sticky top-0 z-40 border-b border-white/[0.08] bg-[#060912]/80 px-4 pb-4 pt-4 shadow-[0_16px_45px_rgba(0,0,0,0.28)] backdrop-blur-2xl md:relative md:z-[50] md:border-b-0 md:bg-transparent md:px-8 md:pb-2 md:pt-[118px] md:shadow-none md:backdrop-blur-none lg:px-10">
         <div className="mx-auto max-w-[1380px]">
           <div className="flex items-center gap-3 md:hidden">
             <Link

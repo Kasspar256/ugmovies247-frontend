@@ -46,8 +46,8 @@ function isActivePath(pathname: string, href: string) {
 
 const PRIMARY_LINKS = [
   { href: '/browse', label: 'Home' },
-  { href: '/vjs', label: 'VJs' },
-  { href: '/genres', label: 'Genres' },
+  { href: '/movies', label: 'Movies' },
+  { href: '/series', label: 'Series' },
   { href: '/search', label: 'Search' },
 ];
 
@@ -59,7 +59,7 @@ const QUICK_ACTIONS = [
       : [{ href: '/downloads', label: 'Downloads', icon: Download }]
   ),
 ];
-const DESKTOP_PREFETCH_ROUTES = ['/browse', '/vjs', '/genres', '/search', '/profile', '/notifications', '/downloads'];
+const DESKTOP_PREFETCH_ROUTES = ['/browse', '/movies', '/series', '/search', '/profile', '/notifications', '/downloads'];
 const DESKTOP_SAFE_PREFETCH_ROUTES = isAppInReview
   ? DESKTOP_PREFETCH_ROUTES.filter((href) => href !== '/downloads')
   : DESKTOP_PREFETCH_ROUTES;
