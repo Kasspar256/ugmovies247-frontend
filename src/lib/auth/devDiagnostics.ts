@@ -38,6 +38,8 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
     case 'auth/popup-blocked':
       return 'The Google sign-in popup was blocked. Allow popups or retry and the app will redirect you to Google.';
     case 'auth/popup-closed-by-user':
+    case 'auth/user-cancelled':
+    case 'auth/cancelled-popup-request':
       return 'Google sign-in was closed before it finished.';
     case 'auth/unauthorized-domain':
       return 'This domain is not authorized for Google sign-in in Firebase Authentication settings.';
@@ -52,6 +54,10 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
 
       if (/no credentials available|no credential/i.test(message)) {
         return 'Google did not return an account on this device. Try Google again and choose an account, or sign in with email below.';
+      }
+
+      if (/idp denied access|user refuses|user denied|permission|user-cancelled|cancelled/i.test(message)) {
+        return 'Google sign-in was cancelled. You can try again whenever you are ready.';
       }
 
       if (/maximum number of allowed devices|maximum number of devices/i.test(message)) {
@@ -105,4 +111,3 @@ export function getAuthDevDiagnostics(error: unknown) {
 
   return diagnostics;
 }
-
