@@ -147,19 +147,19 @@ export default function LandingPage() {
           <Link href="/" className="flex items-center lg:-translate-y-2">
             <img
               src="/logo2_clean_transparent.png"
-              alt="UG Movies 247"
+              alt="UGMOVIES247"
               className="h-[102px] w-auto max-w-none object-contain sm:h-[122px] lg:h-[136px]"
             />
           </Link>
 
           <div className="mt-3 flex items-center gap-2 sm:gap-3">
             <PublicLandingMenu />
-            <Link
+            <a
               href={signInHref}
               className="inline-flex min-h-[44px] items-center justify-center rounded-[18px] bg-white/18 px-4 text-[0.96rem] font-black tracking-[0.01em] text-white shadow-[0_16px_38px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-white/26 sm:min-h-[48px] sm:px-5"
             >
               Sign In
-            </Link>
+            </a>
           </div>
         </div>
       </header>
@@ -184,18 +184,18 @@ export default function LandingPage() {
             <div className="rounded-[30px] border border-white/18 bg-white/[0.045] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-[18px] sm:p-6">
               <p className="text-center text-[1.05rem] leading-8 text-white/84 sm:text-[1.15rem]">
                 {isAppInReview
-                  ? 'Create your UG Movies 247 account to browse movie details, VJ categories, trailers, and curated discovery lists.'
-                  : 'Create your UG Movies 247 account and start streaming with a smoother premium experience.'}
+                  ? 'Create your UGMOVIES247 account to browse movie details, VJ categories, trailers, and curated discovery lists.'
+                  : 'Create your UGMOVIES247 account and start streaming with a smoother premium experience.'}
               </p>
 
               <div className="mt-5">
-                <Link
+                <a
                   href={getStartedHref}
                   className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-[#D90429] px-5 py-3 text-sm font-black uppercase tracking-[0.22em] text-white transition-colors hover:bg-[#ef163b]"
                 >
                   Get Started
                   <ArrowRight size={18} strokeWidth={2.6} />
-                </Link>
+                </a>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.82rem] font-semibold text-white/68">
