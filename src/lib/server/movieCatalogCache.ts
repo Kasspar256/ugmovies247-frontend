@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { FIRESTORE_ENV_NAMESPACE } from './firestoreNamespaces';
 
-export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60;
+export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 export const MOVIE_CACHE_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
 export const MOVIE_CACHE_PATH = path.join(
   process.cwd(),
