@@ -11,6 +11,7 @@ import {
   continueWithGoogle,
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
+  hasPendingGoogleRedirectSignIn,
   loginWithEmailPassword,
 } from '@/lib/auth/client';
 
@@ -36,8 +37,8 @@ export default function LoginPage() {
   const sessionReason = useMemo(() => searchParams.get('reason') || '', [searchParams]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [sessionNotice, setSessionNotice] = useState('');
@@ -66,6 +67,10 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
+      if (!hasPendingGoogleRedirectSignIn()) {
+        return;
+      }
+
       setGoogleLoading(true);
 
       try {
@@ -171,7 +176,7 @@ export default function LoginPage() {
               <div className="m-0 flex h-[120px] items-center justify-center overflow-hidden py-1 sm:h-[138px]">
                 <img
                   src="/logow.png"
-                  alt="UG Movies 247"
+                  alt="UGMOVIES247"
                   className="h-[116px] w-auto max-w-none scale-[2.1] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.42)] sm:h-[136px] sm:scale-[2.25]"
                 />
               </div>
@@ -255,19 +260,15 @@ export default function LoginPage() {
               </label>
 
               <div className="flex items-center justify-between gap-4 pt-1">
-                <label className="inline-flex items-center gap-2 text-sm text-white/70">
+                <label className="flex items-center gap-3 text-sm text-white/80">
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(event) => {
-                      clearFeedback();
-                      setRememberMe(event.target.checked);
-                    }}
-                    className="h-4 w-4 accent-[#D90429]"
+                    onChange={(event) => setRememberMe(event.target.checked)}
+                    className="h-5 w-5 rounded border-white/15 bg-white/5 accent-[#D90429]"
                   />
-                  Remember me
+                  <span>Remember me</span>
                 </label>
-
                 <Link
                   href={`/forgot-password?redirect=${encodeURIComponent(redirectTarget)}`}
                   className="text-sm font-semibold text-[#D90429] hover:text-white"

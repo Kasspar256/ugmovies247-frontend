@@ -32,6 +32,7 @@ const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
 const GOOGLE_REDIRECT_COOKIE = 'ugmovies247_google_redirect';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
 const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 12000;
+const GOOGLE_REDIRECT_MARKER_MAX_AGE_MS = 10 * 60 * 1000;
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -72,6 +73,43 @@ function clearGoogleRedirectCookie() {
     typeof window !== 'undefined' && window.location.protocol === 'https:' ? '; Secure' : '';
 
   document.cookie = `${GOOGLE_REDIRECT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secureAttribute}`;
+}
+
+function serializeGooglePreference(value: boolean) {
+  return `${value ? '1' : '0'}:${Date.now()}`;
+}
+
+function parseGooglePreferenceMarker(rawValue: string | null) {
+  if (!rawValue) {
+    return null;
+  }
+
+  const [rememberValue, createdAtValue] = rawValue.split(':');
+  const rememberMe = rememberValue === '0' ? false : rememberValue === '1' ? true : null;
+
+  if (rememberMe === null) {
+    return null;
+  }
+
+  if (!createdAtValue) {
+    return {
+      rememberMe,
+      isFresh: false,
+      isLegacy: true,
+    };
+  }
+
+  const createdAt = Number(createdAtValue);
+  const isFresh =
+    Number.isFinite(createdAt) &&
+    createdAt > 0 &&
+    Date.now() - createdAt <= GOOGLE_REDIRECT_MARKER_MAX_AGE_MS;
+
+  return {
+    rememberMe,
+    isFresh,
+    isLegacy: false,
+  };
 }
 
 function buildOptimisticAuthStatus(fallbackUser: {
@@ -266,7 +304,7 @@ function rememberGooglePreference(value: boolean) {
     return;
   }
 
-  const serializedValue = value ? '1' : '0';
+  const serializedValue = serializeGooglePreference(value);
   setGoogleRedirectCookie(serializedValue);
 
   try {
@@ -291,42 +329,49 @@ function consumeGooglePreference(defaultValue = true) {
     return defaultValue;
   }
 
-  let stored: string | null = null;
+  const storedValues: Array<{ value: string | null; source: 'storage' | 'cookie' }> = [];
 
   try {
-    stored = window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY);
+    storedValues.push({
+      value: window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY),
+      source: 'storage',
+    });
     window.sessionStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
   } catch {
-    stored = null;
+    // Ignore storage failures and continue with other markers.
   }
 
-  if (stored === null && canUseLocalStorage()) {
+  if (canUseLocalStorage()) {
     try {
-      stored = window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY);
+      storedValues.push({
+        value: window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY),
+        source: 'storage',
+      });
       window.localStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
     } catch {
-      stored = null;
-    }
-  } else if (canUseLocalStorage()) {
-    try {
-      window.localStorage.removeItem(GOOGLE_REMEMBER_ME_KEY);
-    } catch {
-      // Ignore cleanup failures.
+      // Ignore storage failures and continue with cookie marker.
     }
   }
 
-  if (stored === null) {
-    stored = readGoogleRedirectCookie();
-  }
+  storedValues.push({ value: readGoogleRedirectCookie(), source: 'cookie' });
 
   clearGoogleRedirectCookie();
 
-  if (stored === '0') {
-    return false;
+  for (const storedValue of storedValues) {
+    const marker = parseGooglePreferenceMarker(storedValue.value);
+
+    if (marker?.isFresh) {
+      return marker.rememberMe;
+    }
   }
 
-  if (stored === '1') {
-    return true;
+  const legacyCookieMarker = storedValues
+    .filter((storedValue) => storedValue.source === 'cookie')
+    .map((storedValue) => parseGooglePreferenceMarker(storedValue.value))
+    .find((marker) => marker?.isLegacy);
+
+  if (legacyCookieMarker) {
+    return legacyCookieMarker.rememberMe;
   }
 
   return defaultValue;
@@ -410,26 +455,51 @@ export function hasPendingGoogleRedirectSignIn() {
     return false;
   }
 
+  let foundStaleMarker = false;
+
   try {
-    if (window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null) {
+    const sessionMarker = parseGooglePreferenceMarker(
+      window.sessionStorage.getItem(GOOGLE_REMEMBER_ME_KEY)
+    );
+
+    if (sessionMarker?.isFresh) {
       return true;
     }
+
+    foundStaleMarker = foundStaleMarker || Boolean(sessionMarker);
   } catch {
     // Ignore session storage failures and check local storage below.
   }
 
-  if (!canUseLocalStorage()) {
-    return readGoogleRedirectCookie() !== null;
+  const cookieMarker = parseGooglePreferenceMarker(readGoogleRedirectCookie());
+
+  if (cookieMarker?.isFresh || cookieMarker?.isLegacy) {
+    return true;
   }
 
-  try {
-    return (
-      window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY) !== null ||
-      readGoogleRedirectCookie() !== null
-    );
-  } catch {
-    return readGoogleRedirectCookie() !== null;
+  foundStaleMarker = foundStaleMarker || Boolean(cookieMarker);
+
+  if (canUseLocalStorage()) {
+    try {
+      const localMarker = parseGooglePreferenceMarker(
+        window.localStorage.getItem(GOOGLE_REMEMBER_ME_KEY)
+      );
+
+      if (localMarker?.isFresh) {
+        return true;
+      }
+
+      foundStaleMarker = foundStaleMarker || Boolean(localMarker);
+    } catch {
+      // Ignore local storage failures and rely on cookie/session markers.
+    }
   }
+
+  if (foundStaleMarker) {
+    clearGooglePreference();
+  }
+
+  return false;
 }
 
 async function createSessionFromIdToken(options: {
@@ -497,55 +567,6 @@ function createGoogleProvider() {
   return provider;
 }
 
-async function signInWithNativeGoogle(rememberMe: boolean) {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const capacitorModule = await import('@capacitor/core').catch(() => null);
-
-  if (!capacitorModule?.Capacitor?.isNativePlatform?.()) {
-    return null;
-  }
-
-  const authModule = await import('@capacitor-firebase/authentication').catch(() => null);
-  const FirebaseAuthentication = authModule?.FirebaseAuthentication;
-
-  if (!FirebaseAuthentication) {
-    return null;
-  }
-
-  try {
-    await FirebaseAuthentication.signInWithGoogle({
-      useCredentialManager: false,
-    });
-
-    const [{ token }, { user }] = await Promise.all([
-      FirebaseAuthentication.getIdToken({ forceRefresh: true }),
-      FirebaseAuthentication.getCurrentUser().catch(() => ({ user: null })),
-    ]);
-
-    if (!token) {
-      const error = new Error('Google sign-in did not return a secure Firebase token.') as Error & {
-        code?: string;
-      };
-      error.code = 'auth/native-google-token-missing';
-      throw error;
-    }
-
-    const session = await createSessionFromIdToken({
-      idToken: token,
-      name: user?.displayName || '',
-      email: user?.email || '',
-      rememberMe,
-    });
-
-    return { session, redirected: false as const };
-  } finally {
-    await FirebaseAuthentication.signOut().catch(() => undefined);
-  }
-}
-
 export async function loginWithEmailPassword(
   email: string,
   password: string,
@@ -603,12 +624,6 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   rememberGooglePreference(rememberMe);
 
   try {
-    const nativeResult = await signInWithNativeGoogle(rememberMe);
-
-    if (nativeResult) {
-      return nativeResult;
-    }
-
     const result = await signInWithPopup(auth, provider);
     return syncGoogleUserToSession(result.user, rememberMe);
   } catch (error) {

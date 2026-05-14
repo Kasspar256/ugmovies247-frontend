@@ -11,6 +11,7 @@ import {
   continueWithGoogle,
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
+  hasPendingGoogleRedirectSignIn,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
 
@@ -42,6 +43,10 @@ export default function SignupPage() {
     let active = true;
 
     const finishRedirectSignup = async () => {
+      if (!hasPendingGoogleRedirectSignIn()) {
+        return;
+      }
+
       setGoogleLoading(true);
 
       try {
@@ -166,7 +171,7 @@ export default function SignupPage() {
               <div className="m-0 flex h-[120px] items-center justify-center overflow-hidden py-1 sm:h-[138px]">
                 <img
                   src="/logow.png"
-                  alt="UG Movies 247"
+                  alt="UGMOVIES247"
                   className="h-[116px] w-auto max-w-none scale-[2.1] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.42)] sm:h-[136px] sm:scale-[2.25]"
                 />
               </div>
