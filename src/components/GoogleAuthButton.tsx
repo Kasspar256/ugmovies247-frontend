@@ -20,11 +20,22 @@ export default function GoogleAuthButton({
       type="button"
       onClick={() => void onClick()}
       disabled={disabled || loading}
-      className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-[#11141C] shadow-[0_18px_35px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#F4F6F8] disabled:cursor-not-allowed disabled:bg-white/70"
+      aria-busy={loading}
+      className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-[#11141C] shadow-[0_18px_35px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#F4F6F8] disabled:cursor-wait disabled:bg-white/70"
     >
       <GoogleMark />
       <span>{loading ? loadingLabel : idleLabel}</span>
+      {loading ? <GoogleAuthSpinner /> : null}
     </button>
+  );
+}
+
+function GoogleAuthSpinner() {
+  return (
+    <span
+      className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-[#11141C]/20 border-t-[#11141C]"
+      aria-hidden="true"
+    />
   );
 }
 
