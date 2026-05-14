@@ -11,11 +11,12 @@ import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
-import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
+import { getNativeFirebaseAuthentication, isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import {
   GoogleAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
   signOut,
@@ -580,6 +581,59 @@ function createGoogleProvider() {
   return provider;
 }
 
+function buildNativeGoogleUnavailableError() {
+  const error = new Error(
+    'Google sign-in needs the latest app update on this device. Please use email sign-in for now, or update the app and try again.'
+  ) as Error & { code?: string };
+  error.code = 'auth/native-google-unavailable';
+  return error;
+}
+
+async function continueWithNativeGoogle(rememberMe: boolean) {
+  const nativeFirebaseAuthentication = getNativeFirebaseAuthentication();
+
+  if (!nativeFirebaseAuthentication?.signInWithGoogle) {
+    throw buildNativeGoogleUnavailableError();
+  }
+
+  try {
+    const result = await nativeFirebaseAuthentication.signInWithGoogle();
+    const firebaseIdTokenResult = await nativeFirebaseAuthentication.getIdToken?.();
+    const firebaseIdToken =
+      typeof firebaseIdTokenResult?.token === 'string' ? firebaseIdTokenResult.token : '';
+
+    if (firebaseIdToken) {
+      const session = await createSessionFromIdToken({
+        idToken: firebaseIdToken,
+        name: result?.user?.displayName || '',
+        email: result?.user?.email || '',
+        rememberMe,
+      });
+
+      return { session, redirected: false as const };
+    }
+
+    const googleIdToken =
+      typeof result?.credential?.idToken === 'string' ? result.credential.idToken : '';
+    const googleAccessToken =
+      typeof result?.credential?.accessToken === 'string' ? result.credential.accessToken : '';
+
+    if (googleIdToken || googleAccessToken) {
+      const credential = GoogleAuthProvider.credential(
+        googleIdToken || null,
+        googleAccessToken || null
+      );
+      const credentialResult = await signInWithCredential(auth, credential);
+      return syncGoogleUserToSession(credentialResult.user, rememberMe);
+    }
+
+    throw buildNativeGoogleUnavailableError();
+  } finally {
+    clearGooglePreference();
+    await nativeFirebaseAuthentication.signOut?.().catch(() => undefined);
+  }
+}
+
 export async function loginWithEmailPassword(
   email: string,
   password: string,
@@ -637,6 +691,10 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   rememberGooglePreference(rememberMe);
 
   try {
+    if (isNativeAndroidApp()) {
+      return continueWithNativeGoogle(rememberMe);
+    }
+
     const result = await signInWithPopup(auth, provider);
     return syncGoogleUserToSession(result.user, rememberMe);
   } catch (error) {

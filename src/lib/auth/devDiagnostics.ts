@@ -37,6 +37,8 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
       return 'This sign-in method is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
     case 'auth/popup-blocked':
       return 'Google sign-in could not open on this device. Please try again, or use email sign-in below.';
+    case 'auth/native-google-unavailable':
+      return 'Google sign-in needs the latest app update on this device. Please use email sign-in for now, or update the app and try again.';
     case 'auth/popup-closed-by-user':
     case 'auth/user-cancelled':
     case 'auth/redirect-cancelled-by-user':
