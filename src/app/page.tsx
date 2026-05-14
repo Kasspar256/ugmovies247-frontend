@@ -154,12 +154,12 @@ export default function LandingPage() {
 
           <div className="mt-3 flex items-center gap-2 sm:gap-3">
             <PublicLandingMenu />
-            <a
+            <Link
               href={signInHref}
               className="inline-flex min-h-[44px] items-center justify-center rounded-[18px] bg-white/18 px-4 text-[0.96rem] font-black tracking-[0.01em] text-white shadow-[0_16px_38px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-white/26 sm:min-h-[48px] sm:px-5"
             >
               Sign In
-            </a>
+            </Link>
           </div>
         </div>
       </header>
@@ -189,13 +189,13 @@ export default function LandingPage() {
               </p>
 
               <div className="mt-5">
-                <a
+                <Link
                   href={getStartedHref}
                   className="inline-flex min-h-[54px] w-full items-center justify-center gap-2 rounded-2xl bg-[#D90429] px-5 py-3 text-sm font-black uppercase tracking-[0.22em] text-white transition-colors hover:bg-[#ef163b]"
                 >
                   Get Started
                   <ArrowRight size={18} strokeWidth={2.6} />
-                </a>
+                </Link>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.82rem] font-semibold text-white/68">

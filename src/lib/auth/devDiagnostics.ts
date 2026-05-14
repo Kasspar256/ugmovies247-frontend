@@ -36,7 +36,7 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
     case 'auth/operation-not-allowed':
       return 'This sign-in method is disabled for the active Firebase project. Enable it in Firebase Console > Authentication > Sign-in method.';
     case 'auth/popup-blocked':
-      return 'The Google sign-in popup was blocked. Allow popups or retry and the app will redirect you to Google.';
+      return 'Google sign-in could not open on this device. Please try again, or use email sign-in below.';
     case 'auth/popup-closed-by-user':
     case 'auth/user-cancelled':
     case 'auth/redirect-cancelled-by-user':
@@ -59,6 +59,10 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
 
       if (/idp denied access|user refuses|user denied|permission|user-cancelled|cancelled/i.test(message)) {
         return 'Google sign-in was cancelled. You can try again whenever you are ready.';
+      }
+
+      if (/missing initial state|sessionStorage|signInWithRedirect|storage-partitioned/i.test(message)) {
+        return 'Google sign-in could not be completed in this browser session. Please return to the app and try again.';
       }
 
       if (/maximum number of allowed devices|maximum number of devices/i.test(message)) {

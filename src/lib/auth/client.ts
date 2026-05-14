@@ -11,6 +11,7 @@ import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import {
   GoogleAuthProvider,
   getRedirectResult,
@@ -549,6 +550,10 @@ async function syncGoogleUserToSession(user: User, rememberMe: boolean) {
 }
 
 function shouldFallbackToRedirect(error: unknown) {
+  if (isNativeAndroidApp() || isMobileBrowser()) {
+    return false;
+  }
+
   const code = getFirebaseErrorCode(error);
   const message = getFirebaseErrorMessage(error);
 
@@ -559,6 +564,14 @@ function shouldFallbackToRedirect(error: unknown) {
     code === 'auth/operation-not-supported-in-this-environment' ||
     /doesn'?t support credential manager|credential manager|no credentials available|no credential/i.test(message)
   );
+}
+
+function isMobileBrowser() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
 function createGoogleProvider() {
