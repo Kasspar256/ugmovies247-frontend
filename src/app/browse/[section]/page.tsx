@@ -29,8 +29,9 @@ export default function BrowseSectionPage() {
 
     const loadSectionData = async () => {
       try {
+        const shouldRefreshEntitlement = readCachedPublicMovies().length === 0;
         const [nextMovies, categoryResponse] = await Promise.all([
-          fetchPublicMovies({ force: true, refreshEntitlement: true }),
+          fetchPublicMovies({ refreshEntitlement: shouldRefreshEntitlement }),
           fetch('/api/categories/home', {
             cache: 'no-store',
           }).catch(() => null),

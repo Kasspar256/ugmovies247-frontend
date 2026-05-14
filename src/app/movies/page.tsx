@@ -178,7 +178,7 @@ export default function MoviesPage() {
 
     const loadMovies = async () => {
       try {
-        const catalog = await fetchPublicMovies({ force: true });
+        const catalog = await fetchPublicMovies();
         setMovies(getStandaloneMovies(catalog));
         setLoadError('');
       } catch (error) {

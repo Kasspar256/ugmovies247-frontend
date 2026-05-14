@@ -396,7 +396,7 @@ export default function SearchPage() {
 
     const fetchMovies = async () => {
       try {
-        const data = dedupeSeriesMovies(await fetchPublicMovies({ force: true }));
+        const data = dedupeSeriesMovies(await fetchPublicMovies());
         setAllMovies(data);
         setLoadError('');
       } catch (err) {
@@ -633,7 +633,7 @@ export default function SearchPage() {
             >
               <img
                 src="/logow.png"
-                alt="UG Movies 247"
+                alt="UGMOVIES247"
                 className="h-14 w-14 translate-y-2 scale-125 object-cover"
               />
             </Link>

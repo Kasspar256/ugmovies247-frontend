@@ -133,7 +133,7 @@ setIsTrailerPlaying(false);
 useEffect(() => {
 const fetchMovie = async () => {
 try {
-const allMovies = await fetchPublicMovies({ force: true });
+const allMovies = await fetchPublicMovies();
 
 const loadMergedSeriesMovie = async (initialMovie: Movie) => {
   if (!isSeriesMovie(initialMovie)) {
@@ -597,7 +597,7 @@ useLayoutEffect(() => {
     playbackType,
     autoplay: shouldAutoplay,
     poster: playbackPoster,
-    title: playbackTitle || movie.title || movie.name || 'UG Movies 247',
+    title: playbackTitle || movie.title || movie.name || 'UGMOVIES247',
     description: playbackDescription,
     watchHref: currentMovieHref,
   });
@@ -770,8 +770,8 @@ const handleShare = async () => {
       : `/movie/${movie.movieId || movie.id}`;
   const shareUrl = `${window.location.origin}${shareTarget}`;
   const shareData = {
-    title: movie.title || movie.name || 'UGMovies247',
-    text: `${isAppInReview ? 'Discover' : 'Watch'} ${movie.title || movie.name || 'this movie'} on UGMovies247`,
+    title: movie.title || movie.name || 'UGMOVIES247',
+    text: `${isAppInReview ? 'Discover' : 'Watch'} ${movie.title || movie.name || 'this movie'} on UGMOVIES247`,
     url: shareUrl,
   };
 
@@ -828,7 +828,7 @@ const handleCast = async () => {
     const message = await startCasting({
       videoElement,
       playbackUrl: castPlaybackUrl || playbackVideoUrl,
-      title: playbackTitle || movie?.title || movie?.name || 'UG Movies 247',
+      title: playbackTitle || movie?.title || movie?.name || 'UGMOVIES247',
       poster: playbackPoster,
       playbackType,
     });
@@ -867,7 +867,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         >
           <img
             src="/logow.png"
-            alt="UG Movies 247"
+            alt="UGMOVIES247"
             className="w-14 h-14 object-cover scale-125 translate-y-2"
           />
         </Link>
@@ -903,7 +903,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
       <div className="absolute inset-0 z-20 bg-black">
         <TrailerEmbedPlayer
           trailerUrl={reviewTrailerUrl}
-          title={`${playbackTitle || movie.title || movie.name || 'UG Movies 247'} trailer`}
+          title={`${playbackTitle || movie.title || movie.name || 'UGMOVIES247'} trailer`}
           autoplay
           fill
         />
@@ -935,7 +935,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           <>
             <img
               src={playbackPoster}
-              alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UG Movies 247`}
+              alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UGMOVIES247`}
               className="absolute inset-0 h-full w-full object-contain object-top"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/18 to-black/36" />
@@ -1095,7 +1095,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
     </p>
 
     <p className="mb-6 text-sm leading-7 text-white/62">
-      {isAppInReview ? 'Discover' : 'Watch'} {playbackTitle} on UG Movies 247, featuring {playbackGenreLabel} entertainment and {playbackVjLabel} translation for Uganda movie fans, Luganda translated movie lovers, and VJ movie audiences.
+      {isAppInReview ? 'Discover' : 'Watch'} {playbackTitle} on UGMOVIES247, featuring {playbackGenreLabel} entertainment and {playbackVjLabel} translation for Uganda movie fans, Luganda translated movie lovers, and VJ movie audiences.
     </p>
 
     {movie.contentType !== 'series' && movie.parts && movie.parts.length > 0 && (
@@ -1242,7 +1242,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 )}
                 <img
                   src={relatedMovie.poster}
-                  alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UG Movies 247`}
+                  alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UGMOVIES247`}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
               </div>
