@@ -711,11 +711,6 @@ async function inspectImportedMp4(localSourcePath: string) {
     );
   }
 
-  if (!isSupportedInputMp4Format(inspection.formatName || '')) {
-    throw new Error(
-      `The downloaded source was not a usable MP4 container. Detected format: ${inspection.formatName || 'unknown'}. Only direct MP4 links are supported right now.`
-    );
-  }
 
   return inspection;
 }
