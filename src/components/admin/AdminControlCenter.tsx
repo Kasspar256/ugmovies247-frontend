@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Clapperboard,
@@ -16,7 +17,9 @@ import {
   RefreshCw,
   ShieldCheck,
   Tags,
+  Trash2,
   Users,
+  X,
 } from 'lucide-react';
 import type {
   AdminCategory,
@@ -69,6 +72,11 @@ type ResolvedVideoSource = {
   sourceFileName: string;
   fileSizeBytes: number;
   sourceType: 'direct_upload' | 'remote_link' | 'direct_url';
+};
+
+type DeleteMovieTarget = {
+  movieId: string;
+  title: string;
 };
 
 const EMPTY_ADMIN_REVENUE: AdminControlCenterPayload['revenue'] = {
@@ -149,6 +157,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
   const [actionBusy, setActionBusy] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [deleteMovieTarget, setDeleteMovieTarget] = useState<DeleteMovieTarget | null>(null);
 
   const [editingMovieId, setEditingMovieId] = useState('');
   const [editingSeriesId, setEditingSeriesId] = useState('');
@@ -858,7 +867,22 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     }
   };
 
-  const handleDeleteMovie = async (movieId: string, title: string) => {
+  const handleDeleteMovie = (movieId: string, title: string) => {
+    if (actionBusy) {
+      return;
+    }
+
+    setErrorMessage('');
+    setStatusMessage('');
+    setDeleteMovieTarget({ movieId, title });
+  };
+
+  const confirmDeleteMovie = async () => {
+    if (!deleteMovieTarget) {
+      return;
+    }
+
+    const { movieId, title } = deleteMovieTarget;
     setActionBusy(true);
     setErrorMessage('');
     setStatusMessage('');
@@ -882,6 +906,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       }
 
       setStatusMessage(`Deleted "${title}".`);
+      setDeleteMovieTarget(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to delete movie.');
     } finally {
@@ -1318,7 +1343,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 Admin Control Center
               </div>
               <h1 className="mt-3 text-3xl font-black uppercase tracking-[0.14em] text-white md:text-4xl">
-                UG Movies 247
+                UGMOVIES247
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-white/65">
                 Direct MP4 publishing for movies, long multi-part titles, series seasons and
@@ -1573,6 +1598,72 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           </section>
         )}
       </div>
+
+      {deleteMovieTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-movie-title"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 px-4"
+        >
+          <div className="w-full max-w-lg rounded-[30px] border border-red-500/25 bg-[#11141C] p-6 shadow-[0_28px_70px_rgba(0,0,0,0.55)]">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-red-500/25 bg-red-500/10 text-red-100">
+                  <AlertTriangle size={22} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.24em] text-red-100/70">
+                    Confirm Delete
+                  </div>
+                  <h3 id="delete-movie-title" className="mt-2 text-xl font-black text-white">
+                    Delete "{deleteMovieTarget.title}"?
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteMovieTarget(null)}
+                disabled={actionBusy}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-white/70 transition-colors hover:bg-white/5 disabled:opacity-50"
+                aria-label="Cancel delete"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="mt-5 text-sm leading-7 text-white/68">
+              This will permanently remove the title from the app and admin catalog. The server
+              will also try to delete linked R2 files such as videos, source files, posters,
+              thumbnails, and episode or part media where it can identify them.
+            </p>
+            <p className="mt-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold leading-6 text-red-50">
+              This action cannot be undone from the admin panel.
+            </p>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteMovieTarget(null)}
+                disabled={actionBusy}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white/75 transition-colors hover:bg-white/10 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteMovie()}
+                disabled={actionBusy}
+                className="inline-flex items-center gap-2 rounded-full bg-[#D90429] px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#f00632] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionBusy ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                {actionBusy ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
+
