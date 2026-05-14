@@ -50,13 +50,15 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
       return 'An account with this email already exists with a different sign-in method.';
     case 'auth/network-request-failed':
       return 'Network request failed. Check your internet connection and try again.';
+    case 'auth/google-sign-in-timeout':
+      return 'Google sign-in took too long on this device. Please try again.';
     default:
       if (/doesn'?t support credential manager|credential manager/i.test(message)) {
         return 'Google sign-in is not available on this device right now. Please sign in with email below, or update Google Play services and try Google again.';
       }
 
       if (/no credentials available|no credential/i.test(message)) {
-        return 'Google did not return an account on this device. Try Google again and choose an account, or sign in with email below.';
+        return 'Google sign-in could not find a usable Google account session on this phone. Please try again, update Google Play services, or sign in with email below.';
       }
 
       if (/idp denied access|user refuses|user denied|permission|user-cancelled|cancelled/i.test(message)) {

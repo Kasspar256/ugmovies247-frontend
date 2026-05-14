@@ -35,6 +35,8 @@ const GOOGLE_REDIRECT_COOKIE = 'ugmovies247_google_redirect';
 const SESSION_CONFIRM_RETRY_DELAYS_MS = [0, 180, 420];
 const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 12000;
 const GOOGLE_REDIRECT_MARKER_MAX_AGE_MS = 10 * 60 * 1000;
+const GOOGLE_SIGN_IN_TIMEOUT_MS = 35 * 1000;
+const GOOGLE_TOKEN_TIMEOUT_MS = 12 * 1000;
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -154,6 +156,31 @@ function buildSessionValidationError(
 function delay(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
+  });
+}
+
+function buildAuthTimeoutError(message: string) {
+  const error = new Error(message) as Error & { code?: string };
+  error.code = 'auth/google-sign-in-timeout';
+  return error;
+}
+
+function withAuthTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(buildAuthTimeoutError(message));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
   });
 }
 
@@ -597,8 +624,18 @@ async function continueWithNativeGoogle(rememberMe: boolean) {
   }
 
   try {
-    const result = await nativeFirebaseAuthentication.signInWithGoogle();
-    const firebaseIdTokenResult = await nativeFirebaseAuthentication.getIdToken?.();
+    const result = await withAuthTimeout(
+      nativeFirebaseAuthentication.signInWithGoogle({ useCredentialManager: false }),
+      GOOGLE_SIGN_IN_TIMEOUT_MS,
+      'Google sign-in took too long on this device. Please try again.'
+    );
+    const firebaseIdTokenResult = nativeFirebaseAuthentication.getIdToken
+      ? await withAuthTimeout(
+          nativeFirebaseAuthentication.getIdToken(),
+          GOOGLE_TOKEN_TIMEOUT_MS,
+          'Google sign-in completed, but the secure session token took too long. Please try again.'
+        )
+      : null;
     const firebaseIdToken =
       typeof firebaseIdTokenResult?.token === 'string' ? firebaseIdTokenResult.token : '';
 
@@ -695,7 +732,11 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
       return continueWithNativeGoogle(rememberMe);
     }
 
-    const result = await signInWithPopup(auth, provider);
+    const result = await withAuthTimeout(
+      signInWithPopup(auth, provider),
+      GOOGLE_SIGN_IN_TIMEOUT_MS,
+      'Google sign-in took too long on this device. Please try again.'
+    );
     return syncGoogleUserToSession(result.user, rememberMe);
   } catch (error) {
     if (shouldFallbackToRedirect(error)) {

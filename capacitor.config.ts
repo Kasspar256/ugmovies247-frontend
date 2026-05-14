@@ -12,6 +12,13 @@ const config: CapacitorConfig = {
     backgroundColor: '#0B0C10',
     minWebViewVersion: 90,
   },
+  plugins: {
+    FirebaseAuthentication: {
+      authDomain: 'ugmovies247k.firebaseapp.com',
+      skipNativeAuth: false,
+      providers: ['google.com'],
+    },
+  },
 };
 
 export default config;

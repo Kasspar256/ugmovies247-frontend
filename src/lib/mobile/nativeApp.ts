@@ -3,7 +3,7 @@
 import { Capacitor } from '@capacitor/core';
 
 type NativeFirebaseAuthenticationPlugin = {
-  signInWithGoogle?: () => Promise<{
+  signInWithGoogle?: (options?: { useCredentialManager?: boolean }) => Promise<{
     user?: {
       displayName?: string | null;
       email?: string | null;
