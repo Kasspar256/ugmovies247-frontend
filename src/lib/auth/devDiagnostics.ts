@@ -39,8 +39,9 @@ export function getFirebaseAuthErrorMessage(error: unknown) {
       return 'The Google sign-in popup was blocked. Allow popups or retry and the app will redirect you to Google.';
     case 'auth/popup-closed-by-user':
     case 'auth/user-cancelled':
+    case 'auth/redirect-cancelled-by-user':
     case 'auth/cancelled-popup-request':
-      return 'Google sign-in was closed before it finished.';
+      return 'Google sign-in was cancelled. You can try again whenever you are ready.';
     case 'auth/unauthorized-domain':
       return 'This domain is not authorized for Google sign-in in Firebase Authentication settings.';
     case 'auth/account-exists-with-different-credential':
