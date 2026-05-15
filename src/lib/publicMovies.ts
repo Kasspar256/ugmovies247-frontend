@@ -162,3 +162,31 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
 
   return inFlightMovieCatalogRequest;
 }
+
+export async function fetchPublicMovieById(movieId: string): Promise<Movie | null> {
+  const normalizedMovieId = movieId.trim();
+
+  if (!normalizedMovieId) {
+    return null;
+  }
+
+  const response = await fetch(`/api/movies/${encodeURIComponent(normalizedMovieId)}?fresh=1`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(payload.detail || payload.error || 'Failed to load movie.');
+  }
+
+  if (!payload.movie || typeof payload.movie !== 'object') {
+    return null;
+  }
+
+  return normalizeMovie(String(payload.movie.id || normalizedMovieId), payload.movie as Record<string, unknown>);
+}

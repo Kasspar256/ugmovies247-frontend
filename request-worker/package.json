@@ -1,0 +1,14 @@
+{
+  "name": "ugmovies247-request-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated movie request processor for the secondary VPS.",
+  "main": "request-worker.js",
+  "scripts": {
+    "start": "node request-worker.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.931.0",
+    "firebase-admin": "^13.5.0"
+  }
+}

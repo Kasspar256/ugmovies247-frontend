@@ -10,7 +10,8 @@ export type TransactionalEmailType =
   | 'auto_renew_reminder'
   | 'auto_renew_success'
   | 'auto_renew_failed'
-  | 'subscription_cancelled';
+  | 'subscription_cancelled'
+  | 'movie_request_update';
 
 export type TransactionalEmailStatus = 'sent' | 'failed' | 'skipped';
 
@@ -24,4 +25,3 @@ export type TransactionalEmailLogDocument = {
   error: string;
   createdAt: string;
 };
-

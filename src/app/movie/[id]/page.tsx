@@ -9,7 +9,7 @@ import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist }
 import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
 import { Bookmark, Cast, Heart, Lock, Share2 } from 'lucide-react';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovieById, fetchPublicMovies } from '@/lib/publicMovies';
 import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
 import {
@@ -125,6 +125,8 @@ const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
 const { setPlaybackSource, videoElement } = usePlayback();
 const shouldAutoplay = searchParams.get('autoplay') === '1';
+const shouldBypassCatalogCache =
+  searchParams.get('fresh') === '1' || searchParams.get('fromRequest') === '1';
 
 useEffect(() => {
 setIsTrailerPlaying(false);
@@ -133,7 +135,40 @@ setIsTrailerPlaying(false);
 useEffect(() => {
 const fetchMovie = async () => {
 try {
-const allMovies = await fetchPublicMovies();
+let allMovies: Movie[] = [];
+
+if (shouldBypassCatalogCache) {
+  const freshMovie = await fetchPublicMovieById(params.id);
+
+  if (freshMovie) {
+    allMovies = await fetchPublicMovies().catch(() => [freshMovie]);
+    const matchingCatalogEntries = allMovies.some((candidate) => candidate.id === freshMovie.id)
+      ? allMovies
+      : [freshMovie, ...allMovies];
+    const relatedSeriesEntries = isSeriesMovie(freshMovie)
+      ? matchingCatalogEntries.filter(
+          (candidate) => getMovieListingKey(candidate) === getMovieListingKey(freshMovie)
+        )
+      : [];
+    const mergedSeriesMovie = relatedSeriesEntries.length
+      ? mergeSeriesMovies(relatedSeriesEntries)
+      : null;
+
+    setMovie(
+      mergedSeriesMovie
+        ? {
+            ...mergedSeriesMovie,
+            id: freshMovie.id,
+            movieId: freshMovie.movieId || freshMovie.id,
+          }
+        : freshMovie
+    );
+    setSeriesSourceEntries(relatedSeriesEntries);
+    return;
+  }
+}
+
+allMovies = await fetchPublicMovies();
 
 const loadMergedSeriesMovie = async (initialMovie: Movie) => {
   if (!isSeriesMovie(initialMovie)) {
@@ -195,7 +230,7 @@ setLoading(false);
 }
 };
 fetchMovie();
-}, [params.id]);
+}, [params.id, shouldBypassCatalogCache]);
 
 useEffect(() => {
 const loadUserMovieState = async () => {
@@ -1277,3 +1312,4 @@ function DownloadIcon() {
 function LockedDownloadIcon() {
   return <Lock className="h-[18px] w-[18px] text-white/90" strokeWidth={2.1} aria-hidden="true" />;
 }
+

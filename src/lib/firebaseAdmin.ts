@@ -68,3 +68,4 @@ function getActiveAdminApp() {
 
 export const adminDb = admin.firestore(getActiveAdminApp());
 export const adminAuth = admin.auth(getActiveAdminApp());
+export const adminMessaging = admin.messaging(getActiveAdminApp());

@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { listRequestsForAdmin, updateRequestForAdmin } from '@/lib/server/adminControlCenter';
+import {
+  queueMovieRequestFulfillment,
+  rejectMovieRequest,
+  replyToMovieRequest,
+} from '@/lib/server/movieRequests';
 import type { AdminRequestStatus } from '@/types/admin';
 
 export const runtime = 'nodejs';
@@ -47,8 +52,13 @@ export async function PATCH(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as {
       id?: string;
+      action?: 'fulfill' | 'reply' | 'reject' | 'status';
       status?: AdminRequestStatus;
       adminNotes?: string;
+      sourceUrl?: string;
+      sourceFileName?: string;
+      message?: string;
+      movieId?: string;
     };
 
     const requestId = String(body.id || '').trim();
@@ -57,10 +67,23 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Missing request ID.' }, { status: 400 });
     }
 
-    await updateRequestForAdmin(requestId, {
-      status: body.status,
-      adminNotes: body.adminNotes,
-    });
+    if (body.action === 'fulfill') {
+      await queueMovieRequestFulfillment(requestId, {
+        sourceUrl: String(body.sourceUrl || ''),
+        sourceFileName: String(body.sourceFileName || ''),
+        adminNotes: String(body.adminNotes || ''),
+      });
+    } else if (body.action === 'reply') {
+      await replyToMovieRequest(requestId, String(body.message || body.adminNotes || ''));
+    } else if (body.action === 'reject') {
+      await rejectMovieRequest(requestId, String(body.message || ''));
+    } else {
+      await updateRequestForAdmin(requestId, {
+        status: body.status,
+        adminNotes: body.adminNotes,
+        movieId: body.movieId,
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

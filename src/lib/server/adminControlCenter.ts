@@ -29,8 +29,12 @@ import {
   CATEGORIES_COLLECTION,
   MEDIA_LIBRARY_COLLECTION,
   MOVIES_COLLECTION,
-  REQUESTS_COLLECTION,
 } from '@/lib/server/firestoreNamespaces';
+import {
+  createMovieRequest,
+  listMovieRequestsForAdmin,
+  updateMovieRequestForAdmin,
+} from '@/lib/server/movieRequests';
 import { normalizeMovie, type Movie } from '@/types/movie';
 import type {
   AdminCategory,
@@ -724,44 +728,7 @@ export async function listUsersForAdmin(limit = 200) {
 }
 
 export async function listRequestsForAdmin(limit = 200) {
-  return readCachedAdminValue({
-    resource: 'requests',
-    cache: adminRequestsCache,
-    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
-    onWrite: (value) => {
-      adminRequestsCache = value;
-    },
-    fallback: () => [],
-    loader: async () => {
-      const snapshot = await adminDb.collection(REQUESTS_COLLECTION).limit(limit).get();
-
-      return snapshot.docs
-        .map((doc): AdminRequest => {
-          const data = doc.data() as Partial<AdminRequest>;
-
-          return {
-            id: doc.id,
-            title: data.title || 'Untitled request',
-            preferredVj: data.preferredVj || '',
-            notes: data.notes || '',
-            status:
-              data.status === 'reviewing' ||
-              data.status === 'planned' ||
-              data.status === 'uploaded' ||
-              data.status === 'closed'
-                ? data.status
-                : 'new',
-            requesterId: data.requesterId || '',
-            requesterName: data.requesterName || '',
-            requesterEmail: data.requesterEmail || '',
-            adminNotes: data.adminNotes || '',
-            createdAt: data.createdAt || '',
-            updatedAt: data.updatedAt || '',
-          };
-        })
-        .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
-    },
-  });
+  return listMovieRequestsForAdmin(limit);
 }
 
 export async function createRequestForAdmin(input: {
@@ -778,23 +745,14 @@ export async function createRequestForAdmin(input: {
     throw new Error('Request title is required.');
   }
 
-  const timestamp = nowIso();
-  const ref = adminDb.collection(REQUESTS_COLLECTION).doc();
-  const payload: AdminRequest = {
-    id: ref.id,
-    title,
-    preferredVj: input.preferredVj?.trim() || '',
-    notes: input.notes?.trim() || '',
-    status: 'new',
-    requesterId: input.requesterId?.trim() || '',
-    requesterName: input.requesterName?.trim() || '',
-    requesterEmail: input.requesterEmail?.trim() || '',
-    adminNotes: '',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-
-  await ref.set(payload);
+  const payload = await createMovieRequest({
+    movieTitle: title,
+    preferredVj: input.preferredVj,
+    notes: input.notes,
+    userId: input.requesterId?.trim() || '',
+    requesterName: input.requesterName,
+    userEmail: input.requesterEmail?.trim() || '',
+  });
   clearAdminPanelServerCache('requests');
   return payload;
 }
@@ -804,28 +762,10 @@ export async function updateRequestForAdmin(
   input: {
     status?: AdminRequestStatus;
     adminNotes?: string;
+    movieId?: string;
   }
 ) {
-  const ref = adminDb.collection(REQUESTS_COLLECTION).doc(requestId);
-  const snapshot = await ref.get();
-
-  if (!snapshot.exists) {
-    throw new Error('Request not found.');
-  }
-
-  const updates: Record<string, unknown> = {
-    updatedAt: nowIso(),
-  };
-
-  if (input.status) {
-    updates.status = input.status;
-  }
-
-  if (typeof input.adminNotes === 'string') {
-    updates.adminNotes = input.adminNotes.trim();
-  }
-
-  await ref.set(updates, { merge: true });
+  await updateMovieRequestForAdmin(requestId, input);
   clearAdminPanelServerCache('requests');
 }
 

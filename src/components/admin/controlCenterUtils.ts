@@ -100,10 +100,14 @@ export type CategoryDraft = {
 };
 
 export const REQUEST_STATUS_OPTIONS: AdminRequestStatus[] = [
+  'pending',
+  'processing',
+  'uploaded',
+  'replied',
+  'rejected',
   'new',
   'reviewing',
   'planned',
-  'uploaded',
   'closed',
 ];
 

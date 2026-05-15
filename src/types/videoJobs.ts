@@ -4,7 +4,8 @@ export type SourcePipeline =
   | 'direct_upload'
   | 'direct_url_import'
   | 'remote_mkv_to_mp4'
-  | 'remote_mp4_ingest';
+  | 'remote_mp4_ingest'
+  | 'request_vps_import';
 
 export type VideoJobStatus =
   | 'queued'

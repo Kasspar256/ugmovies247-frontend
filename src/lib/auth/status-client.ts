@@ -8,6 +8,7 @@ export type ClientAuthStatus = {
     name: string;
     email: string;
     role: 'user' | 'admin';
+    emailVerified?: boolean;
   };
 };
 
@@ -166,6 +167,7 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
               name: payload.user.name || 'User',
               email: payload.user.email || '',
               role: payload.user.role === 'admin' ? 'admin' : 'user',
+              emailVerified: payload.user.emailVerified === true,
             }
           : undefined,
       };

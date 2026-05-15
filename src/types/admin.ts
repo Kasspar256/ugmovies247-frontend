@@ -25,17 +25,40 @@ export type AdminCategory = {
   isSystem: boolean;
 };
 
-export type AdminRequestStatus = 'new' | 'reviewing' | 'planned' | 'uploaded' | 'closed';
+export type AdminRequestStatus =
+  | 'pending'
+  | 'processing'
+  | 'uploaded'
+  | 'rejected'
+  | 'replied'
+  | 'new'
+  | 'reviewing'
+  | 'planned'
+  | 'closed';
 
 export type AdminRequest = {
   id: string;
   title: string;
+  movieTitle?: string;
   preferredVj: string;
   notes: string;
   status: AdminRequestStatus;
   requesterId: string;
   requesterName: string;
   requesterEmail: string;
+  userId?: string;
+  userEmail?: string;
+  fcmToken?: string;
+  sourceUrl?: string;
+  sourceFileName?: string;
+  movieId?: string;
+  customReply?: string;
+  rejectionMessage?: string;
+  processorQueue?: string;
+  queuedAt?: string;
+  uploadedAt?: string;
+  rejectedAt?: string;
+  timestamp?: string;
   adminNotes: string;
   createdAt: string;
   updatedAt: string;

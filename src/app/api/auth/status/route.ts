@@ -3,6 +3,7 @@ import {
   AUTH_DEVICE_COOKIE,
   AUTH_DEVICE_SESSION_COOKIE,
   getAuthCookieConfig,
+  getCurrentAuthSession,
   getRequestAuthSessionValidation,
   recoverManagedAuthSessionFromRequest,
 } from '@/lib/auth/server';
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     if (!validation.session) {
       if (validation.reason === 'session_missing') {
         const recovered = await recoverManagedAuthSessionFromRequest(request, {
-          hydrateUserRecord: false,
+          hydrateUserRecord: true,
         });
 
         if (recovered.session && recovered.managedSession) {
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
               name: recovered.session.userRecord.name,
               email: recovered.session.userRecord.email,
               role: recovered.session.userRecord.role,
+              emailVerified: recovered.session.userRecord.emailVerified === true,
             },
           });
 
@@ -63,13 +65,17 @@ export async function GET(request: Request) {
       );
     }
 
+    const hydratedSession = await getCurrentAuthSession({ hydrateUserRecord: true }).catch(() => null);
+    const session = hydratedSession || validation.session;
+
     return NextResponse.json({
       authenticated: true,
       user: {
-        id: validation.session.uid,
-        name: validation.session.userRecord.name,
-        email: validation.session.userRecord.email,
-        role: validation.session.userRecord.role,
+        id: session.uid,
+        name: session.userRecord.name,
+        email: session.userRecord.email,
+        role: session.userRecord.role,
+        emailVerified: session.userRecord.emailVerified === true,
       },
     });
   } catch (error) {

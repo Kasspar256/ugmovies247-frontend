@@ -149,7 +149,8 @@ function normalizeSourcePipeline(value: unknown): Episode['sourcePipeline'] {
     value === 'direct_upload' ||
     value === 'direct_url_import' ||
     value === 'remote_mkv_to_mp4' ||
-    value === 'remote_mp4_ingest'
+    value === 'remote_mp4_ingest' ||
+    value === 'request_vps_import'
     ? value
     : undefined;
 }

@@ -79,6 +79,15 @@ type DeleteMovieTarget = {
   title: string;
 };
 
+type RequestEdit = {
+  status: AdminRequestStatus;
+  adminNotes: string;
+  sourceUrl: string;
+  customReply: string;
+  rejectionMessage: string;
+  movieId: string;
+};
+
 const EMPTY_ADMIN_REVENUE: AdminControlCenterPayload['revenue'] = {
   monthLabel: '',
   monthRevenue: 0,
@@ -119,18 +128,16 @@ function formatAdminLoadErrors(issues: string[]) {
 function buildRequestEdits(requests: AdminRequest[]) {
   return requests.reduce(
     (
-      accumulator: Record<
-        string,
-        {
-          status: AdminRequestStatus;
-          adminNotes: string;
-        }
-      >,
+      accumulator: Record<string, RequestEdit>,
       request: AdminRequest
     ) => {
       accumulator[request.id] = {
         status: request.status,
         adminNotes: request.adminNotes || '',
+        sourceUrl: request.sourceUrl || '',
+        customReply: request.customReply || '',
+        rejectionMessage: request.rejectionMessage || '',
+        movieId: request.movieId || '',
       };
       return accumulator;
     },
@@ -170,9 +177,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
   const [librarySearch, setLibrarySearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
   const [requestSearch, setRequestSearch] = useState('');
-  const [requestEdits, setRequestEdits] = useState<
-    Record<string, { status: AdminRequestStatus; adminNotes: string }>
-  >({});
+  const [requestEdits, setRequestEdits] = useState<Record<string, RequestEdit>>({});
   const [libraryUploadFile, setLibraryUploadFile] = useState<File | null>(null);
   const [libraryUploadProgress, setLibraryUploadProgress] = useState(0);
   const [libraryUploadStatus, setLibraryUploadStatus] = useState('');
@@ -425,7 +430,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     const requests = payload?.requests || [];
     return search
       ? requests.filter((request) =>
-          `${request.title} ${request.preferredVj} ${request.notes} ${request.requesterEmail}`
+          `${request.title} ${request.movieTitle || ''} ${request.preferredVj} ${request.notes} ${request.requesterEmail} ${request.userEmail || ''}`
             .toLowerCase()
             .includes(search)
         )
@@ -1219,6 +1224,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           id: requestId,
           status: nextEdit.status,
           adminNotes: nextEdit.adminNotes,
+          movieId: nextEdit.movieId,
         }),
       });
       const result = await parseApiResponse(response);
@@ -1229,6 +1235,52 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
       await loadControlCenter(false, true);
       setStatusMessage('Request updated.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to update request.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRequestAction = async (
+    requestId: string,
+    action: 'fulfill' | 'reply' | 'reject'
+  ) => {
+    const nextEdit = requestEdits[requestId];
+
+    if (!nextEdit) {
+      return;
+    }
+
+    setActionBusy(true);
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/admin/requests', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: requestId,
+          action,
+          sourceUrl: nextEdit.sourceUrl,
+          adminNotes: nextEdit.adminNotes,
+          message: action === 'reply' ? nextEdit.customReply : nextEdit.rejectionMessage,
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to update request.');
+      }
+
+      await loadControlCenter(false, true);
+      setStatusMessage(
+        action === 'fulfill'
+          ? 'Request queued on the request VPS.'
+          : action === 'reply'
+            ? 'Reply sent to the user.'
+            : 'Request rejected and user notified.'
+      );
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to update request.');
     } finally {
@@ -1588,6 +1640,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                   setRequestEdits((current) => ({ ...current, [requestId]: nextEdit }))
                 }
                 onSaveRequest={handleSaveRequest}
+                onRequestAction={handleRequestAction}
                 actionBusy={actionBusy}
               />
             )}
@@ -1666,4 +1719,3 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     </main>
   );
 }
-

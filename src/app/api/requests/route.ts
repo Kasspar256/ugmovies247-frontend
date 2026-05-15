@@ -1,26 +1,47 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
-import { createRequestForAdmin } from '@/lib/server/adminControlCenter';
+import { createMovieRequest } from '@/lib/server/movieRequests';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const session = await getCurrentAuthSession();
+    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Please sign in before requesting a movie.', code: 'auth_required' },
+        { status: 401 }
+      );
+    }
+
+    if (session.userRecord.emailVerified !== true) {
+      return NextResponse.json(
+        {
+          error: 'Please verify your email before requesting a movie so we can alert you when it is ready.',
+          code: 'email_not_verified',
+        },
+        { status: 403 }
+      );
+    }
+
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
+      movieTitle?: string;
       preferredVj?: string;
       notes?: string;
+      fcmToken?: string;
     };
 
-    const createdRequest = await createRequestForAdmin({
-      title: String(body.title || ''),
+    const createdRequest = await createMovieRequest({
+      movieTitle: String(body.movieTitle || body.title || ''),
       preferredVj: String(body.preferredVj || ''),
       notes: String(body.notes || ''),
-      requesterId: session?.uid || '',
-      requesterName: session?.name || '',
-      requesterEmail: session?.email || '',
+      userId: session.uid,
+      requesterName: session.name,
+      userEmail: session.email,
+      fcmToken: String(body.fcmToken || ''),
     });
 
     return NextResponse.json({
