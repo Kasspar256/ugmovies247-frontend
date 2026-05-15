@@ -1090,8 +1090,8 @@ const MovieRow = memo(function MovieRow({
       style={
         androidMobileLayout
           ? {
-              width: 'clamp(100px, calc((100vw - 3rem) / 3.2), 106px)',
-              minWidth: 'clamp(100px, calc((100vw - 3rem) / 3.2), 106px)',
+              width: 'clamp(98px, calc((100vw - 3rem) / 3.25), 104px)',
+              minWidth: 'clamp(98px, calc((100vw - 3rem) / 3.25), 104px)',
             }
           : undefined
       }
