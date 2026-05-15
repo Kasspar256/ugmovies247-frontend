@@ -2,6 +2,10 @@ import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebaseAdmin';
 import type { DownloadMovieInput, DownloadRecord } from '@/types/downloads';
 import type { LikeMovieInput, LikeRecord } from '@/types/likes';
+import type {
+  PlaybackProgressMovieInput,
+  PlaybackProgressRecord,
+} from '@/types/playbackProgress';
 import type { WatchHistoryMovieInput, WatchHistoryRecord } from '@/types/watchHistory';
 import type { WatchlistMovieInput, WatchlistRecord } from '@/types/watchlist';
 
@@ -9,6 +13,8 @@ const DOWNLOADS_COLLECTION = 'downloads';
 const WATCHLIST_COLLECTION = 'watchlist';
 const LIKES_COLLECTION = 'likes';
 const WATCH_HISTORY_COLLECTION = 'watch_history';
+const USERS_COLLECTION = 'users';
+const PLAYBACK_PROGRESS_COLLECTION = 'playbackProgress';
 
 function buildLibraryDocumentId(userId: string, movieId: string) {
   return encodeURIComponent(`${userId}__${movieId}`);
@@ -132,6 +138,42 @@ function normalizeWatchHistoryRecord(id: string, data: Record<string, unknown>):
     completed: data.completed === true,
     lastWatchedAt: serializeTimestamp(data.lastWatchedAt),
   };
+}
+
+function normalizePlaybackProgressRecord(
+  id: string,
+  data: Record<string, unknown>,
+  fallbackUserId = ''
+): PlaybackProgressRecord {
+  const lastPosition = Number(data.lastPosition || 0);
+  const totalDuration = Number(data.totalDuration || 0);
+  const safeLastPosition = Number.isFinite(lastPosition) ? Math.max(0, Math.floor(lastPosition)) : 0;
+  const safeTotalDuration = Number.isFinite(totalDuration) ? Math.max(0, Math.floor(totalDuration)) : 0;
+  const progressPercent =
+    safeTotalDuration > 0 ? Math.min(Math.max(Math.round((safeLastPosition / safeTotalDuration) * 100), 0), 100) : 0;
+
+  return {
+    id,
+    movieId: String(data.movieId || id),
+    title: String(data.title || 'Untitled movie'),
+    poster: String(data.poster || ''),
+    watchHref: String(data.watchHref || ''),
+    userId: String(data.userId || fallbackUserId),
+    lastPosition: safeLastPosition,
+    totalDuration: safeTotalDuration,
+    progressPercent,
+    isFinished:
+      data.isFinished === true ||
+      (safeTotalDuration > 0 && safeLastPosition / safeTotalDuration > 0.9),
+    lastUpdated: serializeTimestamp(data.lastUpdated),
+  };
+}
+
+function getUserPlaybackProgressCollection(uid: string) {
+  return adminDb
+    .collection(USERS_COLLECTION)
+    .doc(uid)
+    .collection(PLAYBACK_PROGRESS_COLLECTION);
 }
 
 export async function getUserDownload(uid: string, movieId: string) {
@@ -320,6 +362,72 @@ export async function removeUserLike(uid: string, movieId: string) {
   return { removed: true };
 }
 
+export async function listUserPlaybackProgress(uid: string) {
+  const snapshot = await getUserPlaybackProgressCollection(uid)
+    .orderBy('lastUpdated', 'desc')
+    .limit(50)
+    .get();
+
+  return snapshot.docs
+    .map((doc) => normalizePlaybackProgressRecord(doc.id, doc.data(), uid))
+    .filter((record) => !record.isFinished)
+    .sort((left, right) => getTimestampSeconds(right.lastUpdated) - getTimestampSeconds(left.lastUpdated));
+}
+
+export async function getUserPlaybackProgress(uid: string, movieId: string) {
+  const normalizedMovieId = String(movieId || '').trim();
+
+  if (!normalizedMovieId) {
+    return null;
+  }
+
+  const snapshot = await getUserPlaybackProgressCollection(uid).doc(normalizedMovieId).get();
+
+  if (!snapshot.exists) {
+    return null;
+  }
+
+  return normalizePlaybackProgressRecord(snapshot.id, snapshot.data() || {}, uid);
+}
+
+export async function saveUserPlaybackProgress(uid: string, movie: PlaybackProgressMovieInput) {
+  const movieId = String(movie.movieId || '').trim();
+
+  if (!movieId) {
+    throw new Error('movieId is required.');
+  }
+
+  const rawLastPosition = Number(movie.lastPosition || 0);
+  const rawTotalDuration = Number(movie.totalDuration || 0);
+  const lastPosition = Number.isFinite(rawLastPosition)
+    ? Math.max(0, Math.floor(rawLastPosition))
+    : 0;
+  const totalDuration = Number.isFinite(rawTotalDuration)
+    ? Math.max(0, Math.floor(rawTotalDuration))
+    : 0;
+  const isFinished =
+    movie.isFinished === true || (totalDuration > 0 && lastPosition / totalDuration > 0.9);
+  const documentRef = getUserPlaybackProgressCollection(uid).doc(movieId);
+
+  await documentRef.set(
+    {
+      movieId,
+      title: String(movie.title || 'Untitled movie'),
+      poster: String(movie.poster || ''),
+      watchHref: String(movie.watchHref || `/movie/${movieId}`),
+      userId: uid,
+      lastPosition,
+      totalDuration,
+      isFinished,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const saved = await documentRef.get();
+  return normalizePlaybackProgressRecord(saved.id, saved.data() || {}, uid);
+}
+
 export async function listUserWatchHistory(uid: string) {
   const snapshot = await adminDb
     .collection(WATCH_HISTORY_COLLECTION)
@@ -337,12 +445,19 @@ export async function saveUserWatchHistory(uid: string, movie: WatchHistoryMovie
   const existing = await documentRef.get();
   const progressSeconds = Number(movie.progressSeconds || 0);
   const durationSeconds = Number(movie.durationSeconds || 0);
+  const safeProgressSeconds = Number.isFinite(progressSeconds) ? Math.max(0, Math.floor(progressSeconds)) : 0;
+  const safeDurationSeconds = Number.isFinite(durationSeconds) ? Math.max(0, Math.floor(durationSeconds)) : 0;
   const progressPercent =
     Number.isFinite(movie.progressPercent) && movie.progressPercent !== undefined
       ? movie.progressPercent
-      : durationSeconds > 0
-        ? Math.round((progressSeconds / durationSeconds) * 100)
+      : safeDurationSeconds > 0
+        ? Math.round((safeProgressSeconds / safeDurationSeconds) * 100)
         : 0;
+  const normalizedProgressPercent = Number.isFinite(progressPercent)
+    ? Math.min(Math.max(Math.round(progressPercent), 0), 100)
+    : 0;
+  const completed =
+    movie.completed === true || (safeDurationSeconds > 0 && safeProgressSeconds / safeDurationSeconds > 0.9);
 
   await documentRef.set(
     {
@@ -351,16 +466,24 @@ export async function saveUserWatchHistory(uid: string, movie: WatchHistoryMovie
       poster: String(movie.poster || ''),
       watchHref: String(movie.watchHref || ''),
       userId: uid,
-      progressSeconds: Number.isFinite(progressSeconds) ? Math.max(0, progressSeconds) : 0,
-      durationSeconds: Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0,
-      progressPercent: Number.isFinite(progressPercent)
-        ? Math.min(Math.max(progressPercent, 0), 100)
-        : 0,
-      completed: movie.completed === true,
+      progressSeconds: safeProgressSeconds,
+      durationSeconds: safeDurationSeconds,
+      progressPercent: normalizedProgressPercent,
+      completed,
       lastWatchedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
+
+  await saveUserPlaybackProgress(uid, {
+    movieId: String(movie.movieId),
+    title: String(movie.title || 'Untitled movie'),
+    poster: String(movie.poster || ''),
+    watchHref: String(movie.watchHref || ''),
+    lastPosition: safeProgressSeconds,
+    totalDuration: safeDurationSeconds,
+    isFinished: completed,
+  });
 
   const saved = await documentRef.get();
 

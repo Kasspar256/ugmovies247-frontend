@@ -16,10 +16,15 @@ import {
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import {
+  fetchPlaybackProgressRecords,
+  readCachedContinueWatching,
+} from '@/lib/playbackProgress';
+import {
   fetchAuthStatus,
   readCachedAuthStatus,
   type ClientAuthStatus,
 } from '@/lib/auth/status-client';
+import type { CachedPlaybackProgressRecord } from '@/types/playbackProgress';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
 import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 import { startCasting } from '@/lib/cast';
@@ -37,6 +42,13 @@ import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 type SessionUser = {
   role: 'user' | 'admin';
   name: string;
+};
+
+type ContinueWatchingMovie = Movie & {
+  continueProgressPercent?: number;
+  continueWatchHref?: string;
+  continueLastPosition?: number;
+  continueTotalDuration?: number;
 };
 
 const DESKTOP_CATEGORY_PILLS = [
@@ -254,6 +266,9 @@ export default function Home() {
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [activeTrailer, setActiveTrailer] = useState<{ url: string; title: string } | null>(null);
+  const [continueWatchingRecords, setContinueWatchingRecords] = useState<CachedPlaybackProgressRecord[]>(
+    () => readCachedContinueWatching()
+  );
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
@@ -281,6 +296,9 @@ export default function Home() {
         role: cachedStatus.user?.role === 'admin' ? 'admin' : 'user',
         name: cachedStatus.user?.name || 'User',
       });
+      setContinueWatchingRecords(readCachedContinueWatching());
+    } else if (cachedStatus) {
+      setContinueWatchingRecords([]);
     }
 
     const bootstrapHomePage = async () => {
@@ -318,6 +336,22 @@ export default function Home() {
               }
             : null
         );
+
+        if (status.authenticated) {
+          void fetchPlaybackProgressRecords()
+            .then((records) => {
+              if (mounted && requestId === homeLoadRequestRef.current) {
+                setContinueWatchingRecords(records);
+              }
+            })
+            .catch(() => {
+              if (mounted && requestId === homeLoadRequestRef.current) {
+                setContinueWatchingRecords(readCachedContinueWatching());
+              }
+            });
+        } else {
+          setContinueWatchingRecords([]);
+        }
 
         setMovies(movieData);
         setHomePageCategories(
@@ -357,6 +391,24 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!sessionUser || typeof window === 'undefined') {
+      return;
+    }
+
+    const refreshCachedProgress = () => {
+      setContinueWatchingRecords(readCachedContinueWatching());
+    };
+
+    window.addEventListener('focus', refreshCachedProgress);
+    window.addEventListener('pageshow', refreshCachedProgress);
+
+    return () => {
+      window.removeEventListener('focus', refreshCachedProgress);
+      window.removeEventListener('pageshow', refreshCachedProgress);
+    };
+  }, [sessionUser]);
+
   const latestForHero = useMemo(() => movies.slice(0, 5), [movies]);
 
   useEffect(() => {
@@ -384,6 +436,52 @@ export default function Home() {
     homePageCategories,
     activeCategory,
   }), [movies, homePageCategories, activeCategory]);
+
+  const continueWatchingMovies = useMemo<ContinueWatchingMovie[]>(() => {
+    if (!continueWatchingRecords.length) {
+      return [];
+    }
+
+    const moviesById = new Map<string, Movie>();
+
+    movies.forEach((movie) => {
+      moviesById.set(movie.id, movie);
+
+      if (movie.movieId) {
+        moviesById.set(movie.movieId, movie);
+      }
+    });
+
+    return continueWatchingRecords
+      .filter((record) => !record.isFinished)
+      .map((record) => {
+        const catalogMovie = moviesById.get(record.movieId);
+        const fallbackMovie: Movie = {
+          id: record.movieId,
+          movieId: record.movieId,
+          title: record.title || 'Untitled movie',
+          poster: record.poster || '',
+          genres: [],
+          category: [],
+        };
+        const progressPercent =
+          record.progressPercent ||
+          (record.totalDuration > 0
+            ? Math.round((record.lastPosition / record.totalDuration) * 100)
+            : 0);
+
+        return {
+          ...(catalogMovie || fallbackMovie),
+          movieId: record.movieId,
+          title: catalogMovie?.title || record.title || 'Untitled movie',
+          poster: catalogMovie?.poster || record.poster || '',
+          continueProgressPercent: Math.min(Math.max(progressPercent, 0), 100),
+          continueWatchHref: record.watchHref || `/movie/${catalogMovie?.id || record.movieId}`,
+          continueLastPosition: record.lastPosition,
+          continueTotalDuration: record.totalDuration,
+        } satisfies ContinueWatchingMovie;
+      });
+  }, [continueWatchingRecords, movies]);
 
   // Hero Movie
   const heroMovie = useMemo(
@@ -1014,6 +1112,16 @@ export default function Home() {
           </section>
         )}
         
+        {continueWatchingMovies.length > 0 && (
+          <MovieRow
+            title="CONTINUE WATCHING"
+            movies={continueWatchingMovies}
+            androidMobileLayout={isAndroidMobile}
+            priorityImageCount={6}
+            showProgressBars
+          />
+        )}
+
         {homeRows.map((row, rowIndex) => (
           <MovieRow
             key={row.categoryKey}
@@ -1054,6 +1162,7 @@ const MovieRow = memo(function MovieRow({
   usesSeriesBackdropCards = false,
   androidMobileLayout = false,
   priorityImageCount = 0,
+  showProgressBars = false,
 }: {
   title: string,
   movies: Movie[],
@@ -1061,6 +1170,7 @@ const MovieRow = memo(function MovieRow({
   usesSeriesBackdropCards?: boolean,
   androidMobileLayout?: boolean,
   priorityImageCount?: number,
+  showProgressBars?: boolean,
 }) {
   const rowMovies = useMemo(() => dedupeSeriesMovies(movies || []), [movies]);
   const railRef = useRef<HTMLDivElement | null>(null);
@@ -1082,9 +1192,17 @@ const MovieRow = memo(function MovieRow({
     });
   };
 
-  const renderPosterCard = (m: Movie, index: number) => (
+  const renderPosterCard = (m: Movie, index: number) => {
+    const progressMovie = m as ContinueWatchingMovie;
+    const progressPercent = Math.min(Math.max(progressMovie.continueProgressPercent || 0, 0), 100);
+    const cardHref =
+      showProgressBars && progressMovie.continueWatchHref
+        ? progressMovie.continueWatchHref
+        : `/movie/${m.id}`;
+
+    return (
     <Link
-      href={`/movie/${m.id}`}
+      href={cardHref}
       key={m.id}
       className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]"
       style={
@@ -1126,6 +1244,15 @@ const MovieRow = memo(function MovieRow({
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none"></div>
 
+        {showProgressBars && progressPercent > 0 && (
+          <div className="absolute inset-x-0 bottom-0 z-30 h-1 bg-black/70">
+            <div
+              className="h-full rounded-r-full bg-[#D90429] shadow-[0_0_10px_rgba(217,4,41,0.72)]"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        )}
+
         <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 transition-opacity duration-300 pointer-events-none group-hover/card:opacity-100">
           <div className="flex h-12 w-12 items-center justify-center rounded-full border border-red-300/25 bg-[#D90429]/90 pl-1 backdrop-blur-md shadow-[0_0_22px_rgba(217,4,41,0.72)] md:h-14 md:w-14 md:shadow-[0_0_28px_rgba(217,4,41,0.85)]">
             <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -1138,7 +1265,8 @@ const MovieRow = memo(function MovieRow({
         {`${m.title || m.name} - ${getMovieVjLabel(m)}`}
       </p>
     </Link>
-  );
+    );
+  };
 
   const renderSeriesBackdropCard = (m: Movie, index: number) => (
     <Link

@@ -45,6 +45,11 @@ import {
   toggleCastPlayback,
   type CastStateSnapshot,
 } from '@/lib/cast';
+import {
+  fetchPlaybackProgressRecord,
+  getCachedPlaybackProgress,
+  writeCachedPlaybackProgress,
+} from '@/lib/playbackProgress';
 
 export type PlaybackPhase =
   | 'idle'
@@ -340,11 +345,6 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
   );
 }
 
-
-function StreamLoadingIndicator({ compact = false }: { compact?: boolean }) {
-  return <SpinnerOrb className={compact ? 'h-12 w-12' : 'h-14 w-14'} />;
-}
-
 function useIsDesktopViewport() {
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -436,9 +436,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const startupGraceUntilRef = useRef(0);
   const lastAssignedSourceKeyRef = useRef('');
   const fallbackSourceRef = useRef('');
+  const pendingResumeRef = useRef<{ sourceKey: string; position: number; applied: boolean } | null>(null);
   const lastVolumeBeforeMuteRef = useRef(1);
   const playbackPhaseRef = useRef<PlaybackPhase>('idle');
   const castSnapshotRef = useRef<CastStateSnapshot>(getCastStateSnapshot());
+  const lastWatchHistorySyncRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const miniDragStateRef = useRef<{
     pointerId: number;
     originX: number;
@@ -475,6 +477,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   });
   const [miniPlayerPosition, setMiniPlayerPosition] = useState<MiniPlayerPosition | null>(null);
   const [isDraggingMiniPlayer, setIsDraggingMiniPlayer] = useState(false);
+
+  useEffect(() => {
+    lastWatchHistorySyncRef.current = { key: '', at: 0 };
+  }, [activeSource?.sessionKey]);
 
   const setPlaybackPhaseSafe = useCallback((nextPhase: PlaybackPhase) => {
     playbackPhaseRef.current = nextPhase;
@@ -581,8 +587,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         node.setAttribute('playsinline', 'true');
         node.setAttribute('webkit-playsinline', 'true');
         node.setAttribute('x-webkit-airplay', 'allow');
-        node.preload = 'metadata';
-        node.setAttribute('preload', 'metadata');
         node.volume = clamp(volume, 0, 1);
         node.muted = isMuted;
         node.playbackRate = playbackRate;
@@ -789,6 +793,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     fallbackSourceRef.current = '';
     startupGraceUntilRef.current = 0;
     lastAssignedSourceKeyRef.current = '';
+    pendingResumeRef.current = null;
     setHasStartedPlayback(false);
     setActiveSourceState(null);
     setCurrentTime(0);
@@ -844,6 +849,42 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [clearFatalErrorTimer, setPlaybackPhaseSafe]
   );
 
+  const applyPendingResume = useCallback(() => {
+    const videoElement = videoRef.current;
+    const pendingResume = pendingResumeRef.current;
+
+    if (!videoElement || !activeSource?.sourceUrl || !pendingResume || pendingResume.applied) {
+      return;
+    }
+
+    const currentSourceKey = lastAssignedSourceKeyRef.current || `${activeSource.sessionKey}|${activeSource.sourceUrl}`;
+
+    if (pendingResume.sourceKey !== currentSourceKey) {
+      return;
+    }
+
+    const safeDuration = Number.isFinite(videoElement.duration) && videoElement.duration > 0
+      ? videoElement.duration
+      : 0;
+    const maxResumePosition = safeDuration > 0
+      ? Math.max(0, safeDuration - 8)
+      : pendingResume.position;
+    const resumePosition = clamp(pendingResume.position, 0, maxResumePosition);
+
+    if (resumePosition < 10 || (videoElement.currentTime || 0) > 5) {
+      pendingResumeRef.current = { ...pendingResume, applied: true };
+      return;
+    }
+
+    try {
+      videoElement.currentTime = resumePosition;
+      setCurrentTime(resumePosition);
+      pendingResumeRef.current = { ...pendingResume, applied: true };
+    } catch {
+      // Some mobile WebViews reject early seeks until canplay; canplay will retry.
+    }
+  }, [activeSource?.sessionKey, activeSource?.sourceUrl]);
+
   useEffect(() => {
     const videoElement = videoRef.current;
 
@@ -868,6 +909,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     retriedCurrentSourceRef.current = false;
     fallbackSourceRef.current = '';
     lastAssignedSourceKeyRef.current = nextSourceKey;
+    const cachedProgress = getCachedPlaybackProgress(activeSource.movieId);
+    pendingResumeRef.current =
+      cachedProgress && !cachedProgress.isFinished && cachedProgress.lastPosition >= 10
+        ? {
+            sourceKey: nextSourceKey,
+            position: cachedProgress.lastPosition,
+            applied: false,
+          }
+        : null;
     setHasStartedPlayback(false);
     setCurrentTime(0);
     setDuration(0);
@@ -875,22 +925,49 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setPlaybackPhaseSafe('loading');
 
     videoElement.pause();
-    videoElement.preload = 'metadata';
-    videoElement.setAttribute('preload', 'metadata');
     videoElement.src = activeSource.sourceUrl;
     videoElement.load();
-
-    if (shouldResumePlayback) {
-      void videoElement.play().catch(() => {
-        setPlaybackPhaseSafe('paused');
-      });
-    }
   }, [
     activeSource?.autoplay,
+    activeSource?.movieId,
     activeSource?.sessionKey,
     activeSource?.sourceUrl,
     clearFatalError,
     setPlaybackPhaseSafe,
+  ]);
+
+  useEffect(() => {
+    if (!activeSource?.movieId || !activeSource.sourceUrl) {
+      return;
+    }
+
+    let isActive = true;
+    const sourceKey = `${activeSource.sessionKey}|${activeSource.sourceUrl}`;
+
+    void fetchPlaybackProgressRecord(activeSource.movieId)
+      .then((record) => {
+        if (!isActive || !record || record.isFinished || record.lastPosition < 10) {
+          return;
+        }
+
+        pendingResumeRef.current = {
+          sourceKey,
+          position: record.lastPosition,
+          applied: false,
+        };
+
+        applyPendingResume();
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    activeSource?.movieId,
+    activeSource?.sessionKey,
+    activeSource?.sourceUrl,
+    applyPendingResume,
   ]);
 
   useEffect(() => {
@@ -1368,9 +1445,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setDuration(Number.isFinite(videoElement.duration) ? videoElement.duration : 0);
+    applyPendingResume();
     setCurrentTime(Number.isFinite(videoElement.currentTime) ? videoElement.currentTime : 0);
     syncBufferedProgress();
-  }, [syncBufferedProgress]);
+  }, [applyPendingResume, syncBufferedProgress]);
 
   const handleCanPlay = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -1386,6 +1464,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setDuration(Number.isFinite(videoElement.duration) ? videoElement.duration : 0);
+    applyPendingResume();
     syncBufferedProgress();
 
     if (pendingAutoplayRef.current) {
@@ -1397,7 +1476,83 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setPlaybackPhaseSafe(videoElement.paused ? 'paused' : 'playing');
-  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
+  }, [applyPendingResume, clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
+
+  const syncWatchHistory = useCallback(
+    (completed = false, force = false) => {
+      const videoElement = videoRef.current;
+
+      if (!videoElement || !activeSource?.movieId || !activeSource.title) {
+        return;
+      }
+
+      const progressSeconds = Number.isFinite(videoElement.currentTime)
+        ? videoElement.currentTime
+        : currentTime;
+      const durationSeconds = Number.isFinite(videoElement.duration)
+        ? videoElement.duration
+        : duration;
+      const normalizedProgressSeconds = Math.max(0, Math.floor(progressSeconds));
+      const normalizedDurationSeconds = Math.max(0, Math.floor(durationSeconds));
+
+      if (!completed && normalizedProgressSeconds < 10) {
+        return;
+      }
+
+      const progressPercent =
+        normalizedDurationSeconds > 0
+          ? clamp(Math.round((normalizedProgressSeconds / normalizedDurationSeconds) * 100), 0, 100)
+          : 0;
+      const isFinished =
+        completed || (normalizedDurationSeconds > 0 && normalizedProgressSeconds / normalizedDurationSeconds > 0.9);
+      const syncBucket = isFinished
+        ? 'finished'
+        : force
+          ? `manual-${normalizedProgressSeconds}`
+          : `progress-${Math.floor(normalizedProgressSeconds / 10)}`;
+      const syncKey = `${activeSource.sessionKey}:${activeSource.movieId}:${syncBucket}`;
+      const now = Date.now();
+
+      if (
+        !force &&
+        lastWatchHistorySyncRef.current.key === syncKey &&
+        now - lastWatchHistorySyncRef.current.at < 9_000
+      ) {
+        return;
+      }
+
+      lastWatchHistorySyncRef.current = { key: syncKey, at: now };
+      writeCachedPlaybackProgress({
+        movieId: activeSource.movieId,
+        title: activeSource.title,
+        poster: activeSource.poster || '',
+        watchHref: activeSource.watchHref || '',
+        lastPosition: normalizedProgressSeconds,
+        totalDuration: normalizedDurationSeconds,
+        isFinished,
+      });
+
+      void fetch('/api/user/watch-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        keepalive: true,
+        body: JSON.stringify({
+          movieId: activeSource.movieId,
+          title: activeSource.title,
+          poster: activeSource.poster || '',
+          watchHref: activeSource.watchHref || '',
+          progressSeconds: normalizedProgressSeconds,
+          durationSeconds: normalizedDurationSeconds,
+          progressPercent,
+          completed: isFinished,
+        }),
+      }).catch(() => undefined);
+    },
+    [activeSource, currentTime, duration]
+  );
 
   const handlePlaying = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -1422,16 +1577,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     setPlaybackPhaseSafe('paused');
     setControlsVisible(true);
-  }, [setPlaybackPhaseSafe]);
+    syncWatchHistory(false, true);
+  }, [setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleEnded = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
       return;
     }
 
+    syncWatchHistory(true, true);
     setPlaybackPhaseSafe('ended');
     setControlsVisible(true);
-  }, [setPlaybackPhaseSafe]);
+  }, [setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleWaiting = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -1462,6 +1619,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     setCurrentTime(videoElement.currentTime || 0);
     syncBufferedProgress();
+    syncWatchHistory(false);
 
     if (
       !videoElement.paused &&
@@ -1471,7 +1629,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalError();
       setPlaybackPhaseSafe('playing');
     }
-  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
+  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress, syncWatchHistory]);
 
   const handleVideoError = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -1495,18 +1653,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       retriedCurrentSourceRef.current = false;
       startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
       lastAssignedSourceKeyRef.current = `${activeSource.sessionKey}|${fallbackUrl}`;
+      if (pendingResumeRef.current) {
+        pendingResumeRef.current = {
+          ...pendingResumeRef.current,
+          sourceKey: `${activeSource.sessionKey}|${fallbackUrl}`,
+          applied: false,
+        };
+      }
       setPlaybackPhaseSafe('loading');
       videoElement.pause();
-      videoElement.preload = 'metadata';
-      videoElement.setAttribute('preload', 'metadata');
       videoElement.src = fallbackUrl;
       videoElement.load();
-
-      if (pendingAutoplayRef.current) {
-        void videoElement.play().catch(() => {
-          setPlaybackPhaseSafe('paused');
-        });
-      }
       return;
     }
 
@@ -2000,7 +2157,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                   {isDesktopInlineMode && showCenterAction ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-5">
                       {playbackPhase === 'loading' || playbackPhase === 'buffering' ? (
-                        <StreamLoadingIndicator />
+                        <SpinnerOrb className="h-14 w-14" />
                       ) : (
                         <button
                           type="button"
@@ -2032,7 +2189,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         onClick={(event) => event.stopPropagation()}
                       >
                         {playbackPhase === 'loading' || playbackPhase === 'buffering' ? (
-                          <StreamLoadingIndicator compact />
+                          <SpinnerOrb className="h-12 w-12" />
                         ) : playbackPhase === 'paused' || playbackPhase === 'ended' ? (
                           <button
                             type="button"
