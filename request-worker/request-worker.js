@@ -7,7 +7,7 @@ const http = require('http');
 const https = require('https');
 const { spawn } = require('child_process');
 const admin = require('firebase-admin');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 function loadEnvFile(filePath) {
   return fs.readFile(filePath, 'utf8')
@@ -277,6 +277,30 @@ async function uploadToR2(s3, key, filePath, onProgress) {
   return buildPublicUrl(key);
 }
 
+async function deleteStagedSourceIfSafe(s3, job) {
+  const sourceStorageKey = String(job.sourceStorageKey || '').trim();
+
+  if (!sourceStorageKey) {
+    return false;
+  }
+
+  if (!sourceStorageKey.startsWith('direct-source-staging/')) {
+    console.warn(
+      `[request-worker] refusing to delete non-staging source key ${sourceStorageKey}`
+    );
+    return false;
+  }
+
+  await s3.send(
+    new DeleteObjectCommand({
+      Bucket: requireEnv('R2_BUCKET'),
+      Key: sourceStorageKey,
+    })
+  );
+
+  return true;
+}
+
 async function updateProgress(db, job, patch) {
   const collections = getCollections();
   const timestamp = nowIso();
@@ -390,6 +414,9 @@ function getMoviePatchForReady(job, publicVideoUrl, timestamp) {
     video_url: publicVideoUrl,
     sourceUrl: job.sourceUrl || '',
     sourceFileName: job.sourceFileName || '',
+    sourceFileSizeBytes: Number(job.sourceFileSizeBytes || 0) || null,
+    sourceStorageKey: job.sourceStorageKey || '',
+    sourceStorageProvider: job.sourceStorageProvider || '',
     sourceType: 'direct_url',
     sourcePipeline: 'request_vps_import',
     jobStatus: 'ready',
@@ -608,6 +635,18 @@ async function processJob(db, s3, job) {
 
     // Mandatory 100GB VPS protection: delete raw/intermediate local files immediately after R2 success.
     await removeLocalWorkspace(workDir);
+
+    try {
+      const deletedStagedSource = await deleteStagedSourceIfSafe(s3, job);
+
+      if (deletedStagedSource) {
+        await progress.report({
+          currentStage: 'Cleaned staged source after successful upload',
+        });
+      }
+    } catch (error) {
+      console.warn('[request-worker] staged source cleanup failed:', error.message || error);
+    }
 
     const completedAt = await writeMovieReady(db, job, publicVideoUrl);
     await progress.report({

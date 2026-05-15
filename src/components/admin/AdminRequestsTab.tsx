@@ -24,7 +24,7 @@ import type {
   AdminRequestStatus,
   RequestProcessingJob,
 } from '@/types/admin';
-import { uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
+import { uploadMultipartFileToAdmin, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
 import { db } from '@/lib/firebase';
 import { Card, FieldLabel, SelectInput, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
@@ -36,6 +36,10 @@ type RequestEdit = {
   status: AdminRequestStatus;
   adminNotes: string;
   sourceUrl: string;
+  sourceFileName: string;
+  sourceFileSizeBytes: string;
+  sourceStorageKey: string;
+  sourceStorageProvider: 'r2_staging' | 'external_url' | '';
   customReply: string;
   rejectionMessage: string;
   movieId: string;
@@ -100,6 +104,10 @@ function createRequestEditFallback(request: AdminRequest): RequestEdit {
     status: request.status,
     adminNotes: request.adminNotes || '',
     sourceUrl: request.sourceUrl || '',
+    sourceFileName: request.sourceFileName || '',
+    sourceFileSizeBytes: request.sourceFileSizeBytes ? String(request.sourceFileSizeBytes) : '',
+    sourceStorageKey: request.sourceStorageKey || '',
+    sourceStorageProvider: request.sourceStorageProvider || '',
     customReply: request.customReply || '',
     rejectionMessage: request.rejectionMessage || '',
     movieId: request.movieId || '',
@@ -166,6 +174,10 @@ export function AdminRequestsTab({
   const [tmdbLoading, setTmdbLoading] = useState(false);
   const [tmdbError, setTmdbError] = useState('');
   const [uploadingImage, setUploadingImage] = useState<'poster' | 'backdrop' | ''>('');
+  const [sourceUploadProgress, setSourceUploadProgress] = useState(0);
+  const [sourceUploadStatus, setSourceUploadStatus] = useState('');
+  const [sourceUploadDiagnostics, setSourceUploadDiagnostics] = useState<string[]>([]);
+  const [sourceUploadBusy, setSourceUploadBusy] = useState(false);
   const [workerJobs, setWorkerJobs] = useState<RequestProcessingJob[]>([]);
   const [workerError, setWorkerError] = useState('');
 
@@ -183,6 +195,13 @@ export function AdminRequestsTab({
       setSelectedRequestId(requests[0].id);
     }
   }, [requests, selectedRequestId]);
+
+  useEffect(() => {
+    setSourceUploadProgress(0);
+    setSourceUploadStatus('');
+    setSourceUploadDiagnostics([]);
+    setSourceUploadBusy(false);
+  }, [selectedRequestId]);
 
   useEffect(() => {
     const jobsQuery = query(
@@ -334,6 +353,46 @@ export function AdminRequestsTab({
       setTmdbError(error instanceof Error ? error.message : 'Image upload failed.');
     } finally {
       setUploadingImage('');
+    }
+  };
+
+  const uploadRequestSource = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    setSourceUploadBusy(true);
+    setSourceUploadProgress(0);
+    setSourceUploadStatus('Preparing direct staging upload...');
+    setSourceUploadDiagnostics([]);
+
+    try {
+      const uploaded = await uploadMultipartFileToAdmin({
+        file,
+        stage: 'staging',
+        onProgress: (progress) => {
+          setSourceUploadProgress(Math.round(progress));
+        },
+        onDiagnostic: (message) => {
+          setSourceUploadDiagnostics((current) => [message, ...current].slice(0, 5));
+        },
+      });
+
+      updateSelectedEdit({
+        sourceUrl: uploaded.publicUrl,
+        sourceFileName: uploaded.fileName,
+        sourceFileSizeBytes: String(uploaded.fileSizeBytes),
+        sourceStorageKey: uploaded.key,
+        sourceStorageProvider: 'r2_staging',
+      });
+      setSourceUploadProgress(100);
+      setSourceUploadStatus(
+        'Source file staged in isolated R2 storage. The request VPS will download this copy, process it, then delete it after final upload.'
+      );
+    } catch (error) {
+      setSourceUploadStatus(error instanceof Error ? error.message : 'Source upload failed.');
+    } finally {
+      setSourceUploadBusy(false);
     }
   };
 
@@ -532,26 +591,40 @@ export function AdminRequestsTab({
                       Build metadata, attach artwork, choose content type, then send to the isolated request VPS.
                     </p>
                   </div>
-                  <div className="flex rounded-full border border-white/10 bg-black/25 p-1">
+                  <div className="grid min-w-[320px] gap-3 sm:grid-cols-2">
                     <button
                       type="button"
                       onClick={() => updateSelectedEdit({ contentType: 'movie' })}
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.16em] ${
-                        selectedEdit.contentType === 'movie' ? 'bg-[#D90429] text-white' : 'text-white/55'
+                      className={`rounded-3xl border p-4 text-left transition ${
+                        selectedEdit.contentType === 'movie'
+                          ? 'border-[#D90429]/45 bg-[#D90429]/15 text-white shadow-[0_18px_42px_rgba(217,4,41,0.18)]'
+                          : 'border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.07]'
                       }`}
                     >
-                      <Film size={14} />
-                      Movie
+                      <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em]">
+                        <Film size={14} />
+                        Movie Workspace
+                      </span>
+                      <span className="mt-2 block text-[11px] leading-5 text-white/45">
+                        Poster-first metadata, one final stream URL.
+                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => updateSelectedEdit({ contentType: 'series' })}
-                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-black uppercase tracking-[0.16em] ${
-                        selectedEdit.contentType === 'series' ? 'bg-[#D90429] text-white' : 'text-white/55'
+                      className={`rounded-3xl border p-4 text-left transition ${
+                        selectedEdit.contentType === 'series'
+                          ? 'border-sky-300/45 bg-sky-400/15 text-white shadow-[0_18px_42px_rgba(14,165,233,0.16)]'
+                          : 'border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.07]'
                       }`}
                     >
-                      <Clapperboard size={14} />
-                      Series
+                      <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em]">
+                        <Clapperboard size={14} />
+                        Series Workspace
+                      </span>
+                      <span className="mt-2 block text-[11px] leading-5 text-white/45">
+                        Backdrop-first shell with season and episode controls.
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -559,7 +632,15 @@ export function AdminRequestsTab({
 
               <div className="grid gap-5 xl:grid-cols-2">
                 <section className="rounded-[30px] border border-sky-300/15 bg-sky-400/[0.05] p-5">
-                  <FieldLabel>TMDB Engine</FieldLabel>
+                  <FieldLabel>
+                    {selectedEdit.contentType === 'series'
+                      ? 'TMDB Series Engine'
+                      : 'TMDB Movie Engine'}
+                  </FieldLabel>
+                  <p className="mb-3 mt-1 text-sm leading-6 text-white/55">
+                    Search applies one unified metadata package: title, year, genres, plot, poster,
+                    and backdrop. You can override any field afterwards without losing the others.
+                  </p>
                   <div className="flex gap-2">
                     <TextInput
                       value={tmdbQuery}
@@ -606,11 +687,24 @@ export function AdminRequestsTab({
                         </div>
                       </button>
                     ))}
+                    {!tmdbLoading && tmdbQuery.trim() && tmdbResults.length === 0 && !tmdbError && (
+                      <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/45">
+                        No TMDB results loaded yet. Search, then choose a result to populate the form.
+                      </div>
+                    )}
                   </div>
                 </section>
 
                 <section className="rounded-[30px] border border-white/10 bg-black/20 p-5">
-                  <FieldLabel>Custom Artwork Overrides</FieldLabel>
+                  <FieldLabel>
+                    {selectedEdit.contentType === 'series'
+                      ? 'Series Backdrop, Poster & Manual Overrides'
+                      : 'Movie Poster, Backdrop & Manual Overrides'}
+                  </FieldLabel>
+                  <p className="mb-4 mt-1 text-sm leading-6 text-white/55">
+                    TMDB fills both images. Manual uploads only replace the selected image and keep
+                    the title, plot, genres, and release data intact.
+                  </p>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <div className="aspect-[2/3] overflow-hidden rounded-2xl border border-white/10 bg-[#0C1017]">
@@ -664,7 +758,25 @@ export function AdminRequestsTab({
                 </section>
               </div>
 
-              <section className="rounded-[30px] border border-white/10 bg-black/20 p-5">
+              <section
+                className={`rounded-[30px] border p-5 ${
+                  selectedEdit.contentType === 'series'
+                    ? 'border-sky-300/15 bg-sky-400/[0.05]'
+                    : 'border-white/10 bg-black/20'
+                }`}
+              >
+                <div className="mb-5">
+                  <FieldLabel>
+                    {selectedEdit.contentType === 'series'
+                      ? 'Dedicated Series Metadata Workspace'
+                      : 'Dedicated Movie Metadata Workspace'}
+                  </FieldLabel>
+                  <p className="mt-1 text-sm leading-6 text-white/55">
+                    {selectedEdit.contentType === 'series'
+                      ? 'This builds the series shell, backdrop, season, and episode document before the request VPS writes the final episode stream.'
+                      : 'This builds the movie document with poster, metadata, categories, and final stream target before the request VPS starts processing.'}
+                  </p>
+                </div>
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div>
                     <FieldLabel>Title</FieldLabel>
@@ -725,40 +837,48 @@ export function AdminRequestsTab({
                     />
                   </div>
                   {selectedEdit.contentType === 'series' && (
-                    <>
-                      <div>
-                        <FieldLabel>Season Number</FieldLabel>
-                        <TextInput
-                          type="number"
-                          min="1"
-                          value={selectedEdit.seasonNumber}
-                          onChange={(event) => updateSelectedEdit({ seasonNumber: event.target.value })}
-                        />
+                    <div className="lg:col-span-2 rounded-[26px] border border-sky-300/15 bg-black/20 p-4">
+                      <FieldLabel>Series Season & Episode Panel</FieldLabel>
+                      <p className="mb-4 mt-1 text-sm leading-6 text-white/55">
+                        This request worker job attaches the processed video to the exact season and
+                        episode below. Additional episodes can be queued as separate request jobs
+                        without touching the main Telegram production worker.
+                      </p>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div>
+                          <FieldLabel>Season Number</FieldLabel>
+                          <TextInput
+                            type="number"
+                            min="1"
+                            value={selectedEdit.seasonNumber}
+                            onChange={(event) => updateSelectedEdit({ seasonNumber: event.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Episode Number</FieldLabel>
+                          <TextInput
+                            type="number"
+                            min="1"
+                            value={selectedEdit.episodeNumber}
+                            onChange={(event) => updateSelectedEdit({ episodeNumber: event.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Season Title</FieldLabel>
+                          <TextInput
+                            value={selectedEdit.seasonTitle}
+                            onChange={(event) => updateSelectedEdit({ seasonTitle: event.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <FieldLabel>Episode Title</FieldLabel>
+                          <TextInput
+                            value={selectedEdit.episodeTitle}
+                            onChange={(event) => updateSelectedEdit({ episodeTitle: event.target.value })}
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <FieldLabel>Episode Number</FieldLabel>
-                        <TextInput
-                          type="number"
-                          min="1"
-                          value={selectedEdit.episodeNumber}
-                          onChange={(event) => updateSelectedEdit({ episodeNumber: event.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <FieldLabel>Season Title</FieldLabel>
-                        <TextInput
-                          value={selectedEdit.seasonTitle}
-                          onChange={(event) => updateSelectedEdit({ seasonTitle: event.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <FieldLabel>Episode Title</FieldLabel>
-                        <TextInput
-                          value={selectedEdit.episodeTitle}
-                          onChange={(event) => updateSelectedEdit({ episodeTitle: event.target.value })}
-                        />
-                      </div>
-                    </>
+                    </div>
                   )}
                   <div className="lg:col-span-2">
                     <FieldLabel>Browse Categories</FieldLabel>
@@ -773,12 +893,81 @@ export function AdminRequestsTab({
               </section>
 
               <section className="rounded-[30px] border border-sky-300/15 bg-sky-400/[0.05] p-5">
-                <FieldLabel>Raw Video Link Source</FieldLabel>
-                <TextInput
-                  value={selectedEdit.sourceUrl}
-                  onChange={(event) => updateSelectedEdit({ sourceUrl: event.target.value })}
-                  placeholder="Paste raw MP4/MKV/WebM source link for the secondary VPS..."
-                />
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <FieldLabel>
+                      {selectedEdit.contentType === 'series'
+                        ? 'Episode Source Ingest'
+                        : 'Movie Source Ingest'}
+                    </FieldLabel>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-white/58">
+                      Upload the raw MP4/MKV/WebM here. The admin browser sends it directly to
+                      temporary R2 staging, so the main Telegram worker and main app VPS are not
+                      used for request files.
+                    </p>
+                  </div>
+                  {selectedEdit.sourceStorageProvider === 'r2_staging' && (
+                    <span className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-100">
+                      Staged Source Ready
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-4">
+                  <input
+                    type="file"
+                    accept="video/*,.mkv,.webm,.mp4,.mov,.avi"
+                    disabled={sourceUploadBusy}
+                    onChange={(event) => void uploadRequestSource(event.currentTarget.files?.[0] || null)}
+                    className="block w-full text-xs text-white/55 file:mr-3 file:rounded-full file:border-0 file:bg-sky-500 file:px-4 file:py-3 file:text-xs file:font-black file:uppercase file:tracking-[0.14em] file:text-white"
+                  />
+                  {(sourceUploadBusy || sourceUploadProgress > 0 || sourceUploadStatus) && (
+                    <div className="mt-4 space-y-3">
+                      <div className="h-3 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-300 to-emerald-300 transition-all duration-300"
+                          style={{ width: `${Math.max(0, Math.min(100, sourceUploadProgress))}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-white/55">
+                        {sourceUploadStatus || `Uploading source file: ${sourceUploadProgress}%`}
+                      </div>
+                      {sourceUploadDiagnostics.length > 0 && (
+                        <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[11px] leading-5 text-white/42">
+                          {sourceUploadDiagnostics.map((message) => (
+                            <div key={message}>{message}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
+                  <TextInput
+                    value={selectedEdit.sourceUrl}
+                    onChange={(event) =>
+                      updateSelectedEdit({
+                        sourceUrl: event.target.value,
+                        sourceFileName: '',
+                        sourceFileSizeBytes: '',
+                        sourceStorageKey: '',
+                        sourceStorageProvider: event.target.value.trim() ? 'external_url' : '',
+                      })
+                    }
+                    placeholder="Or paste an external direct source URL if you already have one..."
+                  />
+                  <TextInput
+                    value={selectedEdit.sourceFileName}
+                    onChange={(event) => updateSelectedEdit({ sourceFileName: event.target.value })}
+                    placeholder="Source file name..."
+                  />
+                </div>
+                {selectedEdit.sourceStorageKey && (
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/45">
+                    Staging key: {selectedEdit.sourceStorageKey}
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={actionBusy || !selectedEdit.sourceUrl.trim()}

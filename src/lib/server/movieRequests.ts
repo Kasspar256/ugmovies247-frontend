@@ -21,6 +21,10 @@ function normalizeString(value: unknown) {
 }
 
 function normalizeNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
   const normalized = Number(value);
   return Number.isFinite(normalized) ? normalized : null;
 }
@@ -125,6 +129,10 @@ function mapMovieRequestDoc(
     fcmToken: normalizeString(data.fcmToken),
     sourceUrl: normalizeString(data.sourceUrl) || normalizeString(data.rawFileUrl),
     sourceFileName: normalizeString(data.sourceFileName),
+    sourceFileSizeBytes: normalizeNumber(data.sourceFileSizeBytes),
+    sourceStorageKey: normalizeString(data.sourceStorageKey),
+    sourceStorageProvider:
+      data.sourceStorageProvider === 'r2_staging' ? 'r2_staging' : data.sourceStorageProvider === 'external_url' ? 'external_url' : undefined,
     movieId: normalizeString(data.movieId),
     customReply: normalizeString(data.customReply),
     rejectionMessage: normalizeString(data.rejectionMessage),
@@ -235,6 +243,9 @@ type AdvancedMovieRequestFulfillmentInput = {
   sourceUrl: string;
   adminNotes?: string;
   sourceFileName?: string;
+  sourceFileSizeBytes?: number | string | null;
+  sourceStorageKey?: string;
+  sourceStorageProvider?: 'r2_staging' | 'external_url';
   title?: string;
   originalTitle?: string;
   description?: string;
@@ -266,6 +277,10 @@ function getReleaseYear(input: AdvancedMovieRequestFulfillmentInput) {
   return match ? Number(match[1]) : null;
 }
 
+function getSourceStorageProvider(input: AdvancedMovieRequestFulfillmentInput) {
+  return input.sourceStorageProvider === 'r2_staging' ? 'r2_staging' : 'external_url';
+}
+
 function createMovieId(requestId: string, title: string) {
   const slug = title
     .toLowerCase()
@@ -293,6 +308,9 @@ function buildCommonMovieShell(options: {
   const genres = normalizeStringList(options.input.genres);
   const category = normalizeStringList(options.input.category);
   const tmdbId = normalizeNumber(options.input.tmdbId);
+  const sourceFileSizeBytes = normalizeNumber(options.input.sourceFileSizeBytes);
+  const sourceStorageKey = normalizeString(options.input.sourceStorageKey);
+  const sourceStorageProvider = getSourceStorageProvider(options.input);
 
   return {
     id: options.movieId,
@@ -312,6 +330,9 @@ function buildCommonMovieShell(options: {
     tmdb_id: tmdbId,
     sourceUrl: options.sourceUrl,
     sourceFileName: normalizeString(options.input.sourceFileName),
+    sourceFileSizeBytes,
+    sourceStorageKey,
+    sourceStorageProvider,
     sourceType: 'direct_url',
     sourcePipeline: 'request_vps_import',
     processorQueue: REQUEST_PROCESSOR_QUEUE,
@@ -383,6 +404,9 @@ function buildSeriesShell(options: {
             video_url: '',
             sourceUrl: options.sourceUrl,
             sourceFileName: common.sourceFileName,
+            sourceFileSizeBytes: common.sourceFileSizeBytes,
+            sourceStorageKey: common.sourceStorageKey,
+            sourceStorageProvider: common.sourceStorageProvider,
             sourceType: 'direct_url',
             sourcePipeline: 'request_vps_import',
             jobStatus: 'queued',
@@ -498,6 +522,9 @@ export async function queueMovieRequestFulfillment(
     sourceUrl: string;
     adminNotes?: string;
     sourceFileName?: string;
+    sourceFileSizeBytes?: number | string | null;
+    sourceStorageKey?: string;
+    sourceStorageProvider?: 'r2_staging' | 'external_url';
   }
 ) {
   return queueAdvancedMovieRequestFulfillment(requestId, input);
@@ -519,6 +546,10 @@ export async function queueAdvancedMovieRequestFulfillment(
   const contentType = input.contentType === 'series' ? 'series' : 'movie';
   const movieId = request.movieId || createMovieId(requestId, title);
   const processingJobId = `${requestId}-${randomUUID().slice(0, 12)}`;
+  const sourceFileName = normalizeString(input.sourceFileName);
+  const sourceFileSizeBytes = normalizeNumber(input.sourceFileSizeBytes);
+  const sourceStorageKey = normalizeString(input.sourceStorageKey);
+  const sourceStorageProvider = getSourceStorageProvider(input);
   const commonShellOptions = {
     request,
     movieId,
@@ -544,7 +575,10 @@ export async function queueAdvancedMovieRequestFulfillment(
     fcmToken: request.fcmToken || '',
     contentType,
     sourceUrl,
-    sourceFileName: input.sourceFileName?.trim() || '',
+    sourceFileName,
+    sourceFileSizeBytes,
+    sourceStorageKey,
+    sourceStorageProvider,
     status: 'queued',
     progress: 0,
     currentStage: 'Queued for request VPS',
@@ -564,7 +598,10 @@ export async function queueAdvancedMovieRequestFulfillment(
       status: 'processing',
       sourceUrl,
       rawFileUrl: sourceUrl,
-      sourceFileName: input.sourceFileName?.trim() || '',
+      sourceFileName,
+      sourceFileSizeBytes,
+      sourceStorageKey,
+      sourceStorageProvider,
       movieId,
       processingJobId,
       contentType,

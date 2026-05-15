@@ -67,6 +67,9 @@ export type AdminRequest = {
   fcmToken?: string;
   sourceUrl?: string;
   sourceFileName?: string;
+  sourceFileSizeBytes?: number | null;
+  sourceStorageKey?: string;
+  sourceStorageProvider?: 'r2_staging' | 'external_url';
   movieId?: string;
   customReply?: string;
   rejectionMessage?: string;
@@ -105,6 +108,10 @@ export type RequestProcessingJob = {
   progress: number;
   currentStage: string;
   sourceUrl: string;
+  sourceFileName?: string;
+  sourceFileSizeBytes?: number | null;
+  sourceStorageKey?: string;
+  sourceStorageProvider?: 'r2_staging' | 'external_url';
   errorMessage?: string;
   workerId?: string;
   createdAt: string;
