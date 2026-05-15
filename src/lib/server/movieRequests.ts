@@ -130,9 +130,6 @@ function mapMovieRequestDoc(
     sourceUrl: normalizeString(data.sourceUrl) || normalizeString(data.rawFileUrl),
     sourceFileName: normalizeString(data.sourceFileName),
     sourceFileSizeBytes: normalizeNumber(data.sourceFileSizeBytes),
-    sourceStorageKey: normalizeString(data.sourceStorageKey),
-    sourceStorageProvider:
-      data.sourceStorageProvider === 'r2_staging' ? 'r2_staging' : data.sourceStorageProvider === 'external_url' ? 'external_url' : undefined,
     movieId: normalizeString(data.movieId),
     customReply: normalizeString(data.customReply),
     rejectionMessage: normalizeString(data.rejectionMessage),
@@ -244,8 +241,6 @@ type AdvancedMovieRequestFulfillmentInput = {
   adminNotes?: string;
   sourceFileName?: string;
   sourceFileSizeBytes?: number | string | null;
-  sourceStorageKey?: string;
-  sourceStorageProvider?: 'r2_staging' | 'external_url';
   title?: string;
   originalTitle?: string;
   description?: string;
@@ -277,10 +272,6 @@ function getReleaseYear(input: AdvancedMovieRequestFulfillmentInput) {
   return match ? Number(match[1]) : null;
 }
 
-function getSourceStorageProvider(input: AdvancedMovieRequestFulfillmentInput) {
-  return input.sourceStorageProvider === 'r2_staging' ? 'r2_staging' : 'external_url';
-}
-
 function createMovieId(requestId: string, title: string) {
   const slug = title
     .toLowerCase()
@@ -309,8 +300,6 @@ function buildCommonMovieShell(options: {
   const category = normalizeStringList(options.input.category);
   const tmdbId = normalizeNumber(options.input.tmdbId);
   const sourceFileSizeBytes = normalizeNumber(options.input.sourceFileSizeBytes);
-  const sourceStorageKey = normalizeString(options.input.sourceStorageKey);
-  const sourceStorageProvider = getSourceStorageProvider(options.input);
 
   return {
     id: options.movieId,
@@ -331,8 +320,6 @@ function buildCommonMovieShell(options: {
     sourceUrl: options.sourceUrl,
     sourceFileName: normalizeString(options.input.sourceFileName),
     sourceFileSizeBytes,
-    sourceStorageKey,
-    sourceStorageProvider,
     sourceType: 'direct_url',
     sourcePipeline: 'request_vps_import',
     processorQueue: REQUEST_PROCESSOR_QUEUE,
@@ -405,8 +392,6 @@ function buildSeriesShell(options: {
             sourceUrl: options.sourceUrl,
             sourceFileName: common.sourceFileName,
             sourceFileSizeBytes: common.sourceFileSizeBytes,
-            sourceStorageKey: common.sourceStorageKey,
-            sourceStorageProvider: common.sourceStorageProvider,
             sourceType: 'direct_url',
             sourcePipeline: 'request_vps_import',
             jobStatus: 'queued',
@@ -523,8 +508,6 @@ export async function queueMovieRequestFulfillment(
     adminNotes?: string;
     sourceFileName?: string;
     sourceFileSizeBytes?: number | string | null;
-    sourceStorageKey?: string;
-    sourceStorageProvider?: 'r2_staging' | 'external_url';
   }
 ) {
   return queueAdvancedMovieRequestFulfillment(requestId, input);
@@ -548,8 +531,6 @@ export async function queueAdvancedMovieRequestFulfillment(
   const processingJobId = `${requestId}-${randomUUID().slice(0, 12)}`;
   const sourceFileName = normalizeString(input.sourceFileName);
   const sourceFileSizeBytes = normalizeNumber(input.sourceFileSizeBytes);
-  const sourceStorageKey = normalizeString(input.sourceStorageKey);
-  const sourceStorageProvider = getSourceStorageProvider(input);
   const commonShellOptions = {
     request,
     movieId,
@@ -562,8 +543,48 @@ export async function queueAdvancedMovieRequestFulfillment(
     contentType === 'series'
       ? buildSeriesShell(commonShellOptions)
       : buildMovieShell(commonShellOptions);
+  const readyMovieShell =
+    contentType === 'series'
+      ? {
+          ...movieShell,
+          status: 'live',
+          jobStatus: 'ready',
+          currentStage: 'Live and ready to watch',
+          processingProgress: 100,
+          errorMessage: '',
+          processedAt: timestamp,
+          updatedAt: timestamp,
+          seasons: Array.isArray((movieShell as { seasons?: unknown }).seasons)
+            ? (movieShell as { seasons: Array<Record<string, unknown>> }).seasons.map((season) => ({
+                ...season,
+                episodes: Array.isArray(season.episodes)
+                  ? season.episodes.map((episode) => ({
+                      ...episode,
+                      video_url: sourceUrl,
+                      jobStatus: 'ready',
+                      processingProgress: 100,
+                      currentStage: 'Live and ready to watch',
+                      errorMessage: '',
+                      updatedAt: timestamp,
+                      processedAt: timestamp,
+                    }))
+                  : [],
+              }))
+            : [],
+        }
+      : {
+          ...movieShell,
+          video_url: sourceUrl,
+          status: 'live',
+          jobStatus: 'ready',
+          currentStage: 'Live and ready to watch',
+          processingProgress: 100,
+          errorMessage: '',
+          processedAt: timestamp,
+          updatedAt: timestamp,
+        };
 
-  await adminDb.collection(MOVIES_COLLECTION).doc(movieId).set(movieShell, { merge: true });
+  await adminDb.collection(MOVIES_COLLECTION).doc(movieId).set(readyMovieShell, { merge: true });
 
   await adminDb.collection(REQUEST_PROCESSING_JOBS_COLLECTION).doc(processingJobId).set({
     id: processingJobId,
@@ -577,31 +598,29 @@ export async function queueAdvancedMovieRequestFulfillment(
     sourceUrl,
     sourceFileName,
     sourceFileSizeBytes,
-    sourceStorageKey,
-    sourceStorageProvider,
-    status: 'queued',
-    progress: 0,
-    currentStage: 'Queued for request VPS',
+    publicVideoUrl: sourceUrl,
+    status: 'uploaded',
+    progress: 100,
+    currentStage: 'Published from Telegram worker link',
     errorMessage: '',
-    processorQueue: REQUEST_PROCESSOR_QUEUE,
-    movieShell,
+    processorQueue: 'request-telegram-link-publish',
+    movieShell: readyMovieShell,
     seasonNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.seasonNumber) || 1)) : null,
     episodeNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.episodeNumber) || 1)) : null,
     createdAt: timestamp,
     updatedAt: timestamp,
     queuedAt: timestamp,
+    completedAt: timestamp,
     serverTimestamp: admin.firestore.FieldValue.serverTimestamp(),
   });
 
   await ref.set(
     {
-      status: 'processing',
+      status: 'uploaded',
       sourceUrl,
       rawFileUrl: sourceUrl,
       sourceFileName,
       sourceFileSizeBytes,
-      sourceStorageKey,
-      sourceStorageProvider,
       movieId,
       processingJobId,
       contentType,
@@ -624,17 +643,33 @@ export async function queueAdvancedMovieRequestFulfillment(
       seasonTitle: normalizeString(input.seasonTitle),
       episodeTitle: normalizeString(input.episodeTitle),
       adminNotes: input.adminNotes?.trim() || request.adminNotes || '',
-      processorQueue: REQUEST_PROCESSOR_QUEUE,
+      processorQueue: 'request-telegram-link-publish',
       queuedAt: timestamp,
+      uploadedAt: timestamp,
       updatedAt: timestamp,
       lastActionAt: timestamp,
-      workerStatus: 'queued',
+      workerStatus: 'done',
       workerError: '',
-      progress: 0,
-      currentStage: 'Queued for request VPS',
+      progress: 100,
+      currentStage: 'Live and ready to watch',
     },
     { merge: true }
   );
+
+  await sendMovieRequestUserUpdate({
+    request: {
+      ...request,
+      title,
+      movieTitle: title,
+      movieId,
+      status: 'uploaded',
+    },
+    status: 'uploaded',
+    subject: 'Your movie request is ready',
+    title: 'Your movie request is ready!',
+    message: `"${title}" is now ready to watch.`,
+    movieId,
+  });
 }
 
 export async function markMovieRequestUploaded(requestId: string, movieId: string) {

@@ -58,8 +58,6 @@ export async function PATCH(request: Request) {
       sourceUrl?: string;
       sourceFileName?: string;
       sourceFileSizeBytes?: number | string | null;
-      sourceStorageKey?: string;
-      sourceStorageProvider?: 'r2_staging' | 'external_url';
       message?: string;
       movieId?: string;
       title?: string;
@@ -93,9 +91,6 @@ export async function PATCH(request: Request) {
         sourceUrl: String(body.sourceUrl || ''),
         sourceFileName: String(body.sourceFileName || ''),
         sourceFileSizeBytes: body.sourceFileSizeBytes,
-        sourceStorageKey: String(body.sourceStorageKey || ''),
-        sourceStorageProvider:
-          body.sourceStorageProvider === 'r2_staging' ? 'r2_staging' : 'external_url',
         adminNotes: String(body.adminNotes || ''),
         title: String(body.title || ''),
         originalTitle: String(body.originalTitle || ''),

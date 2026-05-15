@@ -68,8 +68,6 @@ export type AdminRequest = {
   sourceUrl?: string;
   sourceFileName?: string;
   sourceFileSizeBytes?: number | null;
-  sourceStorageKey?: string;
-  sourceStorageProvider?: 'r2_staging' | 'external_url';
   movieId?: string;
   customReply?: string;
   rejectionMessage?: string;
@@ -110,8 +108,10 @@ export type RequestProcessingJob = {
   sourceUrl: string;
   sourceFileName?: string;
   sourceFileSizeBytes?: number | null;
-  sourceStorageKey?: string;
-  sourceStorageProvider?: 'r2_staging' | 'external_url';
+  publicVideoUrl?: string;
+  telegramFileId?: string;
+  telegramChatId?: string;
+  telegramMessageId?: number | string;
   errorMessage?: string;
   workerId?: string;
   createdAt: string;

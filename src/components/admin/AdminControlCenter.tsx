@@ -84,9 +84,6 @@ type RequestEdit = {
   adminNotes: string;
   sourceUrl: string;
   sourceFileName: string;
-  sourceFileSizeBytes: string;
-  sourceStorageKey: string;
-  sourceStorageProvider: 'r2_staging' | 'external_url' | '';
   customReply: string;
   rejectionMessage: string;
   movieId: string;
@@ -156,9 +153,6 @@ function buildRequestEdits(requests: AdminRequest[]) {
         adminNotes: request.adminNotes || '',
         sourceUrl: request.sourceUrl || '',
         sourceFileName: request.sourceFileName || '',
-        sourceFileSizeBytes: request.sourceFileSizeBytes ? String(request.sourceFileSizeBytes) : '',
-        sourceStorageKey: request.sourceStorageKey || '',
-        sourceStorageProvider: request.sourceStorageProvider || '',
         customReply: request.customReply || '',
         rejectionMessage: request.rejectionMessage || '',
         movieId: request.movieId || '',
@@ -1313,9 +1307,6 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           action,
           sourceUrl: nextEdit.sourceUrl,
           sourceFileName: nextEdit.sourceFileName,
-          sourceFileSizeBytes: nextEdit.sourceFileSizeBytes,
-          sourceStorageKey: nextEdit.sourceStorageKey,
-          sourceStorageProvider: nextEdit.sourceStorageProvider || 'external_url',
           adminNotes: nextEdit.adminNotes,
           message: action === 'vjVariance' ? nextEdit.customReply : nextEdit.rejectionMessage,
           title: nextEdit.title,

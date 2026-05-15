@@ -5,9 +5,10 @@ const { createReadStream, createWriteStream } = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const { randomUUID } = require('crypto');
 const { spawn } = require('child_process');
 const admin = require('firebase-admin');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 function loadEnvFile(filePath) {
   return fs.readFile(filePath, 'utf8')
@@ -277,30 +278,6 @@ async function uploadToR2(s3, key, filePath, onProgress) {
   return buildPublicUrl(key);
 }
 
-async function deleteStagedSourceIfSafe(s3, job) {
-  const sourceStorageKey = String(job.sourceStorageKey || '').trim();
-
-  if (!sourceStorageKey) {
-    return false;
-  }
-
-  if (!sourceStorageKey.startsWith('direct-source-staging/')) {
-    console.warn(
-      `[request-worker] refusing to delete non-staging source key ${sourceStorageKey}`
-    );
-    return false;
-  }
-
-  await s3.send(
-    new DeleteObjectCommand({
-      Bucket: requireEnv('R2_BUCKET'),
-      Key: sourceStorageKey,
-    })
-  );
-
-  return true;
-}
-
 async function updateProgress(db, job, patch) {
   const collections = getCollections();
   const timestamp = nowIso();
@@ -359,6 +336,324 @@ function createProgressReporter(db, job) {
   };
 }
 
+async function updateJobOnlyProgress(db, job, patch) {
+  const collections = getCollections();
+  const timestamp = nowIso();
+  const progress =
+    typeof patch.progress === 'number'
+      ? Math.max(0, Math.min(100, Math.round(patch.progress)))
+      : undefined;
+  const jobPatch = {
+    ...patch,
+    ...(progress !== undefined ? { progress } : {}),
+    updatedAt: timestamp,
+    workerHeartbeatAt: timestamp,
+  };
+
+  await db.collection(collections.jobs).doc(job.id).set(jobPatch, { merge: true });
+  Object.assign(job, jobPatch);
+}
+
+function createJobOnlyProgressReporter(db, job) {
+  let chain = Promise.resolve();
+
+  const report = (patch) => {
+    chain = chain
+      .then(() => updateJobOnlyProgress(db, job, patch))
+      .catch((error) => {
+        console.warn('[request-worker] telegram progress update failed:', error.message || error);
+      });
+    return chain;
+  };
+
+  return {
+    report,
+    flush: () => chain,
+  };
+}
+
+function getTelegramBotToken() {
+  return String(process.env.REQUEST_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+}
+
+function getAllowedTelegramChatIds() {
+  return String(process.env.REQUEST_TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_ALLOWED_CHAT_IDS || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+async function telegramApi(token, method, payload) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.ok === false) {
+    throw new Error(data.description || `Telegram ${method} failed with ${response.status}`);
+  }
+
+  return data.result;
+}
+
+async function sendTelegramMessage(token, chatId, text) {
+  if (!token || !chatId) {
+    return;
+  }
+
+  await telegramApi(token, 'sendMessage', {
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+  }).catch((error) => {
+    console.warn('[request-worker] telegram sendMessage failed:', error.message || error);
+  });
+}
+
+function extractTelegramMedia(message) {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+
+  if (message.document?.file_id) {
+    return {
+      kind: 'document',
+      fileId: message.document.file_id,
+      fileName: message.document.file_name || 'telegram-video',
+      fileSizeBytes: Number(message.document.file_size || 0) || null,
+      mimeType: message.document.mime_type || '',
+    };
+  }
+
+  if (message.video?.file_id) {
+    return {
+      kind: 'video',
+      fileId: message.video.file_id,
+      fileName: message.video.file_name || `${message.video.file_unique_id || 'telegram-video'}.mp4`,
+      fileSizeBytes: Number(message.video.file_size || 0) || null,
+      mimeType: message.video.mime_type || 'video/mp4',
+    };
+  }
+
+  return null;
+}
+
+function getTelegramTitle(message, media) {
+  const caption = String(message.caption || '').trim();
+  const firstCaptionLine = caption.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+
+  return firstCaptionLine || media.fileName.replace(/\.[^.]+$/, '') || 'Telegram request video';
+}
+
+function getTelegramOffsetFile() {
+  const workDir = process.env.WORK_DIR || '/var/lib/ugmovies-request-worker/work';
+  return path.join(path.dirname(workDir), 'telegram-offset.json');
+}
+
+async function readTelegramOffset() {
+  const offsetFile = getTelegramOffsetFile();
+  const raw = await fs.readFile(offsetFile, 'utf8').catch(() => '');
+
+  try {
+    const parsed = Number(raw ? JSON.parse(raw).offset : 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function writeTelegramOffset(offset) {
+  const offsetFile = getTelegramOffsetFile();
+
+  await fs.mkdir(path.dirname(offsetFile), { recursive: true });
+  await fs.writeFile(offsetFile, JSON.stringify({ offset }), 'utf8');
+}
+
+async function getTelegramFileDownloadUrl(token, fileId) {
+  const file = await telegramApi(token, 'getFile', { file_id: fileId });
+  const filePath = String(file.file_path || '').trim();
+
+  if (!filePath) {
+    throw new Error('Telegram did not return a downloadable file path.');
+  }
+
+  return `https://api.telegram.org/file/bot${token}/${filePath}`;
+}
+
+async function createTelegramJob(db, update, message, media, title) {
+  const collections = getCollections();
+  const timestamp = nowIso();
+  const jobId = `telegram-${Date.now()}-${randomUUID().slice(0, 10)}`;
+  const job = {
+    id: jobId,
+    requestId: '',
+    movieId: '',
+    title,
+    userEmail: '',
+    contentType: 'movie',
+    status: 'claimed',
+    progress: 1,
+    currentStage: 'Telegram file received',
+    sourceUrl: '',
+    sourceFileName: media.fileName,
+    sourceFileSizeBytes: media.fileSizeBytes,
+    sourceType: 'telegram_file',
+    telegramFileId: media.fileId,
+    telegramChatId: String(message.chat?.id || ''),
+    telegramMessageId: message.message_id || '',
+    telegramUpdateId: update.update_id || '',
+    telegramMimeType: media.mimeType,
+    processorQueue: 'request-telegram-worker',
+    errorMessage: '',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    queuedAt: timestamp,
+  };
+
+  await db.collection(collections.jobs).doc(jobId).set(job, { merge: true });
+  return job;
+}
+
+async function processTelegramMedia(db, s3, token, update) {
+  const message = update.message || update.channel_post;
+  const chatId = String(message?.chat?.id || '');
+  const allowedChatIds = getAllowedTelegramChatIds();
+
+  if (allowedChatIds.length && !allowedChatIds.includes(chatId)) {
+    console.warn(`[request-worker] ignored telegram upload from unauthorized chat ${chatId}`);
+    return;
+  }
+
+  const media = extractTelegramMedia(message);
+
+  if (!media) {
+    return;
+  }
+
+  const title = getTelegramTitle(message, media);
+  const job = await createTelegramJob(db, update, message, media, title);
+  const progress = createJobOnlyProgressReporter(db, job);
+  const workDir = path.join(requireEnv('WORK_DIR'), job.id);
+  const sourcePath = path.join(workDir, media.fileName || 'telegram-source.bin');
+  const outputPath = path.join(workDir, `${slugify(title)}.mp4`);
+  const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
+  const r2Key = `${keyPrefix}/telegram/${job.id}/video.mp4`;
+
+  await fs.mkdir(workDir, { recursive: true });
+  await sendTelegramMessage(
+    token,
+    chatId,
+    `Received "${title}". Processing has started on the request VPS.`
+  );
+
+  try {
+    await progress.report({
+      status: 'downloading',
+      progress: 5,
+      currentStage: 'Downloading forwarded Telegram file',
+    });
+    const downloadUrl = await getTelegramFileDownloadUrl(token, media.fileId);
+    await downloadFile(downloadUrl, sourcePath, (downloadedBytes, totalBytes) => {
+      const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 22 : 0;
+      void progress.report({
+        status: 'downloading',
+        progress: 5 + percent,
+        currentStage: 'Downloading forwarded Telegram file',
+      });
+    });
+    await progress.flush();
+
+    await progress.report({
+      status: 'processing',
+      progress: 30,
+      currentStage: 'Processing via FFmpeg',
+    });
+    const durationSeconds = await runProbeDuration(sourcePath);
+    await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
+      void progress.report({
+        status: 'processing',
+        progress: percent,
+        currentStage: 'Processing via FFmpeg',
+      });
+    });
+    await progress.flush();
+
+    await progress.report({
+      status: 'uploading',
+      progress: 72,
+      currentStage: 'Uploading processed MP4 to Cloudflare R2',
+    });
+    const publicVideoUrl = await uploadToR2(s3, r2Key, outputPath, (uploadedBytes, totalBytes) => {
+      const percent = totalBytes > 0 ? (uploadedBytes / totalBytes) * 23 : 0;
+      void progress.report({
+        status: 'uploading',
+        progress: 72 + percent,
+        currentStage: 'Uploading processed MP4 to Cloudflare R2',
+      });
+    });
+    await progress.flush();
+
+    await removeLocalWorkspace(workDir);
+    await progress.report({
+      status: 'uploaded',
+      progress: 100,
+      currentStage: 'Telegram worker link ready',
+      publicVideoUrl,
+      directMp4Url: publicVideoUrl,
+      sourceUrl: publicVideoUrl,
+      completedAt: nowIso(),
+    });
+
+    await sendTelegramMessage(
+      token,
+      chatId,
+      [
+        `Request worker finished "${title}".`,
+        '',
+        'Paste this link into the admin request panel:',
+        publicVideoUrl,
+      ].join('\n')
+    );
+    console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error || 'Unknown Telegram worker error');
+    await progress.report({
+      status: 'failed',
+      progress: 100,
+      currentStage: 'Telegram worker failed',
+      errorMessage: messageText,
+    });
+    await sendTelegramMessage(token, chatId, `Request worker failed "${title}": ${messageText}`);
+    throw error;
+  } finally {
+    await removeLocalWorkspace(workDir);
+  }
+}
+
+async function pollTelegramOnce(db, s3, telegramState) {
+  const token = getTelegramBotToken();
+
+  if (!token) {
+    return;
+  }
+
+  const result = await telegramApi(token, 'getUpdates', {
+    offset: telegramState.offset || undefined,
+    timeout: 1,
+    allowed_updates: ['message', 'channel_post'],
+  });
+
+  for (const update of result || []) {
+    telegramState.offset = Number(update.update_id || 0) + 1;
+    await writeTelegramOffset(telegramState.offset);
+    await processTelegramMedia(db, s3, token, update).catch((error) => {
+      console.error('[request-worker] telegram update failed:', error.message || error);
+    });
+  }
+}
+
 async function claimJob(db, doc) {
   const collections = getCollections();
   const workerId = process.env.WORKER_ID || require('os').hostname();
@@ -415,8 +710,6 @@ function getMoviePatchForReady(job, publicVideoUrl, timestamp) {
     sourceUrl: job.sourceUrl || '',
     sourceFileName: job.sourceFileName || '',
     sourceFileSizeBytes: Number(job.sourceFileSizeBytes || 0) || null,
-    sourceStorageKey: job.sourceStorageKey || '',
-    sourceStorageProvider: job.sourceStorageProvider || '',
     sourceType: 'direct_url',
     sourcePipeline: 'request_vps_import',
     jobStatus: 'ready',
@@ -636,18 +929,6 @@ async function processJob(db, s3, job) {
     // Mandatory 100GB VPS protection: delete raw/intermediate local files immediately after R2 success.
     await removeLocalWorkspace(workDir);
 
-    try {
-      const deletedStagedSource = await deleteStagedSourceIfSafe(s3, job);
-
-      if (deletedStagedSource) {
-        await progress.report({
-          currentStage: 'Cleaned staged source after successful upload',
-        });
-      }
-    } catch (error) {
-      console.warn('[request-worker] staged source cleanup failed:', error.message || error);
-    }
-
     const completedAt = await writeMovieReady(db, job, publicVideoUrl);
     await progress.report({
       status: 'uploaded',
@@ -737,12 +1018,20 @@ async function main() {
   });
   const db = admin.firestore();
   const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS || 15000);
+  const telegramState = {
+    offset: await readTelegramOffset(),
+  };
 
   await fs.mkdir(requireEnv('WORK_DIR'), { recursive: true });
-  console.log('[request-worker] started unified request processing worker');
+  console.log(
+    getTelegramBotToken()
+      ? '[request-worker] started request Telegram worker and legacy queue watcher'
+      : '[request-worker] started legacy request queue watcher; Telegram bot token is not configured'
+  );
 
   for (;;) {
     try {
+      await pollTelegramOnce(db, s3, telegramState);
       await pollOnce(db, s3);
     } catch (error) {
       console.error('[request-worker] poll failed:', error.message || error);

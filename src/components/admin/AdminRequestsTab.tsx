@@ -24,7 +24,7 @@ import type {
   AdminRequestStatus,
   RequestProcessingJob,
 } from '@/types/admin';
-import { uploadMultipartFileToAdmin, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
+import { uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
 import { db } from '@/lib/firebase';
 import { Card, FieldLabel, SelectInput, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
@@ -37,9 +37,6 @@ type RequestEdit = {
   adminNotes: string;
   sourceUrl: string;
   sourceFileName: string;
-  sourceFileSizeBytes: string;
-  sourceStorageKey: string;
-  sourceStorageProvider: 'r2_staging' | 'external_url' | '';
   customReply: string;
   rejectionMessage: string;
   movieId: string;
@@ -105,9 +102,6 @@ function createRequestEditFallback(request: AdminRequest): RequestEdit {
     adminNotes: request.adminNotes || '',
     sourceUrl: request.sourceUrl || '',
     sourceFileName: request.sourceFileName || '',
-    sourceFileSizeBytes: request.sourceFileSizeBytes ? String(request.sourceFileSizeBytes) : '',
-    sourceStorageKey: request.sourceStorageKey || '',
-    sourceStorageProvider: request.sourceStorageProvider || '',
     customReply: request.customReply || '',
     rejectionMessage: request.rejectionMessage || '',
     movieId: request.movieId || '',
@@ -174,10 +168,6 @@ export function AdminRequestsTab({
   const [tmdbLoading, setTmdbLoading] = useState(false);
   const [tmdbError, setTmdbError] = useState('');
   const [uploadingImage, setUploadingImage] = useState<'poster' | 'backdrop' | ''>('');
-  const [sourceUploadProgress, setSourceUploadProgress] = useState(0);
-  const [sourceUploadStatus, setSourceUploadStatus] = useState('');
-  const [sourceUploadDiagnostics, setSourceUploadDiagnostics] = useState<string[]>([]);
-  const [sourceUploadBusy, setSourceUploadBusy] = useState(false);
   const [workerJobs, setWorkerJobs] = useState<RequestProcessingJob[]>([]);
   const [workerError, setWorkerError] = useState('');
 
@@ -195,13 +185,6 @@ export function AdminRequestsTab({
       setSelectedRequestId(requests[0].id);
     }
   }, [requests, selectedRequestId]);
-
-  useEffect(() => {
-    setSourceUploadProgress(0);
-    setSourceUploadStatus('');
-    setSourceUploadDiagnostics([]);
-    setSourceUploadBusy(false);
-  }, [selectedRequestId]);
 
   useEffect(() => {
     const jobsQuery = query(
@@ -272,16 +255,18 @@ export function AdminRequestsTab({
       const response = await fetch(
         `/api/admin/tmdb?title=${encodeURIComponent(tmdbQuery.trim())}&mediaType=${mediaType}`
       );
-      const payload = (await response.json().catch(() => ({}))) as {
+      const payload = (await response.json().catch(() => ({}))) as
+        | TmdbResult[]
+        | {
         results?: TmdbResult[];
         error?: string;
       };
 
       if (!response.ok) {
-        throw new Error(payload.error || 'TMDB search failed.');
+        throw new Error(Array.isArray(payload) ? 'TMDB search failed.' : payload.error || 'TMDB search failed.');
       }
 
-      setTmdbResults(payload.results || []);
+      setTmdbResults(Array.isArray(payload) ? payload : payload.results || []);
     } catch (error) {
       setTmdbError(error instanceof Error ? error.message : 'TMDB search failed.');
     } finally {
@@ -353,46 +338,6 @@ export function AdminRequestsTab({
       setTmdbError(error instanceof Error ? error.message : 'Image upload failed.');
     } finally {
       setUploadingImage('');
-    }
-  };
-
-  const uploadRequestSource = async (file: File | null) => {
-    if (!file) {
-      return;
-    }
-
-    setSourceUploadBusy(true);
-    setSourceUploadProgress(0);
-    setSourceUploadStatus('Preparing direct staging upload...');
-    setSourceUploadDiagnostics([]);
-
-    try {
-      const uploaded = await uploadMultipartFileToAdmin({
-        file,
-        stage: 'staging',
-        onProgress: (progress) => {
-          setSourceUploadProgress(Math.round(progress));
-        },
-        onDiagnostic: (message) => {
-          setSourceUploadDiagnostics((current) => [message, ...current].slice(0, 5));
-        },
-      });
-
-      updateSelectedEdit({
-        sourceUrl: uploaded.publicUrl,
-        sourceFileName: uploaded.fileName,
-        sourceFileSizeBytes: String(uploaded.fileSizeBytes),
-        sourceStorageKey: uploaded.key,
-        sourceStorageProvider: 'r2_staging',
-      });
-      setSourceUploadProgress(100);
-      setSourceUploadStatus(
-        'Source file staged in isolated R2 storage. The request VPS will download this copy, process it, then delete it after final upload.'
-      );
-    } catch (error) {
-      setSourceUploadStatus(error instanceof Error ? error.message : 'Source upload failed.');
-    } finally {
-      setSourceUploadBusy(false);
     }
   };
 
@@ -893,81 +838,28 @@ export function AdminRequestsTab({
               </section>
 
               <section className="rounded-[30px] border border-sky-300/15 bg-sky-400/[0.05] p-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <FieldLabel>
-                      {selectedEdit.contentType === 'series'
-                        ? 'Episode Source Ingest'
-                        : 'Movie Source Ingest'}
-                    </FieldLabel>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-white/58">
-                      Upload the raw MP4/MKV/WebM here. The admin browser sends it directly to
-                      temporary R2 staging, so the main Telegram worker and main app VPS are not
-                      used for request files.
-                    </p>
-                  </div>
-                  {selectedEdit.sourceStorageProvider === 'r2_staging' && (
-                    <span className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-100">
-                      Staged Source Ready
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-4 rounded-3xl border border-white/10 bg-black/20 p-4">
-                  <input
-                    type="file"
-                    accept="video/*,.mkv,.webm,.mp4,.mov,.avi"
-                    disabled={sourceUploadBusy}
-                    onChange={(event) => void uploadRequestSource(event.currentTarget.files?.[0] || null)}
-                    className="block w-full text-xs text-white/55 file:mr-3 file:rounded-full file:border-0 file:bg-sky-500 file:px-4 file:py-3 file:text-xs file:font-black file:uppercase file:tracking-[0.14em] file:text-white"
-                  />
-                  {(sourceUploadBusy || sourceUploadProgress > 0 || sourceUploadStatus) && (
-                    <div className="mt-4 space-y-3">
-                      <div className="h-3 overflow-hidden rounded-full bg-white/10">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-300 to-emerald-300 transition-all duration-300"
-                          style={{ width: `${Math.max(0, Math.min(100, sourceUploadProgress))}%` }}
-                        />
-                      </div>
-                      <div className="text-xs text-white/55">
-                        {sourceUploadStatus || `Uploading source file: ${sourceUploadProgress}%`}
-                      </div>
-                      {sourceUploadDiagnostics.length > 0 && (
-                        <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-[11px] leading-5 text-white/42">
-                          {sourceUploadDiagnostics.map((message) => (
-                            <div key={message}>{message}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
+                <FieldLabel>Paste Telegram Worker Generated Link / Raw Video Link</FieldLabel>
+                <p className="mt-1 text-sm leading-6 text-white/58">
+                  Forward the movie file to the request Telegram bot on the 6-vCPU VPS. When the bot
+                  replies with the finished R2 MP4 link, paste that link here and publish the matched
+                  metadata.
+                </p>
                 <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
                   <TextInput
                     value={selectedEdit.sourceUrl}
                     onChange={(event) =>
                       updateSelectedEdit({
                         sourceUrl: event.target.value,
-                        sourceFileName: '',
-                        sourceFileSizeBytes: '',
-                        sourceStorageKey: '',
-                        sourceStorageProvider: event.target.value.trim() ? 'external_url' : '',
                       })
                     }
-                    placeholder="Or paste an external direct source URL if you already have one..."
+                    placeholder="https://media.ugmovies247.com/requested/.../video.mp4"
                   />
                   <TextInput
                     value={selectedEdit.sourceFileName}
                     onChange={(event) => updateSelectedEdit({ sourceFileName: event.target.value })}
-                    placeholder="Source file name..."
+                    placeholder="Optional file name..."
                   />
                 </div>
-                {selectedEdit.sourceStorageKey && (
-                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/45">
-                    Staging key: {selectedEdit.sourceStorageKey}
-                  </div>
-                )}
                 <button
                   type="button"
                   disabled={actionBusy || !selectedEdit.sourceUrl.trim()}
@@ -1087,6 +979,11 @@ export function AdminRequestsTab({
               {job.errorMessage && (
                 <div className="mt-4 rounded-2xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
                   {job.errorMessage}
+                </div>
+              )}
+              {job.publicVideoUrl && (
+                <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-100">
+                  Telegram worker link ready: {job.publicVideoUrl}
                 </div>
               )}
             </article>

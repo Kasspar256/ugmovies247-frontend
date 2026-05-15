@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 
 type SearchMediaType = 'movie' | 'tv';
 
@@ -38,7 +38,7 @@ async function fetchTmdbJson(path: string, params?: URLSearchParams) {
 export async function GET(req: Request) {
   const session = await getCurrentAuthSession();
 
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -69,8 +69,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Missing title' }, { status: 400 });
     }
 
-    const payload = await fetchTmdbJson(`/search/${mediaType}`, new URLSearchParams({ query: title }));
-    return NextResponse.json(payload.results || []);
+    const payload = await fetchTmdbJson(
+      `/search/${mediaType}`,
+      new URLSearchParams({
+        query: title,
+        include_adult: 'false',
+      })
+    );
+
+    return NextResponse.json({ results: Array.isArray(payload.results) ? payload.results : [] });
   } catch (error) {
     return NextResponse.json(
       {
