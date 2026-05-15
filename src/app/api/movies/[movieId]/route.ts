@@ -241,7 +241,7 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
-function withReviewTrailerFallback(movieDoc: Record<string, unknown>) {
+function withReviewTrailerFallback(movieDoc: Record<string, unknown>): Record<string, unknown> {
   const trailerUrl =
     String(movieDoc.trailer_url || '').trim() ||
     getMappedTrailerUrlForTitle(String(movieDoc.title || '')) ||
