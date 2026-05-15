@@ -543,6 +543,9 @@ export async function queueAdvancedMovieRequestFulfillment(
     contentType === 'series'
       ? buildSeriesShell(commonShellOptions)
       : buildMovieShell(commonShellOptions);
+  const seriesShell = movieShell as unknown as {
+    seasons?: Array<Record<string, unknown> & { episodes?: Array<Record<string, unknown>> }>;
+  };
   const readyMovieShell =
     contentType === 'series'
       ? {
@@ -554,8 +557,8 @@ export async function queueAdvancedMovieRequestFulfillment(
           errorMessage: '',
           processedAt: timestamp,
           updatedAt: timestamp,
-          seasons: Array.isArray((movieShell as { seasons?: unknown }).seasons)
-            ? (movieShell as { seasons: Array<Record<string, unknown>> }).seasons.map((season) => ({
+          seasons: Array.isArray(seriesShell.seasons)
+            ? seriesShell.seasons.map((season) => ({
                 ...season,
                 episodes: Array.isArray(season.episodes)
                   ? season.episodes.map((episode) => ({
