@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('fs/promises');
-const { createWriteStream, createReadStream } = require('fs');
+const { createReadStream, createWriteStream } = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
@@ -69,15 +69,23 @@ function slugify(value) {
     .slice(0, 80) || 'movie';
 }
 
-async function safeDelete(filePath) {
-  if (!filePath) {
+function getCollections() {
+  return {
+    jobs: process.env.REQUEST_PROCESSING_JOBS_COLLECTION || 'request_processing_jobs',
+    requests: process.env.MOVIE_REQUESTS_COLLECTION || 'movie_requests',
+    movies: process.env.MOVIES_COLLECTION || 'movies__production',
+  };
+}
+
+async function removeLocalWorkspace(workDir) {
+  if (!workDir) {
     return;
   }
 
-  await fs.rm(filePath, { force: true }).catch(() => undefined);
+  await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
 }
 
-function downloadFile(url, destination, redirectCount = 0) {
+function downloadFile(url, destination, onProgress, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
       reject(new Error('Too many redirects while downloading source file.'));
@@ -94,7 +102,7 @@ function downloadFile(url, destination, redirectCount = 0) {
       ) {
         response.resume();
         const redirectedUrl = new URL(response.headers.location, parsedUrl).toString();
-        downloadFile(redirectedUrl, destination, redirectCount + 1).then(resolve, reject);
+        downloadFile(redirectedUrl, destination, onProgress, redirectCount + 1).then(resolve, reject);
         return;
       }
 
@@ -104,23 +112,64 @@ function downloadFile(url, destination, redirectCount = 0) {
         return;
       }
 
+      const totalBytes = Number(response.headers['content-length'] || 0);
+      let downloadedBytes = 0;
+      let lastEmitAt = 0;
       const file = createWriteStream(destination);
+
+      response.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        const now = Date.now();
+
+        if (totalBytes > 0 && now - lastEmitAt > 2000) {
+          lastEmitAt = now;
+          onProgress?.(downloadedBytes, totalBytes);
+        }
+      });
+
       response.pipe(file);
       file.on('finish', () => file.close(resolve));
       file.on('error', reject);
     });
 
-    request.setTimeout(1000 * 60 * 20, () => {
+    request.setTimeout(1000 * 60 * 30, () => {
       request.destroy(new Error('Source download timed out.'));
     });
     request.on('error', reject);
   });
 }
 
-function runFfmpeg(inputPath, outputPath) {
+function runProbeDuration(inputPath) {
+  return new Promise((resolve) => {
+    const child = spawn('ffprobe', [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      inputPath,
+    ]);
+    let output = '';
+
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    child.on('close', () => {
+      const durationSeconds = Number(output.trim());
+      resolve(Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0);
+    });
+    child.on('error', () => resolve(0));
+  });
+}
+
+function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
   const preset = process.env.FFMPEG_PRESET || 'veryfast';
   const crf = process.env.FFMPEG_CRF || '21';
   const args = [
+    '-progress',
+    'pipe:1',
+    '-nostats',
     '-y',
     '-i',
     inputPath,
@@ -149,10 +198,42 @@ function runFfmpeg(inputPath, outputPath) {
   ];
 
   return new Promise((resolve, reject) => {
-    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'inherit', 'inherit'] });
-    child.on('error', reject);
+    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let estimatedProgress = 34;
+    const timer = setInterval(() => {
+      estimatedProgress = Math.min(66, estimatedProgress + 2);
+      onProgress?.(estimatedProgress);
+    }, 5000);
+
+    child.stdout.on('data', (chunk) => {
+      for (const line of chunk.toString().split(/\r?\n/)) {
+        const [key, value] = line.split('=');
+
+        if (key === 'out_time_ms' && durationSeconds > 0) {
+          const outTimeSeconds = Number(value) / 1000000;
+          const percent = Math.min(1, Math.max(0, outTimeSeconds / durationSeconds));
+          onProgress?.(30 + Math.round(percent * 40));
+        }
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString().trim();
+
+      if (text) {
+        console.log(`[ffmpeg] ${text.slice(0, 400)}`);
+      }
+    });
+
+    child.on('error', (error) => {
+      clearInterval(timer);
+      reject(error);
+    });
     child.on('close', (code) => {
+      clearInterval(timer);
+
       if (code === 0) {
+        onProgress?.(70);
         resolve();
         return;
       }
@@ -167,84 +248,130 @@ function buildPublicUrl(key) {
   return `${baseUrl}/${key.split('/').map(encodeURIComponent).join('/')}`;
 }
 
-async function uploadToR2(s3, key, filePath) {
+async function uploadToR2(s3, key, filePath, onProgress) {
+  const stats = await fs.stat(filePath);
+  const stream = createReadStream(filePath);
+  let uploadedBytes = 0;
+  let lastEmitAt = 0;
+
+  stream.on('data', (chunk) => {
+    uploadedBytes += chunk.length;
+    const now = Date.now();
+
+    if (now - lastEmitAt > 2000) {
+      lastEmitAt = now;
+      onProgress?.(uploadedBytes, stats.size);
+    }
+  });
+
   await s3.send(
     new PutObjectCommand({
       Bucket: requireEnv('R2_BUCKET'),
       Key: key,
-      Body: createReadStream(filePath),
+      Body: stream,
       ContentType: 'video/mp4',
     })
   );
 
+  onProgress?.(stats.size, stats.size);
   return buildPublicUrl(key);
 }
 
-async function sendReadyPush(db, request, movieId) {
-  let token = String(request.fcmToken || '').trim();
+async function updateProgress(db, job, patch) {
+  const collections = getCollections();
+  const timestamp = nowIso();
+  const nextStatus = patch.status || job.status;
+  const progress =
+    typeof patch.progress === 'number'
+      ? Math.max(0, Math.min(100, Math.round(patch.progress)))
+      : undefined;
+  const currentStage = patch.currentStage || job.currentStage || '';
+  const jobPatch = {
+    ...patch,
+    ...(progress !== undefined ? { progress } : {}),
+    updatedAt: timestamp,
+    workerHeartbeatAt: timestamp,
+  };
+  const requestPatch = {
+    workerStatus: nextStatus,
+    currentStage,
+    updatedAt: timestamp,
+    workerHeartbeatAt: timestamp,
+    ...(progress !== undefined ? { progress } : {}),
+    ...(patch.errorMessage ? { workerError: patch.errorMessage } : {}),
+  };
+  const moviePatch = {
+    jobStatus: nextStatus === 'uploaded' ? 'ready' : nextStatus,
+    currentStage,
+    updatedAt: timestamp,
+    ...(progress !== undefined ? { processingProgress: progress } : {}),
+    ...(patch.errorMessage ? { errorMessage: patch.errorMessage } : {}),
+  };
 
-  if (!token && request.userId) {
-    const userSnapshot = await db.collection('users').doc(String(request.userId)).get().catch(() => null);
-    token = String(userSnapshot?.data()?.fcmToken || '').trim();
-  }
+  await Promise.all([
+    db.collection(collections.jobs).doc(job.id).set(jobPatch, { merge: true }),
+    db.collection(collections.requests).doc(job.requestId).set(requestPatch, { merge: true }),
+    db.collection(collections.movies).doc(job.movieId).set(moviePatch, { merge: true }),
+  ]);
 
-  if (!token) {
-    return;
-  }
-
-  const baseUrl = (process.env.PUBLIC_APP_BASE_URL || 'https://ugmovies247.com').replace(/\/$/, '');
-  const route = `/movie/${encodeURIComponent(movieId)}?fresh=1&fromRequest=1`;
-
-  await admin.messaging().send({
-    token,
-    notification: {
-      title: 'Your movie request is ready!',
-      body: `${request.movieTitle || request.title || 'Your movie'} is now available.`,
-    },
-    data: {
-      type: 'movie_request_ready',
-      requestId: request.id || '',
-      movieId,
-      route,
-    },
-    android: {
-      priority: 'high',
-      notification: {
-        channelId: 'movie_requests',
-        sound: 'default',
-      },
-    },
-    webpush: {
-      fcmOptions: {
-        link: `${baseUrl}${route}`,
-      },
-    },
-  }).catch((error) => {
-    console.warn('[request-worker] ready push failed:', error.message || error);
-  });
+  Object.assign(job, jobPatch);
 }
 
-async function claimRequest(db, doc) {
-  const ref = doc.ref;
+function createProgressReporter(db, job) {
+  let chain = Promise.resolve();
+
+  const report = (patch) => {
+    chain = chain
+      .then(() => updateProgress(db, job, patch))
+      .catch((error) => {
+        console.warn('[request-worker] progress update failed:', error.message || error);
+      });
+    return chain;
+  };
+
+  return {
+    report,
+    flush: () => chain,
+  };
+}
+
+async function claimJob(db, doc) {
+  const collections = getCollections();
+  const workerId = process.env.WORKER_ID || require('os').hostname();
 
   return db.runTransaction(async (transaction) => {
-    const fresh = await transaction.get(ref);
+    const fresh = await transaction.get(doc.ref);
     const data = fresh.data() || {};
 
     if (
-      data.status !== 'processing' ||
+      data.status !== 'queued' ||
       data.processorQueue !== 'request-vps' ||
-      data.workerStatus === 'running'
+      data.workerId
     ) {
       return null;
     }
 
+    const timestamp = nowIso();
+    const patch = {
+      status: 'claimed',
+      workerId,
+      progress: 1,
+      currentStage: 'Claimed by request VPS',
+      startedAt: timestamp,
+      updatedAt: timestamp,
+      workerHeartbeatAt: timestamp,
+      errorMessage: '',
+    };
+
+    transaction.set(doc.ref, patch, { merge: true });
     transaction.set(
-      ref,
+      db.collection(collections.requests).doc(String(data.requestId)),
       {
-        workerStatus: 'running',
-        workerStartedAt: nowIso(),
-        workerHeartbeatAt: nowIso(),
+        workerStatus: 'claimed',
+        progress: 1,
+        currentStage: 'Claimed by request VPS',
+        updatedAt: timestamp,
+        workerHeartbeatAt: timestamp,
         workerError: '',
       },
       { merge: true }
@@ -253,153 +380,286 @@ async function claimRequest(db, doc) {
     return {
       id: fresh.id,
       ...data,
+      ...patch,
     };
   });
 }
 
-async function processRequest(db, s3, request) {
-  const title = String(request.movieTitle || request.title || 'Requested Movie').trim();
-  const sourceUrl = String(request.sourceUrl || request.rawFileUrl || '').trim();
+function getMoviePatchForReady(job, publicVideoUrl, timestamp) {
+  return {
+    video_url: publicVideoUrl,
+    sourceUrl: job.sourceUrl || '',
+    sourceFileName: job.sourceFileName || '',
+    sourceType: 'direct_url',
+    sourcePipeline: 'request_vps_import',
+    jobStatus: 'ready',
+    currentStage: 'Live and ready to watch',
+    processingProgress: 100,
+    errorMessage: '',
+    playbackType: 'mp4',
+    status: 'live',
+    processedAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
 
-  if (!sourceUrl) {
-    throw new Error('Request has no sourceUrl/rawFileUrl for the worker to download.');
+async function writeSeriesEpisodeReady(db, job, publicVideoUrl, timestamp) {
+  const collections = getCollections();
+  const ref = db.collection(collections.movies).doc(String(job.movieId));
+  const snapshot = await ref.get();
+  const data = snapshot.data() || {};
+  const shell = job.movieShell && typeof job.movieShell === 'object' ? job.movieShell : {};
+  const seasonNumber = Math.max(1, Number(job.seasonNumber || 1));
+  const episodeNumber = Math.max(1, Number(job.episodeNumber || 1));
+  const seasons = Array.isArray(data.seasons)
+    ? data.seasons.map((season) => ({ ...season }))
+    : Array.isArray(shell.seasons)
+      ? shell.seasons.map((season) => ({ ...season }))
+      : [];
+  let season = seasons.find((entry) => Number(entry.seasonNumber) === seasonNumber);
+
+  if (!season) {
+    season = {
+      seasonNumber,
+      title: `Season ${seasonNumber}`,
+      poster: data.poster || shell.poster || '',
+      overview: data.overview || shell.overview || '',
+      episodes: [],
+    };
+    seasons.push(season);
   }
 
-  const movieId = String(request.movieId || request.id).trim();
-  const workDir = path.join(requireEnv('WORK_DIR'), request.id);
-  const sourcePath = path.join(workDir, 'source');
+  season.episodes = Array.isArray(season.episodes)
+    ? season.episodes.map((episode) => ({ ...episode }))
+    : [];
+
+  let episode = season.episodes.find((entry) => Number(entry.episodeNumber) === episodeNumber);
+
+  if (!episode) {
+    episode = {
+      episodeNumber,
+      title: String(job.episodeTitle || `${job.title} Episode ${episodeNumber}`),
+      description: data.description || shell.description || '',
+      overview: data.overview || shell.overview || '',
+      poster: data.poster || shell.poster || '',
+      video_url: '',
+    };
+    season.episodes.push(episode);
+  }
+
+  Object.assign(episode, getMoviePatchForReady(job, publicVideoUrl, timestamp), {
+    episodeNumber,
+    title: episode.title || String(job.episodeTitle || `${job.title} Episode ${episodeNumber}`),
+  });
+
+  await ref.set(
+    {
+      ...shell,
+      id: job.movieId,
+      movieId: job.movieId,
+      contentType: 'series',
+      video_url: '',
+      seasons,
+      jobStatus: 'ready',
+      currentStage: 'Live and ready to watch',
+      processingProgress: 100,
+      errorMessage: '',
+      status: 'live',
+      updatedAt: timestamp,
+      processedAt: timestamp,
+    },
+    { merge: true }
+  );
+}
+
+async function writeMovieReady(db, job, publicVideoUrl) {
+  const collections = getCollections();
+  const timestamp = nowIso();
+
+  if (job.contentType === 'series') {
+    await writeSeriesEpisodeReady(db, job, publicVideoUrl, timestamp);
+    return timestamp;
+  }
+
+  const shell = job.movieShell && typeof job.movieShell === 'object' ? job.movieShell : {};
+  await db.collection(collections.movies).doc(String(job.movieId)).set(
+    {
+      ...shell,
+      id: job.movieId,
+      movieId: job.movieId,
+      contentType: 'movie',
+      ...getMoviePatchForReady(job, publicVideoUrl, timestamp),
+    },
+    { merge: true }
+  );
+
+  return timestamp;
+}
+
+async function notifyMainAppCompletion(job) {
+  const baseUrl = String(process.env.APP_INTERNAL_BASE_URL || process.env.PUBLIC_APP_BASE_URL || '').replace(/\/$/, '');
+  const secret = String(process.env.REQUEST_WORKER_SECRET || '').trim();
+
+  if (!baseUrl || !secret) {
+    console.warn('[request-worker] REQUEST_WORKER_SECRET/APP_INTERNAL_BASE_URL missing; completion email cannot be sent by main app.');
+    return false;
+  }
+
+  const response = await fetch(`${baseUrl}/api/internal/request-complete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-request-worker-secret': secret,
+    },
+    body: JSON.stringify({
+      requestId: job.requestId,
+      movieId: job.movieId,
+      jobId: job.id,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Main app completion hook failed: ${detail || response.status}`);
+  }
+
+  return true;
+}
+
+async function markRequestUploadedWithoutEmail(db, job, completedAt) {
+  const collections = getCollections();
+  await db.collection(collections.requests).doc(job.requestId).set(
+    {
+      status: 'uploaded',
+      movieId: job.movieId,
+      uploadedAt: completedAt,
+      updatedAt: completedAt,
+      workerStatus: 'done',
+      workerError: '',
+      progress: 100,
+      currentStage: 'Live and ready to watch',
+    },
+    { merge: true }
+  );
+}
+
+async function processJob(db, s3, job) {
+  const title = String(job.title || 'Requested Movie').trim();
+  const sourceUrl = String(job.sourceUrl || '').trim();
+  const progress = createProgressReporter(db, job);
+
+  if (!sourceUrl) {
+    throw new Error('Request processing job has no sourceUrl.');
+  }
+
+  const workDir = path.join(requireEnv('WORK_DIR'), job.id);
+  const sourcePath = path.join(workDir, 'source.bin');
   const outputPath = path.join(workDir, `${slugify(title)}.mp4`);
   const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
-  const r2Key = `${keyPrefix}/${movieId}/video.mp4`;
+  const r2Key = `${keyPrefix}/${job.movieId}/video.mp4`;
 
   await fs.mkdir(workDir, { recursive: true });
 
   try {
-    await db.collection(requireEnv('MOVIE_REQUESTS_COLLECTION')).doc(request.id).set(
-      {
-        workerStatus: 'downloading',
-        workerHeartbeatAt: nowIso(),
-        updatedAt: nowIso(),
-      },
-      { merge: true }
-    );
-    await downloadFile(sourceUrl, sourcePath);
+    await progress.report({
+      status: 'downloading',
+      progress: 5,
+      currentStage: 'Downloading source file',
+    });
+    await downloadFile(sourceUrl, sourcePath, (downloadedBytes, totalBytes) => {
+      const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 20 : 0;
+      void progress.report({
+        status: 'downloading',
+        progress: 5 + percent,
+        currentStage: 'Downloading source file',
+      });
+    });
+    await progress.flush();
 
-    await db.collection(requireEnv('MOVIE_REQUESTS_COLLECTION')).doc(request.id).set(
-      {
-        workerStatus: 'processing',
-        workerHeartbeatAt: nowIso(),
-        updatedAt: nowIso(),
-      },
-      { merge: true }
-    );
-    await runFfmpeg(sourcePath, outputPath);
+    await progress.report({
+      status: 'processing',
+      progress: 30,
+      currentStage: 'Processing via FFmpeg',
+    });
+    const durationSeconds = await runProbeDuration(sourcePath);
+    await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
+      void progress.report({
+        status: 'processing',
+        progress: percent,
+        currentStage: 'Processing via FFmpeg',
+      });
+    });
+    await progress.flush();
 
-    await db.collection(requireEnv('MOVIE_REQUESTS_COLLECTION')).doc(request.id).set(
-      {
-        workerStatus: 'uploading',
-        workerHeartbeatAt: nowIso(),
-        updatedAt: nowIso(),
-      },
-      { merge: true }
-    );
-    const publicVideoUrl = await uploadToR2(s3, r2Key, outputPath);
+    await progress.report({
+      status: 'uploading',
+      progress: 72,
+      currentStage: 'Uploading processed MP4 to Cloudflare R2',
+    });
+    const publicVideoUrl = await uploadToR2(s3, r2Key, outputPath, (uploadedBytes, totalBytes) => {
+      const percent = totalBytes > 0 ? (uploadedBytes / totalBytes) * 20 : 0;
+      void progress.report({
+        status: 'uploading',
+        progress: 72 + percent,
+        currentStage: 'Uploading processed MP4 to Cloudflare R2',
+      });
+    });
+    await progress.flush();
 
-    // Critical for the 75GB request VPS: delete local video files immediately after upload succeeds.
-    await safeDelete(sourcePath);
-    await safeDelete(outputPath);
+    // Mandatory 100GB VPS protection: delete raw/intermediate local files immediately after R2 success.
+    await removeLocalWorkspace(workDir);
 
-    const timestamp = nowIso();
-    await db.collection(requireEnv('MOVIES_COLLECTION')).doc(movieId).set(
-      {
-        id: movieId,
-        movieId,
-        title,
-        original_title: title,
-        contentType: 'movie',
-        description: String(request.notes || ''),
-        overview: String(request.notes || ''),
-        poster: String(request.poster || ''),
-        genres: [],
-        category: ['Latest Movies on Ugmovies247'],
-        vj: String(request.preferredVj || 'Unknown'),
-        video_url: publicVideoUrl,
-        sourceUrl,
-        sourceType: 'direct_url',
-        sourcePipeline: 'request_vps_import',
-        sourceFileName: String(request.sourceFileName || ''),
-        jobStatus: 'ready',
-        playbackType: 'mp4',
-        accessTier: 'premium',
-        subscriptionRequired: true,
-        date_added: timestamp,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        processedAt: timestamp,
-        requestId: request.id,
-      },
-      { merge: true }
-    );
+    const completedAt = await writeMovieReady(db, job, publicVideoUrl);
+    await progress.report({
+      status: 'uploaded',
+      progress: 100,
+      currentStage: 'Live and ready to watch',
+      completedAt,
+      publicVideoUrl,
+    });
 
-    await db.collection(requireEnv('MOVIE_REQUESTS_COLLECTION')).doc(request.id).set(
-      {
-        status: 'uploaded',
-        movieId,
-        uploadedAt: timestamp,
-        updatedAt: timestamp,
-        workerStatus: 'done',
-        workerError: '',
-        notificationPayload: {
-          type: 'movie_request_ready',
-          movieId,
-          route: `/movie/${movieId}?fresh=1&fromRequest=1`,
-        },
-      },
-      { merge: true }
-    );
+    try {
+      const notified = await notifyMainAppCompletion(job);
 
-    await sendReadyPush(db, { ...request, id: request.id }, movieId);
-    console.log(`[request-worker] uploaded ${title} as movie ${movieId}`);
+      if (!notified) {
+        await markRequestUploadedWithoutEmail(db, job, completedAt);
+      }
+    } catch (error) {
+      console.warn('[request-worker] main app completion hook failed:', error.message || error);
+      await markRequestUploadedWithoutEmail(db, job, completedAt);
+    }
+
+    console.log(`[request-worker] uploaded ${title} as ${job.movieId}`);
   } finally {
-    await safeDelete(sourcePath);
-    await safeDelete(outputPath);
-    await fs.rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    await removeLocalWorkspace(workDir);
   }
 }
 
 async function pollOnce(db, s3) {
+  const collections = getCollections();
   const snapshot = await db
-    .collection(requireEnv('MOVIE_REQUESTS_COLLECTION'))
-    .where('status', '==', 'processing')
-    .limit(5)
+    .collection(collections.jobs)
+    .where('status', '==', 'queued')
+    .limit(3)
     .get();
 
   for (const doc of snapshot.docs) {
-    const data = doc.data() || {};
+    const job = await claimJob(db, doc);
 
-    if (data.processorQueue !== 'request-vps') {
-      continue;
-    }
-
-    const request = await claimRequest(db, doc);
-
-    if (!request) {
+    if (!job) {
       continue;
     }
 
     try {
-      await processRequest(db, s3, request);
+      await processJob(db, s3, job);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Unknown worker error');
-      console.error(`[request-worker] request ${request.id} failed:`, message);
-      await db.collection(requireEnv('MOVIE_REQUESTS_COLLECTION')).doc(request.id).set(
-        {
-          workerStatus: 'failed',
-          workerError: message,
-          updatedAt: nowIso(),
-        },
-        { merge: true }
-      );
+      console.error(`[request-worker] job ${job.id} failed:`, message);
+      await updateProgress(db, job, {
+        status: 'failed',
+        currentStage: 'Failed',
+        errorMessage: message,
+      });
     }
   }
 }
@@ -440,7 +700,7 @@ async function main() {
   const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS || 15000);
 
   await fs.mkdir(requireEnv('WORK_DIR'), { recursive: true });
-  console.log('[request-worker] started isolated movie request worker');
+  console.log('[request-worker] started unified request processing worker');
 
   for (;;) {
     try {

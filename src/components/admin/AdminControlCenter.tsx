@@ -86,6 +86,22 @@ type RequestEdit = {
   customReply: string;
   rejectionMessage: string;
   movieId: string;
+  title: string;
+  originalTitle: string;
+  description: string;
+  poster: string;
+  backdrop: string;
+  genres: string;
+  category: string[];
+  vj: string;
+  releaseDate: string;
+  releaseYear: string;
+  tmdbId: string;
+  contentType: 'movie' | 'series';
+  seasonNumber: string;
+  episodeNumber: string;
+  seasonTitle: string;
+  episodeTitle: string;
 };
 
 const EMPTY_ADMIN_REVENUE: AdminControlCenterPayload['revenue'] = {
@@ -138,6 +154,22 @@ function buildRequestEdits(requests: AdminRequest[]) {
         customReply: request.customReply || '',
         rejectionMessage: request.rejectionMessage || '',
         movieId: request.movieId || '',
+        title: request.title || request.movieTitle || '',
+        originalTitle: request.originalTitle || '',
+        description: request.description || request.overview || request.notes || '',
+        poster: request.poster || '',
+        backdrop: request.backdrop || request.banner || '',
+        genres: (request.genres || []).join(', '),
+        category: request.category || [],
+        vj: request.preferredVj || '',
+        releaseDate: request.releaseDate || '',
+        releaseYear: request.releaseYear ? String(request.releaseYear) : '',
+        tmdbId: request.tmdbId ? String(request.tmdbId) : '',
+        contentType: request.contentType === 'series' ? 'series' : 'movie',
+        seasonNumber: request.seasonNumber ? String(request.seasonNumber) : '1',
+        episodeNumber: request.episodeNumber ? String(request.episodeNumber) : '1',
+        seasonTitle: request.seasonTitle || 'Season 1',
+        episodeTitle: request.episodeTitle || '',
       };
       return accumulator;
     },
@@ -261,13 +293,22 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           }
         );
       } else if (activeTab === 'requests') {
-        await loadResource<{ requests: AdminRequest[] }>(
-          'Requests',
-          '/api/admin/requests',
-          (response) => {
-            nextPayload.requests = response.requests || [];
-          }
-        );
+        await Promise.all([
+          loadResource<{ requests: AdminRequest[] }>(
+            'Requests',
+            '/api/admin/requests',
+            (response) => {
+              nextPayload.requests = response.requests || [];
+            }
+          ),
+          loadResource<{ categories: AdminCategory[] }>(
+            'Categories',
+            '/api/admin/categories',
+            (response) => {
+              nextPayload.categories = response.categories || [];
+            }
+          ),
+        ]);
       } else if (activeTab === 'revenue') {
         await loadResource<{ revenue: AdminControlCenterPayload['revenue'] }>(
           'Revenue',
@@ -1244,7 +1285,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
   const handleRequestAction = async (
     requestId: string,
-    action: 'fulfill' | 'reply' | 'reject'
+    action: 'fulfill' | 'vjVariance' | 'reject'
   ) => {
     const nextEdit = requestEdits[requestId];
 
@@ -1264,7 +1305,25 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           action,
           sourceUrl: nextEdit.sourceUrl,
           adminNotes: nextEdit.adminNotes,
-          message: action === 'reply' ? nextEdit.customReply : nextEdit.rejectionMessage,
+          message: action === 'vjVariance' ? nextEdit.customReply : nextEdit.rejectionMessage,
+          title: nextEdit.title,
+          originalTitle: nextEdit.originalTitle,
+          description: nextEdit.description,
+          overview: nextEdit.description,
+          poster: nextEdit.poster,
+          backdrop: nextEdit.backdrop,
+          banner: nextEdit.backdrop,
+          genres: nextEdit.genres,
+          category: nextEdit.category,
+          vj: nextEdit.vj,
+          releaseDate: nextEdit.releaseDate,
+          releaseYear: nextEdit.releaseYear,
+          tmdbId: nextEdit.tmdbId,
+          contentType: nextEdit.contentType,
+          seasonNumber: nextEdit.seasonNumber,
+          episodeNumber: nextEdit.episodeNumber,
+          seasonTitle: nextEdit.seasonTitle,
+          episodeTitle: nextEdit.episodeTitle,
         }),
       });
       const result = await parseApiResponse(response);
@@ -1277,8 +1336,8 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       setStatusMessage(
         action === 'fulfill'
           ? 'Request queued on the request VPS.'
-          : action === 'reply'
-            ? 'Reply sent to the user.'
+          : action === 'vjVariance'
+            ? 'VJ variance update sent to the user.'
             : 'Request rejected and user notified.'
       );
     } catch (error) {
@@ -1633,6 +1692,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
             {activeTab === 'requests' && (
               <AdminRequestsTab
                 requests={filteredRequests}
+                categories={payload?.categories || []}
                 search={requestSearch}
                 onSearchChange={setRequestSearch}
                 requestEdits={requestEdits}

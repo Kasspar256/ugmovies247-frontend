@@ -40,6 +40,22 @@ export type AdminRequest = {
   id: string;
   title: string;
   movieTitle?: string;
+  contentType?: 'movie' | 'series';
+  originalTitle?: string;
+  overview?: string;
+  description?: string;
+  poster?: string;
+  backdrop?: string;
+  banner?: string;
+  releaseDate?: string;
+  releaseYear?: number | null;
+  genres?: string[];
+  category?: string[];
+  tmdbId?: number | null;
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  seasonTitle?: string;
+  episodeTitle?: string;
   preferredVj: string;
   notes: string;
   status: AdminRequestStatus;
@@ -55,6 +71,11 @@ export type AdminRequest = {
   customReply?: string;
   rejectionMessage?: string;
   processorQueue?: string;
+  processingJobId?: string;
+  progress?: number;
+  currentStage?: string;
+  workerStatus?: string;
+  workerError?: string;
   queuedAt?: string;
   uploadedAt?: string;
   rejectedAt?: string;
@@ -62,6 +83,34 @@ export type AdminRequest = {
   adminNotes: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type RequestProcessingJobStatus =
+  | 'queued'
+  | 'claimed'
+  | 'downloading'
+  | 'processing'
+  | 'uploading'
+  | 'uploaded'
+  | 'failed';
+
+export type RequestProcessingJob = {
+  id: string;
+  requestId: string;
+  movieId: string;
+  title: string;
+  userEmail: string;
+  contentType: 'movie' | 'series';
+  status: RequestProcessingJobStatus;
+  progress: number;
+  currentStage: string;
+  sourceUrl: string;
+  errorMessage?: string;
+  workerId?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
 };
 
 export type AdminUserSummary = {
