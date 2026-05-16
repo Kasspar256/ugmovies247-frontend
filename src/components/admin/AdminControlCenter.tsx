@@ -825,6 +825,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         .sort((left, right) => left.seasonNumber - right.seasonNumber)
         .entries()) {
         const episodes = [];
+        const seasonPoster = await resolvePosterUrl(season.poster, season.posterFile);
 
         for (const [episodeIndex, episode] of season.episodes
           .slice()
@@ -855,6 +856,9 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         seasons.push({
           seasonNumber: season.seasonNumber || seasonIndex + 1,
           title: season.title.trim() || `Season ${seasonIndex + 1}`,
+          overview: season.overview.trim(),
+          poster: seasonPoster || posterUrl,
+          tmdb_id: season.tmdbId ?? null,
           episodes,
         });
       }
@@ -864,6 +868,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         title: seriesDraft.title.trim(),
         description: seriesDraft.description.trim(),
         poster: posterUrl,
+        tmdb_id: seriesDraft.tmdbId,
         releaseYear: parseYear(seriesDraft.releaseYear),
         language: seriesDraft.language.trim(),
         vj: seriesDraft.vj.trim() || 'Unknown',

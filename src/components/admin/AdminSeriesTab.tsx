@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import { Plus, Save, Search } from 'lucide-react';
 import type { AdminCategory, AdminLibraryAsset } from '@/types/admin';
 import type { Movie } from '@/types/movie';
@@ -19,6 +22,56 @@ import {
   PosterUploadField,
   SourceEditor,
 } from '@/components/admin/controlCenterEditors';
+
+type TmdbTvResult = {
+  id: number;
+  name: string;
+  overview?: string;
+  poster_path?: string | null;
+  first_air_date?: string;
+  original_language?: string;
+};
+
+type TmdbTvDetails = TmdbTvResult & {
+  spoken_languages?: Array<{
+    english_name?: string;
+    name?: string;
+  }>;
+  genres?: Array<{
+    id: number;
+    name: string;
+  }>;
+  keywords?: {
+    results?: Array<{
+      id: number;
+      name: string;
+    }>;
+  };
+  seasons?: Array<{
+    id: number;
+    season_number: number;
+    name?: string;
+    overview?: string;
+    poster_path?: string | null;
+  }>;
+};
+
+function buildTmdbPosterUrl(path?: string | null) {
+  return path ? `https://image.tmdb.org/t/p/w780${path}` : '';
+}
+
+function getTmdbLanguageLabel(details: TmdbTvDetails) {
+  return (
+    details.spoken_languages?.find((language) => language.english_name)?.english_name ||
+    details.spoken_languages?.find((language) => language.name)?.name ||
+    details.original_language?.toUpperCase() ||
+    ''
+  );
+}
+
+function getTmdbKeywordList(details: TmdbTvDetails) {
+  return details.keywords?.results?.map((keyword) => keyword.name).filter(Boolean) || [];
+}
 
 export function AdminSeriesTab({
   seriesItems,
@@ -62,6 +115,127 @@ export function AdminSeriesTab({
     label: string
   ) => void;
 }) {
+  const [tmdbQuery, setTmdbQuery] = useState('');
+  const [tmdbResults, setTmdbResults] = useState<TmdbTvResult[]>([]);
+  const [tmdbLoading, setTmdbLoading] = useState(false);
+  const [tmdbError, setTmdbError] = useState('');
+
+  const applyTmdbDetails = (details: TmdbTvDetails, result?: TmdbTvResult) => {
+    const firstSeason =
+      details.seasons?.find((season) => season.season_number === 1) || null;
+    const posterUrl = buildTmdbPosterUrl(details.poster_path || result?.poster_path);
+    const firstSeasonPosterUrl = buildTmdbPosterUrl(firstSeason?.poster_path);
+    const seasons = draft.seasons.length ? draft.seasons : [createEmptySeason(0)];
+
+    onChangeDraft({
+      ...draft,
+      tmdbId: details.id,
+      title: details.name || result?.name || draft.title,
+      description: details.overview || result?.overview || draft.description,
+      poster: posterUrl || draft.poster,
+      posterFile: posterUrl ? null : draft.posterFile,
+      releaseYear: details.first_air_date?.slice(0, 4) || result?.first_air_date?.slice(0, 4) || draft.releaseYear,
+      language: getTmdbLanguageLabel(details) || draft.language,
+      genres: details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || draft.genres,
+      tags: getTmdbKeywordList(details).join(', ') || draft.tags,
+      seasons: seasons.map((season, index) =>
+        index === 0
+          ? {
+              ...season,
+              title: firstSeason?.name || season.title || 'Season 1',
+              overview: firstSeason?.overview || season.overview,
+              poster: firstSeasonPosterUrl || season.poster || posterUrl,
+              posterFile: firstSeasonPosterUrl ? null : season.posterFile,
+              tmdbId: firstSeason?.id ?? season.tmdbId ?? null,
+              episodes: season.episodes.map((episode, episodeIndex) =>
+                episodeIndex === 0
+                  ? {
+                      ...episode,
+                      poster: episode.poster || firstSeasonPosterUrl || posterUrl,
+                      thumbnail: episode.thumbnail || firstSeasonPosterUrl || posterUrl,
+                    }
+                  : episode
+              ),
+            }
+          : season
+      ),
+    });
+  };
+
+  const handleTmdbSearch = async () => {
+    const query = tmdbQuery.trim() || draft.title.trim();
+
+    if (!query) {
+      setTmdbError('Enter a series title before searching TMDb.');
+      return;
+    }
+
+    setTmdbLoading(true);
+    setTmdbError('');
+
+    try {
+      const response = await fetch(
+        `/api/admin/tmdb?mediaType=tv&title=${encodeURIComponent(query)}`,
+        {
+          credentials: 'include',
+          cache: 'no-store',
+        }
+      );
+      const payload = (await response.json()) as
+        | TmdbTvResult[]
+        | { results?: TmdbTvResult[]; error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          !Array.isArray(payload) && payload.error ? payload.error : 'TMDb search failed.'
+        );
+      }
+
+      const results = Array.isArray(payload) ? payload : payload.results || [];
+      setTmdbResults(results);
+
+      if (!results.length) {
+        setTmdbError('No TMDb series matched that title.');
+      }
+    } catch (error) {
+      setTmdbError(error instanceof Error ? error.message : 'TMDb search failed.');
+    } finally {
+      setTmdbLoading(false);
+    }
+  };
+
+  const handlePickTmdb = async (result: TmdbTvResult) => {
+    setTmdbLoading(true);
+    setTmdbError('');
+
+    try {
+      const response = await fetch(
+        `/api/admin/tmdb?mediaType=tv&tmdbId=${encodeURIComponent(String(result.id))}`,
+        {
+          credentials: 'include',
+          cache: 'no-store',
+        }
+      );
+      const payload = (await response.json()) as TmdbTvDetails | { error?: string };
+
+      if (!response.ok || 'error' in payload) {
+        throw new Error(
+          'error' in payload && payload.error ? payload.error : 'Failed to load TMDb series details.'
+        );
+      }
+
+      applyTmdbDetails(payload as TmdbTvDetails, result);
+      setTmdbQuery(result.name);
+      setTmdbResults([]);
+    } catch (error) {
+      setTmdbError(
+        error instanceof Error ? error.message : 'Failed to load TMDb series details.'
+      );
+    } finally {
+      setTmdbLoading(false);
+    }
+  };
+
   const updateEpisode = (
     seasonId: string,
     episodeId: string,
@@ -193,6 +367,86 @@ export function AdminSeriesTab({
         description="Series -> Seasons -> Episodes. Add a new season later, move episodes between seasons, and replace MP4s anytime."
       >
         <div className="space-y-6">
+          <div className="rounded-3xl border border-[#D90429]/20 bg-[#12080C] p-4 md:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-black uppercase tracking-[0.22em] text-white">
+                  TMDb Series Match
+                </div>
+                <div className="mt-2 text-xs leading-6 text-white/55">
+                  Search first, choose the correct poster, and the form below will fill the
+                  title, plot, release year, language, genres, poster, and Season 1 artwork.
+                </div>
+              </div>
+              {draft.tmdbId ? (
+                <div className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-100">
+                  TMDb #{draft.tmdbId}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+                <TextInput
+                  value={tmdbQuery}
+                  onChange={(event) => setTmdbQuery(event.target.value)}
+                  placeholder="Search TMDb for a series, e.g. Jumong"
+                  className="pl-10"
+                />
+              </div>
+              <button
+                type="button"
+                disabled={tmdbLoading}
+                onClick={() => void handleTmdbSearch()}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/10 disabled:opacity-60"
+              >
+                {tmdbLoading ? 'Searching...' : 'Search TMDb'}
+              </button>
+            </div>
+
+            {tmdbError ? (
+              <div className="mt-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-xs leading-6 text-red-100">
+                {tmdbError}
+              </div>
+            ) : null}
+
+            {tmdbResults.length ? (
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {tmdbResults.slice(0, 8).map((result) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    onClick={() => void handlePickTmdb(result)}
+                    className="overflow-hidden rounded-[22px] border border-white/10 bg-black/25 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-[#D90429]/40 hover:bg-black/35"
+                  >
+                    <div className="aspect-[2/3] bg-black/25">
+                      {result.poster_path ? (
+                        <img
+                          src={buildTmdbPosterUrl(result.poster_path)}
+                          alt={result.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center px-3 text-center text-xs text-white/35">
+                          No poster
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <div className="line-clamp-2 text-xs font-black leading-5 text-white">
+                        {result.name}
+                      </div>
+                      <div className="mt-1 text-[11px] text-white/50">
+                        {result.first_air_date?.slice(0, 4) || 'No year'}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <FieldLabel>Series Title</FieldLabel>

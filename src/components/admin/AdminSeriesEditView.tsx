@@ -532,7 +532,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
             is_trending_tiktok:
               draft.isTrendingTikTok || draft.categories.includes('Trending on tiktok'),
             category: draft.categories,
-            tmdb_id: series.tmdb_id ?? null,
+            tmdb_id: draft.tmdbId,
             seasons,
           },
         }),

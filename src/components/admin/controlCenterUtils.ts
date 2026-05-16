@@ -73,6 +73,7 @@ export type MovieDraft = {
 };
 
 export type SeriesDraft = {
+  tmdbId: number | null;
   title: string;
   description: string;
   poster: string;
@@ -219,6 +220,7 @@ export function createEmptyMovieDraft(): MovieDraft {
 
 export function createEmptySeriesDraft(): SeriesDraft {
   return {
+    tmdbId: null,
     title: '',
     description: '',
     poster: '',
@@ -283,6 +285,7 @@ export function movieToDraft(movie: Movie): MovieDraft {
 
 export function seriesToDraft(movie: Movie): SeriesDraft {
   return {
+    tmdbId: movie.tmdb_id ?? null,
     title: movie.title || '',
     description: movie.description || movie.overview || '',
     poster: movie.poster || '',
