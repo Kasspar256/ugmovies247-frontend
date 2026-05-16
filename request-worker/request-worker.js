@@ -602,6 +602,9 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
   }
 
   const title = getTelegramClientTitle(message, media);
+  console.log(
+    `[request-worker] accepted Telegram media message ${normalizeTelegramId(message.id)} from ${senderId || 'unknown'} in ${chatId}: ${media.fileName}`
+  );
   const job = await createTelegramJob(db, message, media, title);
 
   if (!job) {
@@ -757,10 +760,6 @@ async function startTelegramClientWorker(db, s3) {
       const message = event.message;
 
       if (!message) {
-        return;
-      }
-
-      if (normalizeTelegramId(message.senderId) === normalizeTelegramId(me.id)) {
         return;
       }
 
