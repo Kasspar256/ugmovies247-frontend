@@ -77,7 +77,9 @@ export async function GET(req: Request) {
       })
     );
 
-    return NextResponse.json({ results: Array.isArray(payload.results) ? payload.results : [] });
+    // Keep the original uploader contract: movie and series uploaders expect a raw array.
+    // The request panel accepts this shape too, so one shared TMDB API can safely serve all admin flows.
+    return NextResponse.json(Array.isArray(payload.results) ? payload.results : []);
   } catch (error) {
     return NextResponse.json(
       {
