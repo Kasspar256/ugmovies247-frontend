@@ -164,41 +164,131 @@ function runProbeDuration(inputPath) {
   });
 }
 
+function inspectMediaStreams(inputPath) {
+  return new Promise((resolve) => {
+    const child = spawn('ffprobe', [
+      '-v',
+      'error',
+      '-print_format',
+      'json',
+      '-show_streams',
+      '-show_format',
+      inputPath,
+    ]);
+    let output = '';
+
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    child.on('close', () => {
+      try {
+        const parsed = JSON.parse(output || '{}');
+        const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+        const video = streams.find((stream) => stream.codec_type === 'video') || null;
+        const audio = streams.find((stream) => stream.codec_type === 'audio') || null;
+        resolve({
+          videoCodec: String(video?.codec_name || '').toLowerCase(),
+          audioCodec: String(audio?.codec_name || '').toLowerCase(),
+        });
+      } catch {
+        resolve({ videoCodec: '', audioCodec: '' });
+      }
+    });
+    child.on('error', () => resolve({ videoCodec: '', audioCodec: '' }));
+  });
+}
+
 function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
   const preset = process.env.FFMPEG_PRESET || 'veryfast';
   const crf = process.env.FFMPEG_CRF || '21';
-  const args = [
-    '-progress',
-    'pipe:1',
-    '-nostats',
-    '-y',
-    '-i',
-    inputPath,
-    '-map',
-    '0:v:0',
-    '-map',
-    '0:a:0?',
-    '-sn',
-    '-c:v',
-    'libx264',
-    '-preset',
-    preset,
-    '-crf',
-    crf,
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    '-c:a',
-    'aac',
-    '-ac',
-    '2',
-    '-b:a',
-    '160k',
-    outputPath,
-  ];
 
-  return new Promise((resolve, reject) => {
+  return inspectMediaStreams(inputPath).then((inspection) => new Promise((resolve, reject) => {
+    const canCopyVideo = inspection.videoCodec === 'h264';
+    const canCopyAudio = inspection.audioCodec === 'aac';
+    const strategy = canCopyVideo
+      ? canCopyAudio
+        ? 'remux'
+        : 'copy-video-transcode-audio'
+      : 'transcode';
+    const args =
+      strategy === 'remux'
+        ? [
+            '-progress',
+            'pipe:1',
+            '-nostats',
+            '-y',
+            '-i',
+            inputPath,
+            '-map',
+            '0:v:0',
+            '-map',
+            '0:a:0?',
+            '-sn',
+            '-c',
+            'copy',
+            '-movflags',
+            '+faststart',
+            outputPath,
+          ]
+        : strategy === 'copy-video-transcode-audio'
+          ? [
+              '-progress',
+              'pipe:1',
+              '-nostats',
+              '-y',
+              '-i',
+              inputPath,
+              '-map',
+              '0:v:0',
+              '-map',
+              '0:a:0?',
+              '-sn',
+              '-c:v',
+              'copy',
+              '-movflags',
+              '+faststart',
+              '-c:a',
+              'aac',
+              '-ac',
+              '2',
+              '-b:a',
+              '160k',
+              outputPath,
+            ]
+          : [
+              '-progress',
+              'pipe:1',
+              '-nostats',
+              '-y',
+              '-i',
+              inputPath,
+              '-map',
+              '0:v:0',
+              '-map',
+              '0:a:0?',
+              '-sn',
+              '-c:v',
+              'libx264',
+              '-preset',
+              preset,
+              '-crf',
+              crf,
+              '-pix_fmt',
+              'yuv420p',
+              '-movflags',
+              '+faststart',
+              '-c:a',
+              'aac',
+              '-ac',
+              '2',
+              '-b:a',
+              '160k',
+              outputPath,
+            ];
+
+    console.log(
+      `[ffmpeg-plan] ${strategy} video=${inspection.videoCodec || 'unknown'} audio=${inspection.audioCodec || 'none'}`
+    );
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let estimatedProgress = 34;
     const timer = setInterval(() => {
@@ -241,7 +331,7 @@ function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
 
       reject(new Error(`ffmpeg exited with code ${code}`));
     });
-  });
+  }));
 }
 
 function buildPublicUrl(key) {
@@ -573,18 +663,35 @@ async function editTelegramClientMessage(client, chatRef, messageId, text) {
     });
     return true;
   } catch (error) {
+    const message = String(error?.message || error || '');
+
+    if (message.includes('MESSAGE_NOT_MODIFIED')) {
+      return true;
+    }
+
     console.warn('[request-worker] telegram client edit failed:', error.message || error);
     return false;
   }
 }
 
-async function updateTelegramStatusMessage(client, chatRef, statusMessage, originalMessageId, text) {
+async function updateTelegramStatusMessage(
+  client,
+  chatRef,
+  statusMessage,
+  originalMessageId,
+  text,
+  options = {}
+) {
   if (statusMessage?.id) {
     const edited = await editTelegramClientMessage(client, chatRef, statusMessage.id, text);
 
     if (edited) {
       return statusMessage;
     }
+  }
+
+  if (options.fallback === false) {
+    return statusMessage;
   }
 
   return sendTelegramClientMessage(client, chatRef, text, originalMessageId);
@@ -885,7 +992,8 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
             `Job ${job.id}`,
             `Source: ${title}`,
             `Stage: Processing via FFmpeg... ${Math.round(percent)}%`,
-          ].join('\n')
+          ].join('\n'),
+          { fallback: false }
         ).then((nextStatusMessage) => {
           statusMessage = nextStatusMessage || statusMessage;
         });
