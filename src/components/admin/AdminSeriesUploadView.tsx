@@ -399,7 +399,7 @@ export function AdminSeriesUploadView() {
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [mode, setMode] = useState<SeriesMode>('upload-episode');
+  const [mode, setMode] = useState<SeriesMode>('create-series');
   const [createSeriesEntryMode, setCreateSeriesEntryMode] = useState<'tmdb' | 'manual'>('tmdb');
   const [seriesSearch, setSeriesSearch] = useState('');
   const [selectedSeriesId, setSelectedSeriesId] = useState('');
@@ -621,7 +621,9 @@ export function AdminSeriesUploadView() {
           cache: 'no-store',
         }
       );
-      const payload = (await response.json()) as TmdbTvResult[] | { error?: string };
+      const payload = (await response.json()) as
+        | TmdbTvResult[]
+        | { results?: TmdbTvResult[]; error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -629,7 +631,7 @@ export function AdminSeriesUploadView() {
         );
       }
 
-      setSeriesTmdbResults(Array.isArray(payload) ? payload : []);
+      setSeriesTmdbResults(Array.isArray(payload) ? payload : payload.results || []);
       setShowSeriesTmdbResults(true);
       setCreateSeriesEntryMode('tmdb');
     } catch (error) {
