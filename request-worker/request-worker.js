@@ -372,120 +372,189 @@ function createJobOnlyProgressReporter(db, job) {
   };
 }
 
-function getTelegramBotToken() {
-  return String(process.env.REQUEST_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const SUPPORTED_TELEGRAM_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.m4v', '.avi', '.webm', '.ts']);
+
+function sanitizeFileName(value) {
+  return path.basename(String(value || 'telegram-video').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_'));
 }
 
-function getAllowedTelegramChatIds() {
-  return String(process.env.REQUEST_TELEGRAM_ALLOWED_CHAT_IDS || process.env.TELEGRAM_ALLOWED_CHAT_IDS || '')
+function parseTelegramRefs(value) {
+  return String(value || '')
     .split(',')
     .map((entry) => entry.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((entry) => (/^-?\d+$/.test(entry) ? Number(entry) : entry));
 }
 
-async function telegramApi(token, method, payload) {
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload || {}),
-  });
-  const data = await response.json().catch(() => ({}));
+function getTelegramClientConfig() {
+  const apiId = Number(process.env.REQUEST_TELEGRAM_API_ID || process.env.TELEGRAM_API_ID || 0);
+  const apiHash = String(process.env.REQUEST_TELEGRAM_API_HASH || process.env.TELEGRAM_API_HASH || '').trim();
+  const sessionString = String(
+    process.env.REQUEST_TELEGRAM_SESSION_STRING || process.env.TELEGRAM_SESSION_STRING || ''
+  ).trim();
+  const intakeChats = parseTelegramRefs(
+    process.env.REQUEST_TELEGRAM_INTAKE_CHAT_IDS ||
+      process.env.REQUEST_TELEGRAM_GROUP_IDS ||
+      process.env.TELEGRAM_INTAKE_CHAT_IDS ||
+      ''
+  );
+  const allowedSenderIds = new Set(
+    parseTelegramRefs(process.env.REQUEST_TELEGRAM_ALLOWED_SENDER_IDS || '')
+      .map((entry) => String(entry))
+  );
 
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.description || `Telegram ${method} failed with ${response.status}`);
+  return {
+    apiId,
+    apiHash,
+    sessionString,
+    intakeChats,
+    allowedSenderIds,
+  };
+}
+
+function hasAnyTelegramClientConfig(config) {
+  return Boolean(config.apiId || config.apiHash || config.sessionString || config.intakeChats.length);
+}
+
+function normalizeTelegramId(value) {
+  if (value === undefined || value === null) {
+    return '';
   }
 
-  return data.result;
+  return String(value);
 }
 
-async function sendTelegramMessage(token, chatId, text) {
-  if (!token || !chatId) {
-    return;
+function getTelegramClientFileName(message) {
+  const fileName =
+    message?.file?.name ||
+    message?.media?.document?.attributes?.find((attribute) => typeof attribute.fileName === 'string')?.fileName ||
+    '';
+
+  if (fileName) {
+    return sanitizeFileName(fileName);
   }
 
-  await telegramApi(token, 'sendMessage', {
-    chat_id: chatId,
-    text,
-    disable_web_page_preview: true,
-  }).catch((error) => {
-    console.warn('[request-worker] telegram sendMessage failed:', error.message || error);
-  });
+  const extension = path.extname(String(message?.file?.mimeType || '').replace('/', '.')) || '.bin';
+  return sanitizeFileName(`telegram_${message?.id || Date.now()}${extension}`);
 }
 
-function extractTelegramMedia(message) {
-  if (!message || typeof message !== 'object') {
+function extractTelegramClientMedia(message) {
+  if (!message?.media || !message?.file) {
     return null;
   }
 
-  if (message.document?.file_id) {
-    return {
-      kind: 'document',
-      fileId: message.document.file_id,
-      fileName: message.document.file_name || 'telegram-video',
-      fileSizeBytes: Number(message.document.file_size || 0) || null,
-      mimeType: message.document.mime_type || '',
-    };
+  const fileName = getTelegramClientFileName(message);
+  const mimeType = String(message.file.mimeType || message.media?.document?.mimeType || '').toLowerCase();
+  const extension = path.extname(fileName).toLowerCase();
+
+  if (!mimeType.startsWith('video/') && !SUPPORTED_TELEGRAM_EXTENSIONS.has(extension)) {
+    return null;
   }
 
-  if (message.video?.file_id) {
-    return {
-      kind: 'video',
-      fileId: message.video.file_id,
-      fileName: message.video.file_name || `${message.video.file_unique_id || 'telegram-video'}.mp4`,
-      fileSizeBytes: Number(message.video.file_size || 0) || null,
-      mimeType: message.video.mime_type || 'video/mp4',
-    };
-  }
-
-  return null;
+  return {
+    kind: 'mtproto_media',
+    fileName,
+    fileSizeBytes: Number(message.file.size || message.media?.document?.size || 0) || null,
+    mimeType,
+  };
 }
 
-function getTelegramTitle(message, media) {
-  const caption = String(message.caption || '').trim();
+function getTelegramClientTitle(message, media) {
+  const caption = String(message?.message || '').trim();
   const firstCaptionLine = caption.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
 
   return firstCaptionLine || media.fileName.replace(/\.[^.]+$/, '') || 'Telegram request video';
 }
 
-function getTelegramOffsetFile() {
-  const workDir = process.env.WORK_DIR || '/var/lib/ugmovies-request-worker/work';
-  return path.join(path.dirname(workDir), 'telegram-offset.json');
+function clampTelegramText(text) {
+  const value = String(text || '');
+  const maxLength = 3900;
+
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 80)}\n\n[Message shortened. Check worker logs for full details.]`;
 }
 
-async function readTelegramOffset() {
-  const offsetFile = getTelegramOffsetFile();
-  const raw = await fs.readFile(offsetFile, 'utf8').catch(() => '');
+async function sendTelegramClientMessage(client, chatRef, text, replyTo) {
+  if (!client || !chatRef || !text) {
+    return null;
+  }
 
   try {
-    const parsed = Number(raw ? JSON.parse(raw).offset : 0);
-    return Number.isFinite(parsed) ? parsed : 0;
-  } catch {
-    return 0;
+    return await client.sendMessage(chatRef, {
+      message: clampTelegramText(text),
+      replyTo,
+      noWebpage: true,
+    });
+  } catch (error) {
+    if (!replyTo) {
+      console.warn('[request-worker] telegram client send failed:', error.message || error);
+      return null;
+    }
+
+    try {
+      return await client.sendMessage(chatRef, {
+        message: clampTelegramText(text),
+        noWebpage: true,
+      });
+    } catch (retryError) {
+      console.warn('[request-worker] telegram client send failed:', retryError.message || retryError);
+      return null;
+    }
   }
 }
 
-async function writeTelegramOffset(offset) {
-  const offsetFile = getTelegramOffsetFile();
+async function downloadTelegramClientMedia(client, message, destination, onProgress) {
+  let lastEmitAt = 0;
+  const progressCallback = (downloadedRaw, totalRaw) => {
+    const downloaded = Number(downloadedRaw || 0);
+    const total = Number(totalRaw || 0);
+    const now = Date.now();
 
-  await fs.mkdir(path.dirname(offsetFile), { recursive: true });
-  await fs.writeFile(offsetFile, JSON.stringify({ offset }), 'utf8');
-}
+    if (total > 0 && now - lastEmitAt > 2000) {
+      lastEmitAt = now;
+      onProgress?.(downloaded, total);
+    }
+  };
 
-async function getTelegramFileDownloadUrl(token, fileId) {
-  const file = await telegramApi(token, 'getFile', { file_id: fileId });
-  const filePath = String(file.file_path || '').trim();
+  try {
+    await client.downloadMedia(message, {
+      outputFile: destination,
+      progressCallback,
+    });
+  } catch (error) {
+    if (!message.media) {
+      throw error;
+    }
 
-  if (!filePath) {
-    throw new Error('Telegram did not return a downloadable file path.');
+    await client.downloadMedia(message.media, {
+      outputFile: destination,
+      progressCallback,
+    });
   }
 
-  return `https://api.telegram.org/file/bot${token}/${filePath}`;
+  const stats = await fs.stat(destination).catch(() => null);
+
+  if (!stats || stats.size <= 0) {
+    throw new Error('Telegram MTProto download completed without creating a source file.');
+  }
 }
 
-async function createTelegramJob(db, update, message, media, title) {
+async function createTelegramJob(db, message, media, title) {
   const collections = getCollections();
   const timestamp = nowIso();
-  const jobId = `telegram-${Date.now()}-${randomUUID().slice(0, 10)}`;
+  const chatId = normalizeTelegramId(message.chatId);
+  const messageId = normalizeTelegramId(message.id);
+  const jobId = `telegram-${chatId.replace(/[^a-zA-Z0-9_-]/g, '')}-${messageId || randomUUID().slice(0, 10)}`;
+  const ref = db.collection(collections.jobs).doc(jobId);
+  const existing = await ref.get();
+
+  if (existing.exists) {
+    return null;
+  }
+
   const job = {
     id: jobId,
     requestId: '',
@@ -499,11 +568,11 @@ async function createTelegramJob(db, update, message, media, title) {
     sourceUrl: '',
     sourceFileName: media.fileName,
     sourceFileSizeBytes: media.fileSizeBytes,
-    sourceType: 'telegram_file',
-    telegramFileId: media.fileId,
-    telegramChatId: String(message.chat?.id || ''),
-    telegramMessageId: message.message_id || '',
-    telegramUpdateId: update.update_id || '',
+    sourceType: 'telegram_mtproto_file',
+    telegramClient: 'mtproto',
+    telegramChatId: chatId,
+    telegramMessageId: messageId,
+    telegramSenderId: normalizeTelegramId(message.senderId),
     telegramMimeType: media.mimeType,
     processorQueue: 'request-telegram-worker',
     errorMessage: '',
@@ -512,28 +581,34 @@ async function createTelegramJob(db, update, message, media, title) {
     queuedAt: timestamp,
   };
 
-  await db.collection(collections.jobs).doc(jobId).set(job, { merge: true });
+  await ref.set(job, { merge: true });
   return job;
 }
 
-async function processTelegramMedia(db, s3, token, update) {
-  const message = update.message || update.channel_post;
-  const chatId = String(message?.chat?.id || '');
-  const allowedChatIds = getAllowedTelegramChatIds();
+async function processTelegramClientMedia(db, s3, client, message, allowedSenderIds) {
+  const chatRef = message.chatId;
+  const chatId = normalizeTelegramId(chatRef);
+  const senderId = normalizeTelegramId(message.senderId);
 
-  if (allowedChatIds.length && !allowedChatIds.includes(chatId)) {
-    console.warn(`[request-worker] ignored telegram upload from unauthorized chat ${chatId}`);
+  if (allowedSenderIds.size && !allowedSenderIds.has(senderId)) {
+    console.warn(`[request-worker] ignored telegram upload from unauthorized sender ${senderId}`);
     return;
   }
 
-  const media = extractTelegramMedia(message);
+  const media = extractTelegramClientMedia(message);
 
   if (!media) {
     return;
   }
 
-  const title = getTelegramTitle(message, media);
-  const job = await createTelegramJob(db, update, message, media, title);
+  const title = getTelegramClientTitle(message, media);
+  const job = await createTelegramJob(db, message, media, title);
+
+  if (!job) {
+    await sendTelegramClientMessage(client, chatRef, 'That Telegram message is already tracked by the request worker.', message.id);
+    return;
+  }
+
   const progress = createJobOnlyProgressReporter(db, job);
   const workDir = path.join(requireEnv('WORK_DIR'), job.id);
   const sourcePath = path.join(workDir, media.fileName || 'telegram-source.bin');
@@ -542,25 +617,25 @@ async function processTelegramMedia(db, s3, token, update) {
   const r2Key = `${keyPrefix}/telegram/${job.id}/video.mp4`;
 
   await fs.mkdir(workDir, { recursive: true });
-  await sendTelegramMessage(
-    token,
-    chatId,
-    `Received "${title}". Processing has started on the request VPS.`
+  await sendTelegramClientMessage(
+    client,
+    chatRef,
+    `Received "${title}". Processing has started on the request VPS.`,
+    message.id
   );
 
   try {
     await progress.report({
       status: 'downloading',
       progress: 5,
-      currentStage: 'Downloading forwarded Telegram file',
+      currentStage: 'Downloading forwarded Telegram file via MTProto',
     });
-    const downloadUrl = await getTelegramFileDownloadUrl(token, media.fileId);
-    await downloadFile(downloadUrl, sourcePath, (downloadedBytes, totalBytes) => {
+    await downloadTelegramClientMedia(client, message, sourcePath, (downloadedBytes, totalBytes) => {
       const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 22 : 0;
       void progress.report({
         status: 'downloading',
         progress: 5 + percent,
-        currentStage: 'Downloading forwarded Telegram file',
+        currentStage: 'Downloading forwarded Telegram file via MTProto',
       });
     });
     await progress.flush();
@@ -606,15 +681,16 @@ async function processTelegramMedia(db, s3, token, update) {
       completedAt: nowIso(),
     });
 
-    await sendTelegramMessage(
-      token,
-      chatId,
+    await sendTelegramClientMessage(
+      client,
+      chatRef,
       [
         `Request worker finished "${title}".`,
         '',
         'Paste this link into the admin request panel:',
         publicVideoUrl,
-      ].join('\n')
+      ].join('\n'),
+      message.id
     );
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
   } catch (error) {
@@ -625,33 +701,81 @@ async function processTelegramMedia(db, s3, token, update) {
       currentStage: 'Telegram worker failed',
       errorMessage: messageText,
     });
-    await sendTelegramMessage(token, chatId, `Request worker failed "${title}": ${messageText}`);
+    await sendTelegramClientMessage(client, chatRef, `Request worker failed "${title}": ${messageText}`, message.id);
     throw error;
   } finally {
     await removeLocalWorkspace(workDir);
   }
 }
 
-async function pollTelegramOnce(db, s3, telegramState) {
-  const token = getTelegramBotToken();
+async function startTelegramClientWorker(db, s3) {
+  const config = getTelegramClientConfig();
 
-  if (!token) {
-    return;
+  if (!hasAnyTelegramClientConfig(config)) {
+    console.log('[request-worker] Telegram MTProto client is not configured; legacy queue watcher only');
+    return null;
   }
 
-  const result = await telegramApi(token, 'getUpdates', {
-    offset: telegramState.offset || undefined,
-    timeout: 1,
-    allowed_updates: ['message', 'channel_post'],
-  });
-
-  for (const update of result || []) {
-    telegramState.offset = Number(update.update_id || 0) + 1;
-    await writeTelegramOffset(telegramState.offset);
-    await processTelegramMedia(db, s3, token, update).catch((error) => {
-      console.error('[request-worker] telegram update failed:', error.message || error);
-    });
+  if (!Number.isInteger(config.apiId) || config.apiId <= 0) {
+    throw new Error('REQUEST_TELEGRAM_API_ID must be configured for the MTProto request worker.');
   }
+
+  if (!config.apiHash) {
+    throw new Error('REQUEST_TELEGRAM_API_HASH must be configured for the MTProto request worker.');
+  }
+
+  if (!config.sessionString) {
+    throw new Error('REQUEST_TELEGRAM_SESSION_STRING must be configured. Generate a dedicated request Telegram user session; do not use a bot token.');
+  }
+
+  if (!config.intakeChats.length) {
+    throw new Error('REQUEST_TELEGRAM_INTAKE_CHAT_IDS must contain the dedicated request Telegram group ID.');
+  }
+
+  const { TelegramClient } = require('telegram');
+  const { NewMessage } = require('telegram/events');
+  const { StringSession } = require('telegram/sessions');
+  const client = new TelegramClient(
+    new StringSession(config.sessionString),
+    config.apiId,
+    config.apiHash,
+    {
+      connectionRetries: 5,
+    }
+  );
+
+  await client.connect();
+
+  if (!(await client.isUserAuthorized())) {
+    throw new Error('Telegram MTProto session is not authorized. Create a valid string session for the dedicated request account.');
+  }
+
+  const me = await client.getMe();
+
+  client.addEventHandler(
+    (event) => {
+      const message = event.message;
+
+      if (!message) {
+        return;
+      }
+
+      if (normalizeTelegramId(message.senderId) === normalizeTelegramId(me.id)) {
+        return;
+      }
+
+      void processTelegramClientMedia(db, s3, client, message, config.allowedSenderIds).catch((error) => {
+        console.error('[request-worker] telegram client message failed:', error.message || error);
+      });
+    },
+    new NewMessage({ chats: config.intakeChats })
+  );
+
+  console.log(
+    `[request-worker] Telegram MTProto client connected as ${me.username || me.firstName || me.id}; watching ${config.intakeChats.join(', ')}`
+  );
+
+  return client;
 }
 
 async function claimJob(db, doc) {
@@ -1018,20 +1142,13 @@ async function main() {
   });
   const db = admin.firestore();
   const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS || 15000);
-  const telegramState = {
-    offset: await readTelegramOffset(),
-  };
 
   await fs.mkdir(requireEnv('WORK_DIR'), { recursive: true });
-  console.log(
-    getTelegramBotToken()
-      ? '[request-worker] started request Telegram worker and legacy queue watcher'
-      : '[request-worker] started legacy request queue watcher; Telegram bot token is not configured'
-  );
+  await startTelegramClientWorker(db, s3);
+  console.log('[request-worker] started request MTProto Telegram worker and legacy queue watcher');
 
   for (;;) {
     try {
-      await pollTelegramOnce(db, s3, telegramState);
       await pollOnce(db, s3);
     } catch (error) {
       console.error('[request-worker] poll failed:', error.message || error);

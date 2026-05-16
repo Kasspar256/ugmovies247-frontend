@@ -840,9 +840,9 @@ export function AdminRequestsTab({
               <section className="rounded-[30px] border border-sky-300/15 bg-sky-400/[0.05] p-5">
                 <FieldLabel>Paste Telegram Worker Generated Link / Raw Video Link</FieldLabel>
                 <p className="mt-1 text-sm leading-6 text-white/58">
-                  Forward the movie file to the request Telegram bot on the 6-vCPU VPS. When the bot
-                  replies with the finished R2 MP4 link, paste that link here and publish the matched
-                  metadata.
+                  Forward the movie file to the dedicated request Telegram group watched by the
+                  MTProto client worker on the 6-vCPU VPS. When the worker replies with the finished
+                  R2 MP4 link, paste that link here and publish the matched metadata.
                 </p>
                 <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
                   <TextInput
