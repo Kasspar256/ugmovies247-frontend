@@ -278,6 +278,60 @@ async function uploadToR2(s3, key, filePath, onProgress) {
   return buildPublicUrl(key);
 }
 
+function getTelegramOutputMode() {
+  const mode = String(
+    process.env.REQUEST_TELEGRAM_OUTPUT_MODE ||
+      process.env.REQUEST_WORKER_OUTPUT_MODE ||
+      'r2'
+  ).trim().toLowerCase();
+
+  return mode === 'local' || mode === 'vps' ? 'local' : 'r2';
+}
+
+async function publishToLocalPublicFiles(filePath) {
+  const publicDir = String(
+    process.env.REQUEST_PUBLIC_FILES_DIR ||
+      process.env.PUBLIC_FILES_DIR ||
+      '/var/lib/ugmovies-request-worker/public/files'
+  ).trim();
+  const publicBaseUrl = String(
+    process.env.REQUEST_PUBLIC_BASE_URL ||
+      process.env.PUBLIC_BASE_URL ||
+      ''
+  ).replace(/\/$/, '');
+
+  if (!publicBaseUrl) {
+    throw new Error('REQUEST_PUBLIC_BASE_URL is required when REQUEST_TELEGRAM_OUTPUT_MODE=local.');
+  }
+
+  await fs.mkdir(publicDir, { recursive: true });
+  const publicFileName = `${randomUUID().replace(/-/g, '')}.mp4`;
+  const publicPath = path.join(publicDir, publicFileName);
+
+  await fs.rename(filePath, publicPath);
+  await fs.chmod(publicPath, 0o644).catch(() => undefined);
+
+  return `${publicBaseUrl}/${encodeURIComponent(publicFileName)}`;
+}
+
+async function publishTelegramOutput(s3, r2Key, outputPath, onProgress) {
+  if (getTelegramOutputMode() === 'local') {
+    onProgress?.(0, 1);
+    const publicUrl = await publishToLocalPublicFiles(outputPath);
+    onProgress?.(1, 1);
+    return {
+      publicVideoUrl: publicUrl,
+      outputMode: 'local',
+    };
+  }
+
+  const publicVideoUrl = await uploadToR2(s3, r2Key, outputPath, onProgress);
+  return {
+    publicVideoUrl,
+    outputMode: 'r2',
+  };
+}
+
 async function updateProgress(db, job, patch) {
   const collections = getCollections();
   const timestamp = nowIso();
@@ -506,6 +560,36 @@ async function sendTelegramClientMessage(client, chatRef, text, replyTo) {
   }
 }
 
+async function editTelegramClientMessage(client, chatRef, messageId, text) {
+  if (!client || !chatRef || !messageId || !text) {
+    return false;
+  }
+
+  try {
+    await client.editMessage(chatRef, {
+      message: messageId,
+      text: clampTelegramText(text),
+      noWebpage: true,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[request-worker] telegram client edit failed:', error.message || error);
+    return false;
+  }
+}
+
+async function updateTelegramStatusMessage(client, chatRef, statusMessage, originalMessageId, text) {
+  if (statusMessage?.id) {
+    const edited = await editTelegramClientMessage(client, chatRef, statusMessage.id, text);
+
+    if (edited) {
+      return statusMessage;
+    }
+  }
+
+  return sendTelegramClientMessage(client, chatRef, text, originalMessageId);
+}
+
 async function downloadTelegramClientMedia(client, message, destination, onProgress) {
   let lastEmitAt = 0;
   const progressCallback = (downloadedRaw, totalRaw) => {
@@ -585,6 +669,104 @@ async function createTelegramJob(db, message, media, title) {
   return job;
 }
 
+async function handleTelegramCommand(db, client, message) {
+  const text = String(message?.message || '').trim();
+
+  if (!text.startsWith('/')) {
+    return false;
+  }
+
+  const [rawCommand, ...args] = text.split(/\s+/);
+  const command = rawCommand.slice(1).split('@')[0].toLowerCase();
+  const collections = getCollections();
+  const chatId = normalizeTelegramId(message.chatId);
+
+  if (command === 'help') {
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      [
+        'Request worker commands:',
+        '/help - show this help',
+        '/queue or /jobs - show recent request-worker Telegram jobs in this group',
+        '/status <job_id> - show one job status',
+        '',
+        'Forward a movie file here and I will download it through MTProto, process it with FFmpeg, and reply with the source link for the Admin Requests panel.',
+      ].join('\n'),
+      message.id
+    );
+    return true;
+  }
+
+  if (command === 'queue' || command === 'jobs') {
+    const snapshot = await db
+      .collection(collections.jobs)
+      .where('telegramChatId', '==', chatId)
+      .limit(10)
+      .get();
+    const jobs = snapshot.docs
+      .map((doc) => ({ id: doc.id, ...(doc.data() || {}) }))
+      .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
+      .slice(0, 6);
+
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      jobs.length
+        ? [
+            'Recent request worker jobs:',
+            ...jobs.map((job) =>
+              `- ${job.id} | ${job.status || 'unknown'} | ${Math.round(Number(job.progress || 0))}% | ${job.title || job.sourceFileName || 'Untitled'}`
+            ),
+          ].join('\n')
+        : 'No request worker jobs found for this group yet.',
+      message.id
+    );
+    return true;
+  }
+
+  if (command === 'status') {
+    const jobId = args[0] || '';
+
+    if (!jobId) {
+      await sendTelegramClientMessage(client, message.chatId, 'Usage: /status <job_id>', message.id);
+      return true;
+    }
+
+    const snapshot = await db.collection(collections.jobs).doc(jobId).get();
+
+    if (!snapshot.exists) {
+      await sendTelegramClientMessage(client, message.chatId, `I could not find job ${jobId}.`, message.id);
+      return true;
+    }
+
+    const job = snapshot.data() || {};
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      [
+        `Job ${snapshot.id}`,
+        `Title: ${job.title || job.sourceFileName || 'Untitled'}`,
+        `Status: ${job.status || 'unknown'}`,
+        `Progress: ${Math.round(Number(job.progress || 0))}%`,
+        `Stage: ${job.currentStage || '-'}`,
+        job.publicVideoUrl ? `Link: ${job.publicVideoUrl}` : '',
+        job.errorMessage ? `Error: ${job.errorMessage}` : '',
+      ].filter(Boolean).join('\n'),
+      message.id
+    );
+    return true;
+  }
+
+  await sendTelegramClientMessage(
+    client,
+    message.chatId,
+    'Unknown request worker command. Use /help.',
+    message.id
+  );
+  return true;
+}
+
 async function processTelegramClientMedia(db, s3, client, message, allowedSenderIds) {
   const chatRef = message.chatId;
   const chatId = normalizeTelegramId(chatRef);
@@ -618,12 +800,18 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
   const outputPath = path.join(workDir, `${slugify(title)}.mp4`);
   const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
   const r2Key = `${keyPrefix}/telegram/${job.id}/video.mp4`;
+  const outputMode = getTelegramOutputMode();
 
   await fs.mkdir(workDir, { recursive: true });
-  await sendTelegramClientMessage(
+  let statusMessage = await sendTelegramClientMessage(
     client,
     chatRef,
-    `Received "${title}". Processing has started on the request VPS.`,
+    [
+      `Queued request worker job ${job.id}.`,
+      '',
+      `Source: ${title}`,
+      'Stage: Downloading from Telegram...',
+    ].join('\n'),
     message.id
   );
 
@@ -633,6 +821,17 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       progress: 5,
       currentStage: 'Downloading forwarded Telegram file via MTProto',
     });
+    statusMessage = await updateTelegramStatusMessage(
+      client,
+      chatRef,
+      statusMessage,
+      message.id,
+      [
+        `Job ${job.id}`,
+        `Source: ${title}`,
+        'Stage: Downloading from Telegram...',
+      ].join('\n')
+    );
     await downloadTelegramClientMedia(client, message, sourcePath, (downloadedBytes, totalBytes) => {
       const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 22 : 0;
       void progress.report({
@@ -648,27 +847,82 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       progress: 30,
       currentStage: 'Processing via FFmpeg',
     });
+    statusMessage = await updateTelegramStatusMessage(
+      client,
+      chatRef,
+      statusMessage,
+      message.id,
+      [
+        `Job ${job.id}`,
+        `Source: ${title}`,
+        'Stage: Processing via FFmpeg...',
+        'This can take several minutes for a full movie.',
+      ].join('\n')
+    );
     const durationSeconds = await runProbeDuration(sourcePath);
+    let lastTelegramProgressAt = 0;
+    let lastTelegramProgressValue = 0;
     await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
       void progress.report({
         status: 'processing',
         progress: percent,
         currentStage: 'Processing via FFmpeg',
       });
+
+      const now = Date.now();
+      if (
+        now - lastTelegramProgressAt > 60000 ||
+        Math.abs(percent - lastTelegramProgressValue) >= 10
+      ) {
+        lastTelegramProgressAt = now;
+        lastTelegramProgressValue = percent;
+        void updateTelegramStatusMessage(
+          client,
+          chatRef,
+          statusMessage,
+          message.id,
+          [
+            `Job ${job.id}`,
+            `Source: ${title}`,
+            `Stage: Processing via FFmpeg... ${Math.round(percent)}%`,
+          ].join('\n')
+        ).then((nextStatusMessage) => {
+          statusMessage = nextStatusMessage || statusMessage;
+        });
+      }
     });
     await progress.flush();
 
     await progress.report({
       status: 'uploading',
       progress: 72,
-      currentStage: 'Uploading processed MP4 to Cloudflare R2',
+      currentStage:
+        outputMode === 'local'
+          ? 'Publishing processed MP4 to VPS public files'
+          : 'Uploading processed MP4 to Cloudflare R2',
     });
-    const publicVideoUrl = await uploadToR2(s3, r2Key, outputPath, (uploadedBytes, totalBytes) => {
+    statusMessage = await updateTelegramStatusMessage(
+      client,
+      chatRef,
+      statusMessage,
+      message.id,
+      [
+        `Job ${job.id}`,
+        `Source: ${title}`,
+        outputMode === 'local'
+          ? 'Stage: Publishing temporary VPS link...'
+          : 'Stage: Uploading processed MP4 to R2...',
+      ].join('\n')
+    );
+    const { publicVideoUrl } = await publishTelegramOutput(s3, r2Key, outputPath, (uploadedBytes, totalBytes) => {
       const percent = totalBytes > 0 ? (uploadedBytes / totalBytes) * 23 : 0;
       void progress.report({
         status: 'uploading',
         progress: 72 + percent,
-        currentStage: 'Uploading processed MP4 to Cloudflare R2',
+        currentStage:
+          outputMode === 'local'
+            ? 'Publishing processed MP4 to VPS public files'
+            : 'Uploading processed MP4 to Cloudflare R2',
       });
     });
     await progress.flush();
@@ -681,19 +935,26 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       publicVideoUrl,
       directMp4Url: publicVideoUrl,
       sourceUrl: publicVideoUrl,
+      outputMode,
       completedAt: nowIso(),
     });
 
-    await sendTelegramClientMessage(
+    await updateTelegramStatusMessage(
       client,
       chatRef,
+      statusMessage,
+      message.id,
       [
         `Request worker finished "${title}".`,
         '',
+        outputMode === 'local'
+          ? 'Temporary VPS source link:'
+          : 'Final R2 MP4 link:',
+        publicVideoUrl,
+        '',
         'Paste this link into the admin request panel:',
         publicVideoUrl,
-      ].join('\n'),
-      message.id
+      ].join('\n')
     );
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
   } catch (error) {
@@ -760,6 +1021,13 @@ async function startTelegramClientWorker(db, s3) {
       const message = event.message;
 
       if (!message) {
+        return;
+      }
+
+      if (String(message.message || '').trim().startsWith('/')) {
+        void handleTelegramCommand(db, client, message).catch((error) => {
+          console.error('[request-worker] telegram command failed:', error.message || error);
+        });
         return;
       }
 

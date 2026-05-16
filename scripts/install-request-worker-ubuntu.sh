@@ -32,6 +32,7 @@ fi
 
 install -d -m 0755 "$INSTALL_DIR"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR" "$STATE_DIR/work"
+install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR/public" "$STATE_DIR/public/files"
 cp "$REPO_ROOT/request-worker/package.json" "$INSTALL_DIR/package.json"
 cp "$REPO_ROOT/request-worker/request-worker.js" "$INSTALL_DIR/request-worker.js"
 

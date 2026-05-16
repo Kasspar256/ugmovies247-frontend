@@ -543,51 +543,8 @@ export async function queueAdvancedMovieRequestFulfillment(
     contentType === 'series'
       ? buildSeriesShell(commonShellOptions)
       : buildMovieShell(commonShellOptions);
-  const seriesShell = movieShell as unknown as {
-    seasons?: Array<Record<string, unknown> & { episodes?: Array<Record<string, unknown>> }>;
-  };
-  const readyMovieShell =
-    contentType === 'series'
-      ? {
-          ...movieShell,
-          status: 'live',
-          jobStatus: 'ready',
-          currentStage: 'Live and ready to watch',
-          processingProgress: 100,
-          errorMessage: '',
-          processedAt: timestamp,
-          updatedAt: timestamp,
-          seasons: Array.isArray(seriesShell.seasons)
-            ? seriesShell.seasons.map((season) => ({
-                ...season,
-                episodes: Array.isArray(season.episodes)
-                  ? season.episodes.map((episode) => ({
-                      ...episode,
-                      video_url: sourceUrl,
-                      jobStatus: 'ready',
-                      processingProgress: 100,
-                      currentStage: 'Live and ready to watch',
-                      errorMessage: '',
-                      updatedAt: timestamp,
-                      processedAt: timestamp,
-                    }))
-                  : [],
-              }))
-            : [],
-        }
-      : {
-          ...movieShell,
-          video_url: sourceUrl,
-          status: 'live',
-          jobStatus: 'ready',
-          currentStage: 'Live and ready to watch',
-          processingProgress: 100,
-          errorMessage: '',
-          processedAt: timestamp,
-          updatedAt: timestamp,
-        };
 
-  await adminDb.collection(MOVIES_COLLECTION).doc(movieId).set(readyMovieShell, { merge: true });
+  await adminDb.collection(MOVIES_COLLECTION).doc(movieId).set(movieShell, { merge: true });
 
   await adminDb.collection(REQUEST_PROCESSING_JOBS_COLLECTION).doc(processingJobId).set({
     id: processingJobId,
@@ -601,25 +558,25 @@ export async function queueAdvancedMovieRequestFulfillment(
     sourceUrl,
     sourceFileName,
     sourceFileSizeBytes,
-    publicVideoUrl: sourceUrl,
-    status: 'uploaded',
-    progress: 100,
-    currentStage: 'Published from Telegram worker link',
+    publicVideoUrl: '',
+    status: 'queued',
+    progress: 0,
+    currentStage: 'Queued for request VPS final processing',
     errorMessage: '',
-    processorQueue: 'request-telegram-link-publish',
-    movieShell: readyMovieShell,
+    processorQueue: REQUEST_PROCESSOR_QUEUE,
+    movieShell,
     seasonNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.seasonNumber) || 1)) : null,
     episodeNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.episodeNumber) || 1)) : null,
     createdAt: timestamp,
     updatedAt: timestamp,
     queuedAt: timestamp,
-    completedAt: timestamp,
+    completedAt: null,
     serverTimestamp: admin.firestore.FieldValue.serverTimestamp(),
   });
 
   await ref.set(
     {
-      status: 'uploaded',
+      status: 'processing',
       sourceUrl,
       rawFileUrl: sourceUrl,
       sourceFileName,
@@ -646,33 +603,17 @@ export async function queueAdvancedMovieRequestFulfillment(
       seasonTitle: normalizeString(input.seasonTitle),
       episodeTitle: normalizeString(input.episodeTitle),
       adminNotes: input.adminNotes?.trim() || request.adminNotes || '',
-      processorQueue: 'request-telegram-link-publish',
+      processorQueue: REQUEST_PROCESSOR_QUEUE,
       queuedAt: timestamp,
-      uploadedAt: timestamp,
       updatedAt: timestamp,
       lastActionAt: timestamp,
-      workerStatus: 'done',
+      workerStatus: 'queued',
       workerError: '',
-      progress: 100,
-      currentStage: 'Live and ready to watch',
+      progress: 0,
+      currentStage: 'Queued for request VPS final processing',
     },
     { merge: true }
   );
-
-  await sendMovieRequestUserUpdate({
-    request: {
-      ...request,
-      title,
-      movieTitle: title,
-      movieId,
-      status: 'uploaded',
-    },
-    status: 'uploaded',
-    subject: 'Your movie request is ready',
-    title: 'Your movie request is ready!',
-    message: `"${title}" is now ready to watch.`,
-    movieId,
-  });
 }
 
 export async function markMovieRequestUploaded(requestId: string, movieId: string) {
