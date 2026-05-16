@@ -10,6 +10,25 @@ const { spawn } = require('child_process');
 const admin = require('firebase-admin');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
+const ACTIVE_TELEGRAM_JOB_STATUSES = new Set(['claimed', 'queued', 'downloading', 'processing', 'uploading']);
+const TERMINAL_TELEGRAM_JOB_STATUSES = new Set(['uploaded', 'failed', 'cancelled', 'deleted']);
+const SUPPORTED_TELEGRAM_COMMANDS = new Set([
+  'help',
+  'link',
+  'raw',
+  'rawlink',
+  'compress',
+  'queue',
+  'jobs',
+  'status',
+  'cancel',
+  'retry',
+  'delete',
+  'storage',
+]);
+const TELEGRAM_PENDING_ACTIONS = new Map();
+const ACTIVE_TELEGRAM_JOBS = new Map();
+
 function loadEnvFile(filePath) {
   return fs.readFile(filePath, 'utf8')
     .then((content) => {
@@ -60,6 +79,26 @@ function nowIso() {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = size >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${size.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function slugify(value) {
@@ -198,14 +237,36 @@ function inspectMediaStreams(inputPath) {
   });
 }
 
-function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
+function getCompressionSettings(profile) {
+  const normalized = String(profile || '').trim().toLowerCase();
+
+  if (normalized === 'strong') {
+    return { preset: 'veryfast', crf: '27' };
+  }
+
+  if (normalized === 'medium') {
+    return { preset: 'veryfast', crf: '24' };
+  }
+
+  return {
+    preset: process.env.FFMPEG_PRESET || 'veryfast',
+    crf: process.env.FFMPEG_CRF || '21',
+  };
+}
+
+function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress, options = {}) {
   const preset = process.env.FFMPEG_PRESET || 'veryfast';
   const crf = process.env.FFMPEG_CRF || '21';
 
   return inspectMediaStreams(inputPath).then((inspection) => new Promise((resolve, reject) => {
+    const compressionSettings = options.forceTranscode
+      ? getCompressionSettings(options.compressionProfile)
+      : { preset, crf };
     const canCopyVideo = inspection.videoCodec === 'h264';
     const canCopyAudio = inspection.audioCodec === 'aac';
-    const strategy = canCopyVideo
+    const strategy = options.forceTranscode
+      ? `compress-${options.compressionProfile || 'smart'}`
+      : canCopyVideo
       ? canCopyAudio
         ? 'remux'
         : 'copy-video-transcode-audio'
@@ -270,9 +331,9 @@ function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
               '-c:v',
               'libx264',
               '-preset',
-              preset,
+              compressionSettings.preset,
               '-crf',
-              crf,
+              compressionSettings.crf,
               '-pix_fmt',
               'yuv420p',
               '-movflags',
@@ -290,8 +351,16 @@ function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
       `[ffmpeg-plan] ${strategy} video=${inspection.videoCodec || 'unknown'} audio=${inspection.audioCodec || 'none'}`
     );
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    if (options.control) {
+      options.control.ffmpegChild = child;
+    }
     let estimatedProgress = 34;
     const timer = setInterval(() => {
+      if (options.control?.cancelRequested) {
+        child.kill('SIGTERM');
+        return;
+      }
+
       estimatedProgress = Math.min(66, estimatedProgress + 2);
       onProgress?.(estimatedProgress);
     }, 5000);
@@ -322,6 +391,14 @@ function runFfmpeg(inputPath, outputPath, durationSeconds, onProgress) {
     });
     child.on('close', (code) => {
       clearInterval(timer);
+      if (options.control) {
+        options.control.ffmpegChild = null;
+      }
+
+      if (options.control?.cancelRequested) {
+        reject(new Error('Cancelled by operator.'));
+        return;
+      }
 
       if (code === 0) {
         onProgress?.(70);
@@ -378,17 +455,27 @@ function getTelegramOutputMode() {
   return mode === 'local' || mode === 'vps' ? 'local' : 'r2';
 }
 
-async function publishToLocalPublicFiles(filePath) {
-  const publicDir = String(
+function getRequestPublicFilesDir() {
+  return String(
     process.env.REQUEST_PUBLIC_FILES_DIR ||
       process.env.PUBLIC_FILES_DIR ||
       '/var/lib/ugmovies-request-worker/public/files'
   ).trim();
-  const publicBaseUrl = String(
+}
+
+function getRequestPublicBaseUrl() {
+  return String(
     process.env.REQUEST_PUBLIC_BASE_URL ||
       process.env.PUBLIC_BASE_URL ||
       ''
   ).replace(/\/$/, '');
+}
+
+async function publishToLocalPublicFiles(filePath) {
+  const publicDir = String(
+    getRequestPublicFilesDir()
+  ).trim();
+  const publicBaseUrl = getRequestPublicBaseUrl();
 
   if (!publicBaseUrl) {
     throw new Error('REQUEST_PUBLIC_BASE_URL is required when REQUEST_TELEGRAM_OUTPUT_MODE=local.');
@@ -401,16 +488,20 @@ async function publishToLocalPublicFiles(filePath) {
   await fs.rename(filePath, publicPath);
   await fs.chmod(publicPath, 0o644).catch(() => undefined);
 
-  return `${publicBaseUrl}/${encodeURIComponent(publicFileName)}`;
+  return {
+    publicUrl: `${publicBaseUrl}/${encodeURIComponent(publicFileName)}`,
+    publicPath,
+  };
 }
 
 async function publishTelegramOutput(s3, r2Key, outputPath, onProgress) {
   if (getTelegramOutputMode() === 'local') {
     onProgress?.(0, 1);
-    const publicUrl = await publishToLocalPublicFiles(outputPath);
+    const { publicUrl, publicPath } = await publishToLocalPublicFiles(outputPath);
     onProgress?.(1, 1);
     return {
       publicVideoUrl: publicUrl,
+      publicFilePath: publicPath,
       outputMode: 'local',
     };
   }
@@ -733,7 +824,7 @@ async function downloadTelegramClientMedia(client, message, destination, onProgr
   }
 }
 
-async function createTelegramJob(db, message, media, title) {
+async function createTelegramJob(db, message, media, title, pendingAction = null) {
   const collections = getCollections();
   const timestamp = nowIso();
   const chatId = normalizeTelegramId(message.chatId);
@@ -765,6 +856,8 @@ async function createTelegramJob(db, message, media, title) {
     telegramMessageId: messageId,
     telegramSenderId: normalizeTelegramId(message.senderId),
     telegramMimeType: media.mimeType,
+    telegramAction: pendingAction?.action || 'link',
+    compressionProfile: pendingAction?.profile || '',
     processorQueue: 'request-telegram-worker',
     errorMessage: '',
     createdAt: timestamp,
@@ -776,7 +869,198 @@ async function createTelegramJob(db, message, media, title) {
   return job;
 }
 
-async function handleTelegramCommand(db, client, message) {
+function getTelegramPendingKey(chatId, senderId) {
+  return `${chatId}:${senderId || 'unknown'}`;
+}
+
+function clearExpiredTelegramPendingActions() {
+  const now = Date.now();
+
+  for (const [key, action] of TELEGRAM_PENDING_ACTIONS.entries()) {
+    if (Number(action.expiresAtMs || 0) <= now) {
+      TELEGRAM_PENDING_ACTIONS.delete(key);
+    }
+  }
+}
+
+function setTelegramPendingAction(chatId, senderId, action, profile = '') {
+  clearExpiredTelegramPendingActions();
+  TELEGRAM_PENDING_ACTIONS.set(getTelegramPendingKey(chatId, senderId), {
+    action,
+    profile,
+    expiresAtMs: Date.now() + 15 * 60 * 1000,
+  });
+}
+
+function consumeTelegramPendingAction(chatId, senderId) {
+  clearExpiredTelegramPendingActions();
+  const key = getTelegramPendingKey(chatId, senderId);
+  const action = TELEGRAM_PENDING_ACTIONS.get(key) || null;
+
+  if (action) {
+    TELEGRAM_PENDING_ACTIONS.delete(key);
+  }
+
+  return action;
+}
+
+function clearTelegramPendingAction(chatId, senderId) {
+  clearExpiredTelegramPendingActions();
+  return TELEGRAM_PENDING_ACTIONS.delete(getTelegramPendingKey(chatId, senderId));
+}
+
+function normalizeCompressionProfile(value) {
+  const profile = String(value || 'smart').trim().toLowerCase();
+
+  if (!profile || profile === 'smart') {
+    return 'smart';
+  }
+
+  if (profile === 'medium' || profile === 'strong') {
+    return profile;
+  }
+
+  throw new Error('Compression profile must be smart, medium, or strong.');
+}
+
+function getTelegramReplyMessageId(message) {
+  const direct = message?.replyToMsgId || message?.replyTo?.replyToMsgId || message?.replyTo?.replyToTopId;
+
+  return direct ? normalizeTelegramId(direct) : '';
+}
+
+async function queryFirstJob(db, query) {
+  const snapshot = await query.limit(1).get();
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...(doc.data() || {}) };
+}
+
+async function resolveTelegramJob(db, message, commandArgs) {
+  const collections = getCollections();
+  const chatId = normalizeTelegramId(message.chatId);
+  const explicitJobId = String(commandArgs || '').trim().replace(/^`|`$/g, '');
+
+  if (explicitJobId && explicitJobId.toLowerCase() !== 'ready') {
+    const doc = await db.collection(collections.jobs).doc(explicitJobId).get();
+
+    if (doc.exists) {
+      return { id: doc.id, ...(doc.data() || {}) };
+    }
+  }
+
+  const replyMessageId = getTelegramReplyMessageId(message);
+
+  if (!replyMessageId) {
+    return null;
+  }
+
+  const byStatusMessage = await queryFirstJob(
+    db,
+    db
+      .collection(collections.jobs)
+      .where('telegramChatId', '==', chatId)
+      .where('telegramStatusMessageId', '==', replyMessageId)
+  );
+
+  if (byStatusMessage) {
+    return byStatusMessage;
+  }
+
+  return queryFirstJob(
+    db,
+    db
+      .collection(collections.jobs)
+      .where('telegramChatId', '==', chatId)
+      .where('telegramMessageId', '==', replyMessageId)
+  );
+}
+
+function formatTelegramJobListItem(job) {
+  const title = job.title || job.sourceFileName || 'Untitled';
+  const progress = Math.round(Number(job.progress || 0));
+  return `- ${job.id} | ${job.status || 'unknown'} | ${progress}% | ${title}`;
+}
+
+function getLocalPublicPathFromUrl(publicUrl) {
+  const baseUrl = getRequestPublicBaseUrl();
+
+  if (!publicUrl || !baseUrl || !String(publicUrl).startsWith(`${baseUrl}/`)) {
+    return '';
+  }
+
+  const fileName = decodeURIComponent(String(publicUrl).slice(baseUrl.length + 1));
+
+  if (!fileName || fileName.includes('/') || fileName.includes('\\')) {
+    return '';
+  }
+
+  return path.join(getRequestPublicFilesDir(), fileName);
+}
+
+async function deleteLocalPublicFileForJob(job) {
+  const publicPath = job.publicFilePath || getLocalPublicPathFromUrl(job.publicVideoUrl || job.sourceUrl || '');
+
+  if (!publicPath) {
+    return 0;
+  }
+
+  const stats = await fs.stat(publicPath).catch(() => null);
+  await fs.rm(publicPath, { force: true }).catch(() => undefined);
+  return stats?.size || 0;
+}
+
+async function getDirectorySize(dirPath) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true }).catch(() => []);
+  let total = 0;
+
+  for (const entry of entries) {
+    const entryPath = path.join(dirPath, entry.name);
+
+    if (entry.isDirectory()) {
+      total += await getDirectorySize(entryPath);
+    } else if (entry.isFile()) {
+      const stats = await fs.stat(entryPath).catch(() => null);
+      total += stats?.size || 0;
+    }
+  }
+
+  return total;
+}
+
+async function getStorageSummary() {
+  const publicDir = getRequestPublicFilesDir();
+  await fs.mkdir(publicDir, { recursive: true });
+  const [statFs, readyBytes] = await Promise.all([
+    fs.statfs(publicDir).catch(() => null),
+    getDirectorySize(publicDir),
+  ]);
+
+  if (!statFs) {
+    return {
+      freeBytes: 0,
+      totalBytes: 0,
+      usedBytes: 0,
+      readyBytes,
+    };
+  }
+
+  const totalBytes = Number(statFs.blocks || 0) * Number(statFs.bsize || 0);
+  const freeBytes = Number(statFs.bfree || 0) * Number(statFs.bsize || 0);
+
+  return {
+    freeBytes,
+    totalBytes,
+    usedBytes: Math.max(0, totalBytes - freeBytes),
+    readyBytes,
+  };
+}
+
+async function handleTelegramCommand(db, s3, client, message, allowedSenderIds) {
   const text = String(message?.message || '').trim();
 
   if (!text.startsWith('/')) {
@@ -787,6 +1071,17 @@ async function handleTelegramCommand(db, client, message) {
   const command = rawCommand.slice(1).split('@')[0].toLowerCase();
   const collections = getCollections();
   const chatId = normalizeTelegramId(message.chatId);
+  const senderId = normalizeTelegramId(message.senderId);
+
+  if (!SUPPORTED_TELEGRAM_COMMANDS.has(command)) {
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      'Unknown request worker command. Use /help to see the available operator commands.',
+      message.id
+    );
+    return true;
+  }
 
   if (command === 'help') {
     await sendTelegramClientMessage(
@@ -794,14 +1089,63 @@ async function handleTelegramCommand(db, client, message) {
       message.chatId,
       [
         'Request worker commands:',
-        '/help - show this help',
-        '/queue or /jobs - show recent request-worker Telegram jobs in this group',
+        '/help - show available commands',
+        '/link - clear one-time compression/raw mode and use the normal link flow',
+        '/rawlink - publish the next source as-is without ffprobe or ffmpeg conversion',
+        '/compress [smart|medium|strong] - apply one-time compression to the next file only',
+        '/queue or /jobs - list active and recent jobs in this chat',
         '/status <job_id> - show one job status',
+        '/cancel <job_id> - cancel an active request-worker job',
+        '/retry <job_id> - retry a failed job from the original Telegram message',
+        '/delete - delete a ready/cancelled job when replying to its status message',
+        '/delete <job_id> - delete one ready/cancelled job from VPS storage',
+        '/delete ready - delete all ready temporary links in this chat',
+        '/storage - show free VPS storage and ready-link usage',
         '',
-        'Forward a movie file here and I will download it through MTProto, process it with FFmpeg, and reply with the source link for the Admin Requests panel.',
+        'Tip: reply to a worker status message with /status, /cancel, /retry, or /delete instead of typing the job id.',
       ].join('\n'),
       message.id
     );
+    return true;
+  }
+
+  if (command === 'link') {
+    const cleared = clearTelegramPendingAction(chatId, senderId);
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      cleared
+        ? 'Normal link mode enabled for the next request file.'
+        : 'Normal link mode is already the default. Forward the request file whenever you are ready.',
+      message.id
+    );
+    return true;
+  }
+
+  if (command === 'raw' || command === 'rawlink') {
+    setTelegramPendingAction(chatId, senderId, 'rawlink');
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      'Raw link mode enabled for the next video only. I will publish the source file without FFmpeg conversion.',
+      message.id
+    );
+    return true;
+  }
+
+  if (command === 'compress') {
+    try {
+      const profile = normalizeCompressionProfile(args.join(' '));
+      setTelegramPendingAction(chatId, senderId, 'compress', profile);
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        `Compression mode enabled for the next video only using the ${profile} profile.`,
+        message.id
+      );
+    } catch (error) {
+      await sendTelegramClientMessage(client, message.chatId, error.message || String(error), message.id);
+    }
     return true;
   }
 
@@ -814,49 +1158,53 @@ async function handleTelegramCommand(db, client, message) {
     const jobs = snapshot.docs
       .map((doc) => ({ id: doc.id, ...(doc.data() || {}) }))
       .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
-      .slice(0, 6);
+      .slice(0, 10);
+    const activeJobs = jobs.filter((job) => ACTIVE_TELEGRAM_JOB_STATUSES.has(String(job.status || '')));
+    const recentJobs = jobs.filter((job) => !ACTIVE_TELEGRAM_JOB_STATUSES.has(String(job.status || ''))).slice(0, 5);
+    const lines = ['Current request intake queue:', '', 'Active:'];
+
+    if (activeJobs.length) {
+      lines.push(...activeJobs.slice(0, 5).map(formatTelegramJobListItem));
+    } else {
+      lines.push('none');
+    }
+
+    if (recentJobs.length) {
+      lines.push('', 'Recent:', ...recentJobs.map(formatTelegramJobListItem));
+    }
 
     await sendTelegramClientMessage(
       client,
       message.chatId,
-      jobs.length
-        ? [
-            'Recent request worker jobs:',
-            ...jobs.map((job) =>
-              `- ${job.id} | ${job.status || 'unknown'} | ${Math.round(Number(job.progress || 0))}% | ${job.title || job.sourceFileName || 'Untitled'}`
-            ),
-          ].join('\n')
-        : 'No request worker jobs found for this group yet.',
+      jobs.length ? lines.join('\n') : 'No request worker jobs found for this group yet.',
       message.id
     );
     return true;
   }
 
   if (command === 'status') {
-    const jobId = args[0] || '';
+    const job = await resolveTelegramJob(db, message, args.join(' '));
 
-    if (!jobId) {
-      await sendTelegramClientMessage(client, message.chatId, 'Usage: /status <job_id>', message.id);
+    if (!job) {
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        'I could not find that job. Reply to a worker status message with /status, or use /status <job_id>.',
+        message.id
+      );
       return true;
     }
 
-    const snapshot = await db.collection(collections.jobs).doc(jobId).get();
-
-    if (!snapshot.exists) {
-      await sendTelegramClientMessage(client, message.chatId, `I could not find job ${jobId}.`, message.id);
-      return true;
-    }
-
-    const job = snapshot.data() || {};
     await sendTelegramClientMessage(
       client,
       message.chatId,
       [
-        `Job ${snapshot.id}`,
+        `Job ${job.id}`,
         `Title: ${job.title || job.sourceFileName || 'Untitled'}`,
         `Status: ${job.status || 'unknown'}`,
         `Progress: ${Math.round(Number(job.progress || 0))}%`,
         `Stage: ${job.currentStage || '-'}`,
+        job.telegramAction && job.telegramAction !== 'link' ? `Mode: ${job.telegramAction}${job.compressionProfile ? ` (${job.compressionProfile})` : ''}` : '',
         job.publicVideoUrl ? `Link: ${job.publicVideoUrl}` : '',
         job.errorMessage ? `Error: ${job.errorMessage}` : '',
       ].filter(Boolean).join('\n'),
@@ -865,12 +1213,197 @@ async function handleTelegramCommand(db, client, message) {
     return true;
   }
 
-  await sendTelegramClientMessage(
-    client,
-    message.chatId,
-    'Unknown request worker command. Use /help.',
-    message.id
-  );
+  if (command === 'cancel') {
+    const job = await resolveTelegramJob(db, message, args.join(' '));
+
+    if (!job) {
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        'I could not find that job. Reply to a worker status message with /cancel, or use /cancel <job_id>.',
+        message.id
+      );
+      return true;
+    }
+
+    if (!ACTIVE_TELEGRAM_JOB_STATUSES.has(String(job.status || ''))) {
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        `Job ${job.id} is ${job.status || 'unknown'} and cannot be cancelled right now.`,
+        message.id
+      );
+      return true;
+    }
+
+    const control = ACTIVE_TELEGRAM_JOBS.get(job.id);
+
+    if (control) {
+      control.cancelRequested = true;
+      control.ffmpegChild?.kill('SIGTERM');
+    }
+
+    await db.collection(collections.jobs).doc(job.id).set({
+      status: 'cancelled',
+      currentStage: 'Cancelled by operator',
+      errorMessage: 'Cancelled by operator.',
+      updatedAt: nowIso(),
+    }, { merge: true });
+    await sendTelegramClientMessage(client, message.chatId, `Cancelled job ${job.id}.`, message.id);
+    return true;
+  }
+
+  if (command === 'retry') {
+    const job = await resolveTelegramJob(db, message, args.join(' '));
+
+    if (!job) {
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        'I could not find that job. Reply to a worker status message with /retry, or use /retry <job_id>.',
+        message.id
+      );
+      return true;
+    }
+
+    if (ACTIVE_TELEGRAM_JOB_STATUSES.has(String(job.status || ''))) {
+      await sendTelegramClientMessage(client, message.chatId, `Job ${job.id} is already active.`, message.id);
+      return true;
+    }
+
+    if (String(job.status || '') === 'uploaded') {
+      await sendTelegramClientMessage(client, message.chatId, 'That job already finished successfully. Forward the source again only if you need a new link.', message.id);
+      return true;
+    }
+
+    const sourceMessageId = Number(job.telegramMessageId || 0);
+
+    if (!sourceMessageId) {
+      await sendTelegramClientMessage(client, message.chatId, 'That job has no original Telegram message attached, so I cannot retry it automatically.', message.id);
+      return true;
+    }
+
+    await deleteLocalPublicFileForJob(job);
+    await db.collection(collections.jobs).doc(job.id).delete();
+    const sourceMessage = await client.getMessages(message.chatId, { ids: sourceMessageId });
+
+    if (!sourceMessage) {
+      await sendTelegramClientMessage(client, message.chatId, 'I could not reload the original Telegram source message. Please forward the file again.', message.id);
+      return true;
+    }
+
+    await sendTelegramClientMessage(client, message.chatId, `Re-queued job ${job.id} from the original Telegram message.`, message.id);
+    void processTelegramClientMedia(db, s3, client, sourceMessage, allowedSenderIds).catch((error) => {
+      console.error('[request-worker] telegram retry failed:', error.message || error);
+    });
+    return true;
+  }
+
+  if (command === 'delete') {
+    const requested = args.join(' ').trim().toLowerCase();
+
+    if (requested === 'ready' || requested === 'all-ready' || requested === 'ready all') {
+      const snapshot = await db
+        .collection(collections.jobs)
+        .where('telegramChatId', '==', chatId)
+        .where('status', '==', 'uploaded')
+        .limit(50)
+        .get();
+      let deletedCount = 0;
+      let deletedBytes = 0;
+
+      for (const doc of snapshot.docs) {
+        const job = { id: doc.id, ...(doc.data() || {}) };
+        deletedBytes += await deleteLocalPublicFileForJob(job);
+        await doc.ref.set({
+          status: 'deleted',
+          currentStage: 'Deleted from VPS storage',
+          publicVideoUrl: '',
+          sourceUrl: '',
+          directMp4Url: '',
+          publicFilePath: '',
+          updatedAt: nowIso(),
+        }, { merge: true });
+        deletedCount += 1;
+      }
+
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        `Deleted ready temporary links from VPS storage.\nJobs: ${deletedCount}\nApprox freed: ${formatBytes(deletedBytes)}`,
+        message.id
+      );
+      return true;
+    }
+
+    const job = await resolveTelegramJob(db, message, args.join(' '));
+
+    if (!job) {
+      await sendTelegramClientMessage(
+        client,
+        message.chatId,
+        'I could not find that job. Reply to a worker status message with /delete, use /delete <job_id>, or use /delete ready.',
+        message.id
+      );
+      return true;
+    }
+
+    if (ACTIVE_TELEGRAM_JOB_STATUSES.has(String(job.status || ''))) {
+      await sendTelegramClientMessage(client, message.chatId, `Job ${job.id} is active. Use /cancel first, then /delete after it stops.`, message.id);
+      return true;
+    }
+
+    if (String(job.status || '') === 'failed') {
+      await sendTelegramClientMessage(client, message.chatId, `Job ${job.id} is failed but retryable. Use /retry if you want to run it again.`, message.id);
+      return true;
+    }
+
+    const deletedBytes = await deleteLocalPublicFileForJob(job);
+    await db.collection(collections.jobs).doc(job.id).set({
+      status: 'deleted',
+      currentStage: 'Deleted from VPS storage',
+      publicVideoUrl: '',
+      sourceUrl: '',
+      directMp4Url: '',
+      publicFilePath: '',
+      updatedAt: nowIso(),
+    }, { merge: true });
+    await sendTelegramClientMessage(client, message.chatId, `Deleted job ${job.id} from VPS storage. Approx freed: ${formatBytes(deletedBytes)}.`, message.id);
+    return true;
+  }
+
+  if (command === 'storage') {
+    const [summary, jobsSnapshot] = await Promise.all([
+      getStorageSummary(),
+      db.collection(collections.jobs).where('telegramChatId', '==', chatId).limit(100).get(),
+    ]);
+    const counts = {};
+
+    for (const doc of jobsSnapshot.docs) {
+      const status = String((doc.data() || {}).status || 'unknown');
+      counts[status] = (counts[status] || 0) + 1;
+    }
+
+    const usedPercent = summary.totalBytes > 0 ? Math.round((summary.usedBytes / summary.totalBytes) * 100) : 0;
+    await sendTelegramClientMessage(
+      client,
+      message.chatId,
+      [
+        'VPS storage:',
+        `Free: ${formatBytes(summary.freeBytes)} of ${formatBytes(summary.totalBytes)}`,
+        `Used: ${formatBytes(summary.usedBytes)} (${usedPercent}%)`,
+        '',
+        'Request worker jobs:',
+        `Ready links: ${counts.uploaded || 0} using about ${formatBytes(summary.readyBytes)}`,
+        `Active: ${Array.from(ACTIVE_TELEGRAM_JOB_STATUSES).reduce((sum, status) => sum + (counts[status] || 0), 0)}`,
+        `Failed: ${counts.failed || 0}`,
+        `Deleted: ${counts.deleted || 0}`,
+      ].join('\n'),
+      message.id
+    );
+    return true;
+  }
+
   return true;
 }
 
@@ -894,7 +1427,8 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
   console.log(
     `[request-worker] accepted Telegram media message ${normalizeTelegramId(message.id)} from ${senderId || 'unknown'} in ${chatId}: ${media.fileName}`
   );
-  const job = await createTelegramJob(db, message, media, title);
+  const pendingAction = consumeTelegramPendingAction(chatId, senderId);
+  const job = await createTelegramJob(db, message, media, title, pendingAction);
 
   if (!job) {
     await sendTelegramClientMessage(client, chatRef, 'That Telegram message is already tracked by the request worker.', message.id);
@@ -908,6 +1442,11 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
   const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
   const r2Key = `${keyPrefix}/telegram/${job.id}/video.mp4`;
   const outputMode = getTelegramOutputMode();
+  const control = {
+    cancelRequested: false,
+    ffmpegChild: null,
+  };
+  ACTIVE_TELEGRAM_JOBS.set(job.id, control);
 
   await fs.mkdir(workDir, { recursive: true });
   let statusMessage = await sendTelegramClientMessage(
@@ -921,6 +1460,13 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
     ].join('\n'),
     message.id
   );
+  if (statusMessage?.id) {
+    await progress.report({
+      telegramStatusMessageId: normalizeTelegramId(statusMessage.id),
+      replyChatId: normalizeTelegramId(statusMessage.chatId || chatRef),
+    });
+    await progress.flush();
+  }
 
   try {
     await progress.report({
@@ -940,6 +1486,10 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       ].join('\n')
     );
     await downloadTelegramClientMedia(client, message, sourcePath, (downloadedBytes, totalBytes) => {
+      if (control.cancelRequested) {
+        throw new Error('Cancelled by operator.');
+      }
+
       const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 22 : 0;
       void progress.report({
         status: 'downloading',
@@ -949,57 +1499,91 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
     });
     await progress.flush();
 
-    await progress.report({
-      status: 'processing',
-      progress: 30,
-      currentStage: 'Processing via FFmpeg',
-    });
-    statusMessage = await updateTelegramStatusMessage(
-      client,
-      chatRef,
-      statusMessage,
-      message.id,
-      [
-        `Job ${job.id}`,
-        `Source: ${title}`,
-        'Stage: Processing via FFmpeg...',
-        'This can take several minutes for a full movie.',
-      ].join('\n')
-    );
-    const durationSeconds = await runProbeDuration(sourcePath);
-    let lastTelegramProgressAt = 0;
-    let lastTelegramProgressValue = 0;
-    await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
-      void progress.report({
-        status: 'processing',
-        progress: percent,
-        currentStage: 'Processing via FFmpeg',
-      });
+    if (control.cancelRequested) {
+      throw new Error('Cancelled by operator.');
+    }
 
-      const now = Date.now();
-      if (
-        now - lastTelegramProgressAt > 60000 ||
-        Math.abs(percent - lastTelegramProgressValue) >= 10
-      ) {
-        lastTelegramProgressAt = now;
-        lastTelegramProgressValue = percent;
-        void updateTelegramStatusMessage(
-          client,
-          chatRef,
-          statusMessage,
-          message.id,
-          [
-            `Job ${job.id}`,
-            `Source: ${title}`,
-            `Stage: Processing via FFmpeg... ${Math.round(percent)}%`,
-          ].join('\n'),
-          { fallback: false }
-        ).then((nextStatusMessage) => {
-          statusMessage = nextStatusMessage || statusMessage;
+    const rawPassthrough = job.telegramAction === 'rawlink';
+    const forceCompression = job.telegramAction === 'compress';
+    let outputForPublish = outputPath;
+
+    if (rawPassthrough) {
+      outputForPublish = sourcePath;
+      await progress.report({
+        status: 'processing',
+        progress: 70,
+        currentStage: 'Raw source ready for publishing',
+      });
+      statusMessage = await updateTelegramStatusMessage(
+        client,
+        chatRef,
+        statusMessage,
+        message.id,
+        [
+          `Job ${job.id}`,
+          `Source: ${title}`,
+          'Stage: Raw link mode, publishing source directly...',
+        ].join('\n')
+      );
+    } else {
+      await progress.report({
+        status: 'processing',
+        progress: 30,
+        currentStage: forceCompression ? 'Processing via FFmpeg compression' : 'Processing via FFmpeg',
+      });
+      statusMessage = await updateTelegramStatusMessage(
+        client,
+        chatRef,
+        statusMessage,
+        message.id,
+        [
+          `Job ${job.id}`,
+          `Source: ${title}`,
+          forceCompression
+            ? `Stage: Processing via FFmpeg compression (${job.compressionProfile || 'smart'})...`
+            : 'Stage: Processing via FFmpeg...',
+          forceCompression ? 'Manual compression mode is enabled for this file.' : 'Smart copy/remux mode is enabled where possible.',
+        ].join('\n')
+      );
+      const durationSeconds = await runProbeDuration(sourcePath);
+      let lastTelegramProgressAt = 0;
+      let lastTelegramProgressValue = 0;
+      await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
+        void progress.report({
+          status: 'processing',
+          progress: percent,
+          currentStage: forceCompression ? 'Processing via FFmpeg compression' : 'Processing via FFmpeg',
         });
-      }
-    });
-    await progress.flush();
+
+        const now = Date.now();
+        if (
+          now - lastTelegramProgressAt > 60000 ||
+          Math.abs(percent - lastTelegramProgressValue) >= 10
+        ) {
+          lastTelegramProgressAt = now;
+          lastTelegramProgressValue = percent;
+          void updateTelegramStatusMessage(
+            client,
+            chatRef,
+            statusMessage,
+            message.id,
+            [
+              `Job ${job.id}`,
+              `Source: ${title}`,
+              `Stage: Processing via FFmpeg... ${Math.round(percent)}%`,
+            ].join('\n'),
+            { fallback: false }
+          ).then((nextStatusMessage) => {
+            statusMessage = nextStatusMessage || statusMessage;
+          });
+        }
+      }, {
+        control,
+        forceTranscode: forceCompression,
+        compressionProfile: job.compressionProfile || 'smart',
+      });
+      await progress.flush();
+    }
 
     await progress.report({
       status: 'uploading',
@@ -1022,7 +1606,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
           : 'Stage: Uploading processed MP4 to R2...',
       ].join('\n')
     );
-    const { publicVideoUrl } = await publishTelegramOutput(s3, r2Key, outputPath, (uploadedBytes, totalBytes) => {
+    const { publicVideoUrl, publicFilePath } = await publishTelegramOutput(s3, r2Key, outputForPublish, (uploadedBytes, totalBytes) => {
       const percent = totalBytes > 0 ? (uploadedBytes / totalBytes) * 23 : 0;
       void progress.report({
         status: 'uploading',
@@ -1043,6 +1627,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       publicVideoUrl,
       directMp4Url: publicVideoUrl,
       sourceUrl: publicVideoUrl,
+      publicFilePath: publicFilePath || '',
       outputMode,
       completedAt: nowIso(),
     });
@@ -1055,27 +1640,34 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       [
         `Request worker finished "${title}".`,
         '',
-        outputMode === 'local'
-          ? 'Temporary VPS source link:'
-          : 'Final R2 MP4 link:',
-        publicVideoUrl,
-        '',
-        'Paste this link into the admin request panel:',
+        outputMode === 'local' ? 'Temporary VPS source link:' : 'Final MP4 link:',
         publicVideoUrl,
       ].join('\n')
     );
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error || 'Unknown Telegram worker error');
+    const wasCancelled = messageText.toLowerCase().includes('cancelled by operator') || control.cancelRequested;
     await progress.report({
-      status: 'failed',
+      status: wasCancelled ? 'cancelled' : 'failed',
       progress: 100,
-      currentStage: 'Telegram worker failed',
+      currentStage: wasCancelled ? 'Cancelled by operator' : 'Telegram worker failed',
       errorMessage: messageText,
     });
-    await sendTelegramClientMessage(client, chatRef, `Request worker failed "${title}": ${messageText}`, message.id);
-    throw error;
+    await sendTelegramClientMessage(
+      client,
+      chatRef,
+      wasCancelled
+        ? `Request worker cancelled "${title}".`
+        : `Request worker failed "${title}": ${messageText}`,
+      message.id
+    );
+
+    if (!wasCancelled) {
+      throw error;
+    }
   } finally {
+    ACTIVE_TELEGRAM_JOBS.delete(job.id);
     await removeLocalWorkspace(workDir);
   }
 }
@@ -1133,7 +1725,7 @@ async function startTelegramClientWorker(db, s3) {
       }
 
       if (String(message.message || '').trim().startsWith('/')) {
-        void handleTelegramCommand(db, client, message).catch((error) => {
+        void handleTelegramCommand(db, s3, client, message, config.allowedSenderIds).catch((error) => {
           console.error('[request-worker] telegram command failed:', error.message || error);
         });
         return;
