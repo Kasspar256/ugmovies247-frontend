@@ -31,7 +31,8 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
 fi
 
 install -d -m 0755 "$INSTALL_DIR"
-install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR" "$STATE_DIR/work"
+install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR"
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR/work"
 install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$STATE_DIR/public" "$STATE_DIR/public/files"
 cp "$REPO_ROOT/request-worker/package.json" "$INSTALL_DIR/package.json"
 cp "$REPO_ROOT/request-worker/request-worker.js" "$INSTALL_DIR/request-worker.js"
@@ -39,6 +40,8 @@ cp "$REPO_ROOT/request-worker/request-worker.js" "$INSTALL_DIR/request-worker.js
 cd "$INSTALL_DIR"
 npm install --omit=dev
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR" "$STATE_DIR"
+chmod 0755 "$STATE_DIR" "$STATE_DIR/public" "$STATE_DIR/public/files"
+find "$STATE_DIR/public/files" -type f -exec chmod 0644 {} \;
 
 if [[ ! -f "$ENV_FILE" ]]; then
   cp "$REPO_ROOT/request-worker/.env.example" "$ENV_FILE"

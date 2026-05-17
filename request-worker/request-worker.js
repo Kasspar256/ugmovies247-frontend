@@ -28,6 +28,8 @@ const SUPPORTED_TELEGRAM_COMMANDS = new Set([
 ]);
 const TELEGRAM_PENDING_ACTIONS = new Map();
 const ACTIVE_TELEGRAM_JOBS = new Map();
+const TELEGRAM_PROCESS_QUEUE = [];
+let activeTelegramProcessors = 0;
 
 function loadEnvFile(filePath) {
   return fs.readFile(filePath, 'utf8')
@@ -115,6 +117,38 @@ function getCollections() {
     requests: process.env.MOVIE_REQUESTS_COLLECTION || 'movie_requests',
     movies: process.env.MOVIES_COLLECTION || 'movies__production',
   };
+}
+
+function getTelegramConcurrencyLimit() {
+  const value = Number(
+    process.env.REQUEST_TELEGRAM_CONCURRENCY ||
+      process.env.TELEGRAM_WORKER_CONCURRENCY ||
+      1
+  );
+
+  if (!Number.isFinite(value) || value <= 1) {
+    return 1;
+  }
+
+  return Math.min(2, Math.floor(value));
+}
+
+function getPublicLinkRetentionHours() {
+  const value = Number(
+    process.env.REQUEST_PUBLIC_LINK_RETENTION_HOURS ||
+      process.env.LINK_EXPIRY_HOURS ||
+      24
+  );
+
+  if (!Number.isFinite(value) || value <= 0) {
+    return 24;
+  }
+
+  return value;
+}
+
+function getPublicLinkExpiryIso() {
+  return new Date(Date.now() + getPublicLinkRetentionHours() * 60 * 60 * 1000).toISOString();
 }
 
 async function removeLocalWorkspace(workDir) {
@@ -482,6 +516,9 @@ async function publishToLocalPublicFiles(filePath) {
   }
 
   await fs.mkdir(publicDir, { recursive: true });
+  await fs.chmod(path.dirname(path.dirname(publicDir)), 0o755).catch(() => undefined);
+  await fs.chmod(path.dirname(publicDir), 0o755).catch(() => undefined);
+  await fs.chmod(publicDir, 0o755).catch(() => undefined);
   const publicFileName = `${randomUUID().replace(/-/g, '')}.mp4`;
   const publicPath = path.join(publicDir, publicFileName);
 
@@ -1060,6 +1097,78 @@ async function getStorageSummary() {
   };
 }
 
+async function cleanupOrphanPublicFiles() {
+  const publicDir = getRequestPublicFilesDir();
+  const retentionMs = getPublicLinkRetentionHours() * 60 * 60 * 1000;
+  const entries = await fs.readdir(publicDir, { withFileTypes: true }).catch(() => []);
+  let deletedCount = 0;
+  let deletedBytes = 0;
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.mp4')) {
+      continue;
+    }
+
+    const filePath = path.join(publicDir, entry.name);
+    const stats = await fs.stat(filePath).catch(() => null);
+
+    if (!stats || Date.now() - stats.mtimeMs < retentionMs) {
+      continue;
+    }
+
+    await fs.rm(filePath, { force: true }).catch(() => undefined);
+    deletedCount += 1;
+    deletedBytes += stats.size || 0;
+  }
+
+  return { deletedCount, deletedBytes };
+}
+
+async function cleanupExpiredTelegramLinks(db) {
+  if (getTelegramOutputMode() !== 'local') {
+    return;
+  }
+
+  const collections = getCollections();
+  const now = nowIso();
+  const snapshot = await db
+    .collection(collections.jobs)
+    .where('processorQueue', '==', 'request-telegram-worker')
+    .limit(200)
+    .get();
+  let deletedCount = 0;
+  let deletedBytes = 0;
+
+  for (const doc of snapshot.docs) {
+    const job = { id: doc.id, ...(doc.data() || {}) };
+
+    if (job.status !== 'uploaded' || !job.expiresAt || String(job.expiresAt) > now) {
+      continue;
+    }
+
+    deletedBytes += await deleteLocalPublicFileForJob(job);
+    await doc.ref.set({
+      status: 'expired',
+      currentStage: 'Temporary VPS link expired and was deleted',
+      publicVideoUrl: '',
+      directMp4Url: '',
+      sourceUrl: '',
+      publicFilePath: '',
+      expiredAt: now,
+      updatedAt: now,
+    }, { merge: true });
+    deletedCount += 1;
+  }
+
+  const orphanResult = await cleanupOrphanPublicFiles();
+  deletedCount += orphanResult.deletedCount;
+  deletedBytes += orphanResult.deletedBytes;
+
+  if (deletedCount > 0) {
+    console.log(`[request-worker] cleanup deleted ${deletedCount} temporary file(s), freed ${formatBytes(deletedBytes)}`);
+  }
+}
+
 async function handleTelegramCommand(db, s3, client, message, allowedSenderIds) {
   const text = String(message?.message || '').trim();
 
@@ -1172,6 +1281,12 @@ async function handleTelegramCommand(db, s3, client, message, allowedSenderIds) 
     if (recentJobs.length) {
       lines.push('', 'Recent:', ...recentJobs.map(formatTelegramJobListItem));
     }
+
+    lines.push(
+      '',
+      `Local worker slots: ${activeTelegramProcessors}/${getTelegramConcurrencyLimit()} active`,
+      `Waiting in memory: ${TELEGRAM_PROCESS_QUEUE.length}`
+    );
 
     await sendTelegramClientMessage(
       client,
@@ -1293,7 +1408,7 @@ async function handleTelegramCommand(db, s3, client, message, allowedSenderIds) 
     }
 
     await sendTelegramClientMessage(client, message.chatId, `Re-queued job ${job.id} from the original Telegram message.`, message.id);
-    void processTelegramClientMedia(db, s3, client, sourceMessage, allowedSenderIds).catch((error) => {
+    void enqueueTelegramClientMedia(db, s3, client, sourceMessage, allowedSenderIds).catch((error) => {
       console.error('[request-worker] telegram retry failed:', error.message || error);
     });
     return true;
@@ -1405,6 +1520,71 @@ async function handleTelegramCommand(db, s3, client, message, allowedSenderIds) 
   }
 
   return true;
+}
+
+function drainTelegramProcessQueue() {
+  const limit = getTelegramConcurrencyLimit();
+
+  while (activeTelegramProcessors < limit && TELEGRAM_PROCESS_QUEUE.length > 0) {
+    const item = TELEGRAM_PROCESS_QUEUE.shift();
+    activeTelegramProcessors += 1;
+
+    void processTelegramClientMedia(
+      item.db,
+      item.s3,
+      item.client,
+      item.message,
+      item.allowedSenderIds
+    )
+      .catch((error) => {
+        console.error('[request-worker] telegram queued media failed:', error.message || error);
+      })
+      .finally(() => {
+        activeTelegramProcessors = Math.max(0, activeTelegramProcessors - 1);
+        drainTelegramProcessQueue();
+      });
+  }
+}
+
+async function enqueueTelegramClientMedia(db, s3, client, message, allowedSenderIds) {
+  const chatRef = message.chatId;
+  const senderId = normalizeTelegramId(message.senderId);
+
+  if (allowedSenderIds.size && !allowedSenderIds.has(senderId)) {
+    console.warn(`[request-worker] ignored telegram upload from unauthorized sender ${senderId}`);
+    return;
+  }
+
+  const media = extractTelegramClientMedia(message);
+
+  if (!media) {
+    return;
+  }
+
+  const waitingAhead = activeTelegramProcessors + TELEGRAM_PROCESS_QUEUE.length;
+
+  if (waitingAhead > 0) {
+    await sendTelegramClientMessage(
+      client,
+      chatRef,
+      [
+        `Queued "${getTelegramClientTitle(message, media)}".`,
+        `Position: ${waitingAhead + 1}`,
+        `Worker slots: ${activeTelegramProcessors}/${getTelegramConcurrencyLimit()} active`,
+        'I will process this file when the previous request file finishes.',
+      ].join('\n'),
+      message.id
+    );
+  }
+
+  TELEGRAM_PROCESS_QUEUE.push({
+    db,
+    s3,
+    client,
+    message,
+    allowedSenderIds,
+  });
+  drainTelegramProcessQueue();
 }
 
 async function processTelegramClientMedia(db, s3, client, message, allowedSenderIds) {
@@ -1620,6 +1800,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
     await progress.flush();
 
     await removeLocalWorkspace(workDir);
+    const expiresAt = getPublicLinkExpiryIso();
     await progress.report({
       status: 'uploaded',
       progress: 100,
@@ -1629,6 +1810,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       sourceUrl: publicVideoUrl,
       publicFilePath: publicFilePath || '',
       outputMode,
+      expiresAt,
       completedAt: nowIso(),
     });
 
@@ -1642,6 +1824,8 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
         '',
         outputMode === 'local' ? 'Temporary VPS source link:' : 'Final MP4 link:',
         publicVideoUrl,
+        '',
+        `Auto-delete: ${outputMode === 'local' ? `${getPublicLinkRetentionHours()} hours` : 'handled by storage policy'}`,
       ].join('\n')
     );
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
@@ -1731,7 +1915,7 @@ async function startTelegramClientWorker(db, s3) {
         return;
       }
 
-      void processTelegramClientMedia(db, s3, client, message, config.allowedSenderIds).catch((error) => {
+      void enqueueTelegramClientMedia(db, s3, client, message, config.allowedSenderIds).catch((error) => {
         console.error('[request-worker] telegram client message failed:', error.message || error);
       });
     },
@@ -2112,6 +2296,14 @@ async function main() {
 
   await fs.mkdir(requireEnv('WORK_DIR'), { recursive: true });
   await startTelegramClientWorker(db, s3);
+  await cleanupExpiredTelegramLinks(db).catch((error) => {
+    console.warn('[request-worker] startup cleanup failed:', error.message || error);
+  });
+  setInterval(() => {
+    void cleanupExpiredTelegramLinks(db).catch((error) => {
+      console.warn('[request-worker] scheduled cleanup failed:', error.message || error);
+    });
+  }, 60 * 60 * 1000);
   console.log('[request-worker] started request MTProto Telegram worker and legacy queue watcher');
 
   for (;;) {
