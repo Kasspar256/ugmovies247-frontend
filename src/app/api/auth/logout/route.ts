@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { APP_REVIEW_SESSION_COOKIE } from '@/lib/appReview';
 import {
   AUTH_DEVICE_SESSION_COOKIE,
   AUTH_ROLE_COOKIE,
@@ -46,6 +47,11 @@ export async function POST(request: Request) {
   });
   response.cookies.set(LEGACY_AUTH_ROLE_COOKIE, '', {
     ...getAuthCookieConfig(),
+    maxAge: 0,
+  });
+  response.cookies.set(APP_REVIEW_SESSION_COOKIE, '', {
+    ...getAuthCookieConfig(),
+    httpOnly: false,
     maxAge: 0,
   });
 

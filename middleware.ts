@@ -2,6 +2,7 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { AUTH_ROLE_COOKIE, AUTH_SESSION_COOKIE } from '@/lib/auth/constants';
 import {
+  APP_REVIEW_SESSION_COOKIE,
   APP_REVIEW_HOME_PATH,
   isAppInReview,
   isReviewBlockedApiPath,
@@ -43,12 +44,15 @@ export function middleware(request: NextRequest) {
       .map((cookie) => cookie.value)
       .filter(Boolean)
       .at(-1) || '';
+  const isReviewSession =
+    isAppInReview ||
+    request.cookies.getAll(APP_REVIEW_SESSION_COOKIE).some((cookie) => cookie.value === '1');
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon') || pathname.includes('.')) {
     return NextResponse.next();
   }
 
-  if (isAppInReview) {
+  if (isReviewSession) {
     if (pathname === '/api/admin/card-payments') {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }

@@ -25,6 +25,7 @@ import {
   resolveEffectiveSubscriptionState,
 } from '@/lib/server/subscriptions';
 import { BETA_TESTER_EMAIL } from '@/lib/server/movieCollection';
+import { APP_REVIEW_SESSION_COOKIE } from '@/lib/appReview';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import {
   getDefaultAvatarPresetId,
@@ -384,6 +385,14 @@ export async function createAuthSessionResponse(options: {
   response.cookies.set(AUTH_DEVICE_SESSION_COOKIE, managedSession.sessionCookieValue, {
     ...cookieConfig,
     ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+  });
+
+  const isReviewerSession = email.toLowerCase() === BETA_TESTER_EMAIL;
+  response.cookies.set(APP_REVIEW_SESSION_COOKIE, isReviewerSession ? '1' : '', {
+    ...cookieConfig,
+    httpOnly: false,
+    ...(isReviewerSession && cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+    ...(!isReviewerSession ? { maxAge: 0 } : {}),
   });
 
   return response;
