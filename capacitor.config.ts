@@ -5,9 +5,10 @@ const config: CapacitorConfig = {
   appName: 'Ugmovies247',
   webDir: 'mobile-shell',
   server: {
-    url: 'https://ugmovies247.com',
+    url: 'https://ugmovies247.com/browse',
     cleartext: false,
   },
+  appendUserAgent: ' Ugmovies247App',
   android: {
     backgroundColor: '#0B0C10',
     minWebViewVersion: 90,

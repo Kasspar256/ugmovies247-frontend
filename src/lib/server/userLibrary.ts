@@ -363,10 +363,22 @@ export async function removeUserLike(uid: string, movieId: string) {
 }
 
 export async function listUserPlaybackProgress(uid: string) {
-  const snapshot = await getUserPlaybackProgressCollection(uid)
-    .orderBy('lastUpdated', 'desc')
-    .limit(50)
-    .get();
+  const collectionRef = getUserPlaybackProgressCollection(uid);
+  let snapshot: admin.firestore.QuerySnapshot;
+
+  try {
+    snapshot = await collectionRef
+      .where('isFinished', '==', false)
+      .orderBy('lastUpdated', 'desc')
+      .limit(50)
+      .get();
+  } catch (error) {
+    console.warn('[playback-progress] unfinished progress query failed, falling back', error);
+    snapshot = await collectionRef
+      .orderBy('lastUpdated', 'desc')
+      .limit(50)
+      .get();
+  }
 
   return snapshot.docs
     .map((doc) => normalizePlaybackProgressRecord(doc.id, doc.data(), uid))
@@ -492,3 +504,4 @@ export async function saveUserWatchHistory(uid: string, movie: WatchHistoryMovie
     countedAsNewPlay: !existing.exists,
   };
 }
+

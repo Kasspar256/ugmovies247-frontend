@@ -11,6 +11,17 @@ import {
 
 const authPages = ['/login', '/signup', '/forgot-password'];
 
+function isNativeAppRequest(request: NextRequest) {
+  const userAgent = request.headers.get('user-agent') || '';
+  const requestedWith = request.headers.get('x-requested-with') || '';
+
+  return (
+    /Ugmovies247App/i.test(userAgent) ||
+    /\bwv\b/i.test(userAgent) ||
+    requestedWith === 'com.ugmovies247.app'
+  );
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
@@ -26,6 +37,10 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon') || pathname.includes('.')) {
     return NextResponse.next();
+  }
+
+  if (pathname === '/' && isNativeAppRequest(request)) {
+    return NextResponse.redirect(new URL('/browse', request.url));
   }
 
   if (isReviewSession) {
@@ -84,6 +99,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/login',
+    '/',
     '/signup',
     '/forgot-password',
     '/browse/:path*',

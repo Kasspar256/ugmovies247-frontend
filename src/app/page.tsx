@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { Manrope, Sora } from 'next/font/google';
 import { ArrowRight, Check } from 'lucide-react';
 import { getArtworkImageProps } from '@/lib/artwork';
-import AutoOpenAppRedirect from '@/components/auth/AutoOpenAppRedirect';
 import PublicLandingMenu from '@/components/public/PublicLandingMenu';
 import {
   buildPageMetadata,
@@ -121,7 +120,6 @@ export default function LandingPage() {
 
   return (
     <main className={`${bodyFont.className} relative min-h-screen overflow-hidden bg-[#08090D] text-white`}>
-      <AutoOpenAppRedirect />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageSchemas) }}

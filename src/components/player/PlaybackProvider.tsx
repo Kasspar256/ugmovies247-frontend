@@ -440,6 +440,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const lastVolumeBeforeMuteRef = useRef(1);
   const playbackPhaseRef = useRef<PlaybackPhase>('idle');
   const castSnapshotRef = useRef<CastStateSnapshot>(getCastStateSnapshot());
+  const lastPlaybackCacheSyncRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const lastWatchHistorySyncRef = useRef<{ key: string; at: number }>({ key: '', at: 0 });
   const miniDragStateRef = useRef<{
     pointerId: number;
@@ -479,6 +480,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [isDraggingMiniPlayer, setIsDraggingMiniPlayer] = useState(false);
 
   useEffect(() => {
+    lastPlaybackCacheSyncRef.current = { key: '', at: 0 };
     lastWatchHistorySyncRef.current = { key: '', at: 0 };
   }, [activeSource?.sessionKey]);
 
@@ -794,6 +796,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     startupGraceUntilRef.current = 0;
     lastAssignedSourceKeyRef.current = '';
     pendingResumeRef.current = null;
+    lastPlaybackCacheSyncRef.current = { key: '', at: 0 };
+    lastWatchHistorySyncRef.current = { key: '', at: 0 };
     setHasStartedPlayback(false);
     setActiveSourceState(null);
     setCurrentTime(0);
@@ -1505,32 +1509,46 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           : 0;
       const isFinished =
         completed || (normalizedDurationSeconds > 0 && normalizedProgressSeconds / normalizedDurationSeconds > 0.9);
+      const now = Date.now();
+      const cacheBucket = isFinished
+        ? 'finished'
+        : `progress-${Math.floor(normalizedProgressSeconds / 10)}`;
+      const cacheKey = `${activeSource.sessionKey}:${activeSource.movieId}:${cacheBucket}`;
+
+      if (
+        force ||
+        isFinished ||
+        lastPlaybackCacheSyncRef.current.key !== cacheKey ||
+        now - lastPlaybackCacheSyncRef.current.at >= 9_000
+      ) {
+        lastPlaybackCacheSyncRef.current = { key: cacheKey, at: now };
+        writeCachedPlaybackProgress({
+          movieId: activeSource.movieId,
+          title: activeSource.title,
+          poster: activeSource.poster || '',
+          watchHref: activeSource.watchHref || '',
+          lastPosition: normalizedProgressSeconds,
+          totalDuration: normalizedDurationSeconds,
+          isFinished,
+        });
+      }
+
       const syncBucket = isFinished
         ? 'finished'
         : force
           ? `manual-${normalizedProgressSeconds}`
-          : `progress-${Math.floor(normalizedProgressSeconds / 10)}`;
+          : `progress-${Math.floor(normalizedProgressSeconds / 60)}`;
       const syncKey = `${activeSource.sessionKey}:${activeSource.movieId}:${syncBucket}`;
-      const now = Date.now();
 
       if (
         !force &&
         lastWatchHistorySyncRef.current.key === syncKey &&
-        now - lastWatchHistorySyncRef.current.at < 9_000
+        now - lastWatchHistorySyncRef.current.at < 55_000
       ) {
         return;
       }
 
       lastWatchHistorySyncRef.current = { key: syncKey, at: now };
-      writeCachedPlaybackProgress({
-        movieId: activeSource.movieId,
-        title: activeSource.title,
-        poster: activeSource.poster || '',
-        watchHref: activeSource.watchHref || '',
-        lastPosition: normalizedProgressSeconds,
-        totalDuration: normalizedDurationSeconds,
-        isFinished,
-      });
 
       void fetch('/api/user/watch-history', {
         method: 'POST',

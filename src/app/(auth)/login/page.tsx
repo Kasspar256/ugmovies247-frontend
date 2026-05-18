@@ -221,21 +221,10 @@ export default function LoginPage() {
 
   if (checkingExistingSession) {
     return (
-      <div className="min-h-screen bg-[#0B0C10] relative flex items-center justify-center overflow-hidden px-6">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-[0.12] blur-sm scale-105"
-          style={{ backgroundImage: 'url(https://image.tmdb.org/t/p/original/1E5baAaEse26fej7uHcjOgEE2t2.jpg)' }}
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,12,16,0.92),rgba(11,12,16,0.86)_40%,rgba(11,12,16,0.96))]" />
-        <div className="relative z-10 flex flex-col items-center gap-5 text-white">
-          <img
-            src="/logow.png"
-            alt="UGMOVIES247"
-            className="h-28 w-auto scale-[1.9] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.38)]"
-          />
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-[#D90429]" />
-        </div>
-      </div>
+      <div
+        className="min-h-screen bg-[#0B0C10]"
+        aria-label="Opening UGMOVIES247"
+      />
     );
   }
 
