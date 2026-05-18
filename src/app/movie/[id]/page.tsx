@@ -8,11 +8,9 @@ import {
   createOfflineDownloadKey,
   downloadMovieOffline,
   findOfflineDownload,
-  formatDownloadBytes,
   formatDownloadProgressLabel,
   getActiveOfflineDownload,
   getDownloadPercent,
-  getDownloadRemainingBytes,
   isOfflineDownloadActive,
   subscribeOfflineDownloads,
   supportsNativeOfflineDownloads,
@@ -629,7 +627,6 @@ const downloadInput = downloadBaseInput
   : null;
 const isNativeDownloadActive = isOfflineDownloadActive(offlineDownloadJob);
 const activeDownloadPercent = offlineDownloadJob ? getDownloadPercent(offlineDownloadJob) : null;
-const activeDownloadRemainingBytes = offlineDownloadJob ? getDownloadRemainingBytes(offlineDownloadJob) : null;
 const activeDownloadLabel = formatDownloadProgressLabel(offlineDownloadJob);
 
 useEffect(() => {
@@ -1181,45 +1178,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 {isPlaybackLocked ? <LockedDownloadIcon /> : <DownloadIcon />}
               </span>
             </button>
-
-            {offlineDownloadJob ? (
-              <div className="w-full max-w-[620px] rounded-2xl border border-white/10 bg-[#11141C]/86 px-4 py-4 text-left shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
-                {activeDownloadPercent !== null ? (
-                  <div className="mb-3 h-2 overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-[#D90429] transition-all"
-                      style={{ width: `${activeDownloadPercent}%` }}
-                    />
-                  </div>
-                ) : null}
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] font-bold uppercase tracking-[0.08em] text-white/62 sm:text-xs">
-                  <span>
-                    Downloaded: <b className="text-white">{formatDownloadBytes(offlineDownloadJob.downloadedBytes)}</b>
-                  </span>
-                  <span>
-                    Remaining:{' '}
-                    <b className="text-white">
-                      {activeDownloadRemainingBytes === null ? '--' : formatDownloadBytes(activeDownloadRemainingBytes)}
-                    </b>
-                  </span>
-                  <span>
-                    Progress:{' '}
-                    <b className="text-white">{activeDownloadPercent === null ? '--' : `${activeDownloadPercent}%`}</b>
-                  </span>
-                  <span>
-                    Total:{' '}
-                    <b className="text-white">
-                      {offlineDownloadJob.totalBytes === null ? '--' : formatDownloadBytes(offlineDownloadJob.totalBytes)}
-                    </b>
-                  </span>
-                </div>
-                {offlineDownloadJob.error ? (
-                  <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-red-200">
-                    {offlineDownloadJob.error}
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
 
             {isNativeDownloadActive ? (
               <button

@@ -6,10 +6,8 @@ import { Download, Film, Play, RotateCcw, Trash2, XCircle } from 'lucide-react';
 import { fetchUserDownloads, removeMovieDownload } from '@/lib/downloads';
 import {
   cancelOfflineDownload,
-  formatDownloadBytes,
   getActiveOfflineDownloads,
   getDownloadPercent,
-  getDownloadRemainingBytes,
   listOfflineDownloads,
   removeOfflineDownload,
   retryOfflineDownload,
@@ -185,30 +183,14 @@ export default function DownloadsPage() {
     if (!isActiveDownload(movie)) return null;
 
     const percent = getDownloadPercent(movie);
-    const remainingBytes = getDownloadRemainingBytes(movie);
 
     return (
-      <div className="mt-3 rounded-2xl border border-white/10 bg-black/18 p-3">
-        {percent !== null ? (
-          <div className="mb-3 h-2 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-[#D90429]" style={{ width: `${percent}%` }} />
-          </div>
-        ) : null}
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/58 sm:text-xs">
-          <span>
-            Downloaded: <b className="text-white">{formatDownloadBytes(movie.downloadedBytes)}</b>
-          </span>
-          <span>
-            Remaining:{' '}
-            <b className="text-white">{remainingBytes === null ? '--' : formatDownloadBytes(remainingBytes)}</b>
-          </span>
-          <span>
-            Progress: <b className="text-white">{percent === null ? '--' : `${percent}%`}</b>
-          </span>
-          <span>
-            Total:{' '}
-            <b className="text-white">{movie.totalBytes === null ? '--' : formatDownloadBytes(movie.totalBytes)}</b>
-          </span>
+      <div className="mt-3 w-full">
+        <div className="h-2.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-[#D90429] transition-all"
+            style={{ width: `${percent ?? 0}%` }}
+          />
         </div>
         {movie.error ? (
           <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-red-200">{movie.error}</p>
@@ -240,13 +222,11 @@ export default function DownloadsPage() {
         </div>
         <div className="flex flex-col justify-center flex-1 min-w-0">
           <h3 className="text-white font-bold text-sm md:text-lg mb-1 line-clamp-2">{movie.title}</h3>
-          <p className="text-[#888888] text-xs mb-2">
-            {isActiveDownload(movie)
-              ? 'Downloading to this device'
-              : isOfflineRecord(movie)
-                ? 'Saved privately on this device'
-                : 'Saved to your account history'}
-          </p>
+          {!isActiveDownload(movie) ? (
+            <p className="text-[#888888] text-xs mb-2">
+              {isOfflineRecord(movie) ? 'Saved privately on this device' : 'Saved to your account history'}
+            </p>
+          ) : null}
           <p className={`text-[10px] font-black uppercase px-2 py-0.5 rounded w-max border ${statusTone}`}>
             {statusLabel}
           </p>

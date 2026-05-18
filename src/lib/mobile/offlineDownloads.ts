@@ -517,7 +517,22 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
 
     progressListener = await FileTransfer.addListener('progress', (progress) => {
       if (progress.type !== 'download') return;
-      if (progress.url && progress.url !== ticket.downloadUrl) return;
+
+      const progressSource = String(
+        (progress as { source?: string; url?: string }).source ||
+          (progress as { source?: string; url?: string }).url ||
+          ''
+      );
+
+      if (progressSource && progressSource !== ticket.downloadUrl) return;
+
+      if (!progressSource) {
+        const activeDownloadCount = Array.from(activeDownloads.values()).filter(
+          (activeJob) => activeJob.status === 'downloading'
+        ).length;
+
+        if (activeDownloadCount > 1) return;
+      }
 
       updateActiveDownload(downloadInput.downloadKey, (latestJob) => ({
         ...latestJob,
