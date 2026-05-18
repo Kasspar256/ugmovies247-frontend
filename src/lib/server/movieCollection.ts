@@ -5,8 +5,8 @@ import {
 } from '@/lib/server/firestoreNamespaces';
 
 export const TRAILER_MEDIA_COLLECTION = 'movies__trailers';
+export const PRODUCTION_MEDIA_COLLECTION = 'movies__production';
 export const BETA_TESTER_EMAIL = 'test@ugmovies247.com';
-const LICENSED_COUNTRIES = new Set(['ZA', 'UG']);
 const PRODUCTION_COLLECTION_CANDIDATES = Array.from(
   new Set([
     LEGACY_MOVIES_COLLECTION,
@@ -17,37 +17,10 @@ const PRODUCTION_COLLECTION_CANDIDATES = Array.from(
   ])
 );
 
-type HeaderValue = string | string[] | undefined;
-type HeaderMap = Record<string, HeaderValue>;
-type MediaCollectionRequest = {
-  headers?: Headers | HeaderMap;
-};
-
-type MediaUserProfile = {
-  email?: string;
-} | null | undefined;
-
-function getHeaderValue(req: MediaCollectionRequest, headerName: string) {
-  const headers = req.headers;
-
-  if (!headers) {
-    return '';
-  }
-
-  if (typeof (headers as Headers).get === 'function') {
-    return (headers as Headers).get(headerName) || '';
-  }
-
-  const headerMap = headers as HeaderMap;
-  const value = Object.entries(headerMap).find(
-    ([key]) => key.toLowerCase() === headerName.toLowerCase()
-  )?.[1];
-
-  return Array.isArray(value) ? value[0] || '' : value || '';
-}
+type MediaCollectionRequest = unknown;
 
 export async function getMediaCollectionName(
-  req: MediaCollectionRequest,
+  _req: MediaCollectionRequest,
   userProfile: MediaUserProfile
 ) {
   const email = userProfile?.email || '';
@@ -56,13 +29,7 @@ export async function getMediaCollectionName(
     return TRAILER_MEDIA_COLLECTION;
   }
 
-  const countryCode = getHeaderValue(req, 'cf-ipcountry').trim().toUpperCase();
-
-  if (LICENSED_COUNTRIES.has(countryCode)) {
-    return resolveMovieCollectionName();
-  }
-
-  return TRAILER_MEDIA_COLLECTION;
+  return PRODUCTION_MEDIA_COLLECTION;
 }
 
 let resolvedMovieCollectionNamePromise: Promise<string> | null = null;
