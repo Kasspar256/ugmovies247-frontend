@@ -471,6 +471,32 @@ function sortByLeastRecentActivity(
   return getLastActivityAt(left) - getLastActivityAt(right);
 }
 
+function pickDeviceLimitReplacement(
+  records: Array<AuthSessionRecord & { id: string }>,
+  currentUserAgent: string
+) {
+  const eligibleRecords = records.filter((record) => !isEndedStatus(record.status));
+  const inactiveCandidate = eligibleRecords
+    .filter((record) => record.status === 'inactive' || record.isActive !== true)
+    .sort(sortByLeastRecentActivity)[0];
+
+  if (inactiveCandidate) {
+    return inactiveCandidate;
+  }
+
+  const normalizedUserAgent = currentUserAgent.trim().toLowerCase();
+  const sameBrowserCandidate = eligibleRecords
+    .filter((record) => record.userAgent.trim().toLowerCase() === normalizedUserAgent)
+    .sort(sortByLeastRecentActivity)[0];
+
+  if (sameBrowserCandidate) {
+    return sameBrowserCandidate;
+  }
+
+  return [...eligibleRecords].sort(sortByLeastRecentActivity)[0] || null;
+}
+
+
 function pruneSessionRecords(
   transaction: Transaction,
   records: Array<AuthSessionRecord & { id: string }>
@@ -616,14 +642,8 @@ export async function createManagedAuthSession(options: {
       .filter((record) => !isEndedStatus(record.status))
       .map((record) => record.id);
 
-    if (Number.isFinite(deviceLimit) && nextSessionIds.length >= deviceLimit) {
-      const replacementCandidate = activeRecords
-        .filter(
-          (record) =>
-            !isEndedStatus(record.status) &&
-            (record.status === 'inactive' || record.isActive !== true)
-        )
-        .sort(sortByLeastRecentActivity)[0];
+    while (Number.isFinite(deviceLimit) && nextSessionIds.length >= deviceLimit) {
+      const replacementCandidate = pickDeviceLimitReplacement(activeRecords, userAgent);
 
       if (!replacementCandidate) {
         throw new DeviceLimitExceededError();

@@ -667,6 +667,12 @@ function createGoogleProvider() {
   return provider;
 }
 
+async function prepareInteractiveGoogleSignIn() {
+  await signOut(auth).catch(() => undefined);
+  await getNativeFirebaseAuthentication()?.signOut?.().catch(() => undefined);
+}
+
+
 function buildNativeGoogleUnavailableError() {
   const error = new Error(
     'Google sign-in needs the latest app update on this device. Please use email sign-in for now, or update the app and try again.'
@@ -785,6 +791,7 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const rememberMe = options?.rememberMe !== false;
   const provider = createGoogleProvider();
 
+  await prepareInteractiveGoogleSignIn();
   await setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.warn('[auth] Firebase client persistence setup failed before Google sign-in', error);
   });
