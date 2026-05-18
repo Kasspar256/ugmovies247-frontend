@@ -1,3 +1,5 @@
+import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+
 export type ClientAuthStatus = {
   authenticated: boolean;
   reason?: 'session_replaced' | 'session_revoked' | 'session_missing';
@@ -136,6 +138,7 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
   }
 
   inFlightAuthStatusRequest = fetch('/api/auth/status', {
+    headers: getClientDeviceHeaders(),
     credentials: 'include',
     cache: 'no-store',
   })

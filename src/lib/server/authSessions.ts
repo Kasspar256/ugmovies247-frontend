@@ -10,6 +10,7 @@ import {
   AUTH_DEVICE_SESSION_COOKIE,
   AUTH_SESSION_ACTIVE_WINDOW_MS,
 } from '@/lib/auth/constants';
+import { CLIENT_DEVICE_ID_HEADER } from '@/lib/auth/deviceIdentity';
 import { getDeviceLimitForSubscriptionSnapshot } from '@/lib/server/subscriptions';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import type {
@@ -243,6 +244,16 @@ function getRequestIpAddress(request: Request) {
 
 function getRequestUserAgent(request: Request) {
   return request.headers.get('user-agent') || 'unknown';
+}
+
+function normalizeDeviceId(value: string) {
+  const normalized = value.trim();
+
+  if (!/^[A-Za-z0-9._:-]{8,160}$/.test(normalized)) {
+    return '';
+  }
+
+  return normalized;
 }
 
 function detectPlatformName(userAgent: string) {
@@ -550,7 +561,10 @@ function buildDeviceLimit(role: string | undefined, subscriptionSnapshot?: Subsc
 }
 
 export function getManagedDeviceCookieFromRequest(request: Request) {
-  return getRequestCookieValue(request, AUTH_DEVICE_COOKIE);
+  return (
+    normalizeDeviceId(getRequestCookieValue(request, AUTH_DEVICE_COOKIE)) ||
+    normalizeDeviceId(String(request.headers.get(CLIENT_DEVICE_ID_HEADER) || ''))
+  );
 }
 
 export function getManagedSessionCookieFromRequest(request: Request) {

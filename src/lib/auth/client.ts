@@ -14,9 +14,12 @@ import { buildHomeCollections } from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import { getNativeFirebaseAuthentication, isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import {
+  browserLocalPersistence,
   GoogleAuthProvider,
   getRedirectResult,
   onAuthStateChanged,
+  setPersistence,
+  signInWithEmailAndPassword,
   signInWithCredential,
   signInWithPopup,
   signInWithRedirect,
@@ -24,6 +27,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 
 type SessionResponse = {
   success: boolean;
@@ -38,6 +42,7 @@ const GOOGLE_REDIRECT_USER_TIMEOUT_MS = 12000;
 const GOOGLE_REDIRECT_MARKER_MAX_AGE_MS = 10 * 60 * 1000;
 const GOOGLE_SIGN_IN_TIMEOUT_MS = 35 * 1000;
 const GOOGLE_TOKEN_TIMEOUT_MS = 12 * 1000;
+const SESSION_RESTORE_USER_TIMEOUT_MS = 2500;
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -131,6 +136,15 @@ function buildOptimisticAuthStatus(fallbackUser: {
       role: fallbackUser.role,
     },
   };
+}
+
+async function persistEmailPasswordFirebaseSession(email: string, password: string) {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (error) {
+    console.warn('[auth] Firebase client persistence failed after password sign-in', error);
+  }
 }
 
 function buildSessionValidationError(
@@ -480,6 +494,41 @@ async function waitForGoogleRedirectUser(timeoutMs = GOOGLE_REDIRECT_USER_TIMEOU
   });
 }
 
+async function waitForFirebaseCurrentUser(timeoutMs = SESSION_RESTORE_USER_TIMEOUT_MS) {
+  if (auth.currentUser) {
+    return auth.currentUser;
+  }
+
+  return new Promise<User | null>((resolve) => {
+    let settled = false;
+    let timeoutId: number | undefined;
+    let unsubscribe = () => undefined;
+
+    const finish = (user: User | null | undefined) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+
+      unsubscribe();
+      resolve(user || null);
+    };
+
+    unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => finish(user),
+      () => finish(null)
+    );
+
+    timeoutId = window.setTimeout(() => finish(auth.currentUser), timeoutMs);
+  });
+}
+
 export function hasPendingGoogleRedirectSignIn() {
   if (typeof window === 'undefined') {
     return false;
@@ -540,7 +589,7 @@ async function createSessionFromIdToken(options: {
 }) {
   const response = await fetch('/api/auth/session', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
     credentials: 'include',
     body: JSON.stringify({
       idToken: options.idToken,
@@ -573,7 +622,6 @@ async function syncGoogleUserToSession(user: User, rememberMe: boolean) {
     return { session, redirected: false as const };
   } finally {
     clearGooglePreference();
-    await signOut(auth).catch(() => undefined);
   }
 }
 
@@ -667,7 +715,6 @@ async function continueWithNativeGoogle(rememberMe: boolean) {
     throw buildNativeGoogleUnavailableError();
   } finally {
     clearGooglePreference();
-    await nativeFirebaseAuthentication.signOut?.().catch(() => undefined);
   }
 }
 
@@ -678,7 +725,7 @@ export async function loginWithEmailPassword(
 ) {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
     credentials: 'include',
     body: JSON.stringify({
       email,
@@ -688,6 +735,7 @@ export async function loginWithEmailPassword(
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
+  await persistEmailPasswordFirebaseSession(email, password);
   await confirmServerAuthSession({
     name: 'User',
     email,
@@ -704,12 +752,13 @@ export async function signupWithEmailPassword(options: {
 }) {
   const response = await fetch('/api/auth/signup', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
     credentials: 'include',
     body: JSON.stringify(options),
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
+  await persistEmailPasswordFirebaseSession(options.email, options.password);
   await confirmServerAuthSession({
     name: options.name || 'User',
     email: options.email,
@@ -723,6 +772,9 @@ export async function continueWithGoogle(options?: { rememberMe?: boolean }) {
   const rememberMe = options?.rememberMe !== false;
   const provider = createGoogleProvider();
 
+  await setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn('[auth] Firebase client persistence setup failed before Google sign-in', error);
+  });
   rememberGooglePreference(rememberMe);
 
   try {
@@ -754,6 +806,7 @@ export async function completeGoogleRedirectSignIn() {
   const rememberMe = consumeGooglePreference(true);
 
   try {
+    await setPersistence(auth, browserLocalPersistence).catch(() => undefined);
     const result = await getRedirectResult(auth);
 
     if (result?.user) {
@@ -789,9 +842,43 @@ export async function completeGoogleRedirectSignIn() {
   }
 }
 
+export async function restoreServerSessionFromClientAuth() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const firebaseUser = await waitForFirebaseCurrentUser();
+
+  if (firebaseUser) {
+    const idToken = await firebaseUser.getIdToken();
+
+    return createSessionFromIdToken({
+      idToken,
+      name: firebaseUser.displayName || '',
+      email: firebaseUser.email || '',
+      rememberMe: true,
+    });
+  }
+
+  const nativeFirebaseAuthentication = getNativeFirebaseAuthentication();
+  const nativeTokenResult = await nativeFirebaseAuthentication?.getIdToken?.().catch(() => null);
+  const nativeIdToken =
+    typeof nativeTokenResult?.token === 'string' ? nativeTokenResult.token : '';
+
+  if (!nativeIdToken) {
+    return null;
+  }
+
+  return createSessionFromIdToken({
+    idToken: nativeIdToken,
+    rememberMe: true,
+  });
+}
+
 export async function logoutCurrentUser() {
   const response = await fetch('/api/auth/logout', {
     method: 'POST',
+    headers: getClientDeviceHeaders(),
     credentials: 'include',
   });
 
@@ -800,6 +887,7 @@ export async function logoutCurrentUser() {
   }
 
   await signOut(auth).catch(() => undefined);
+  await getNativeFirebaseAuthentication()?.signOut?.().catch(() => undefined);
   clearPublicMovieCache();
   clearAuthStatusCache();
   clearAccountProfileCache();

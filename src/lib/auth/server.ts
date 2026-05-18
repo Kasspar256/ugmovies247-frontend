@@ -11,6 +11,7 @@ import {
 } from './constants';
 import {
   createManagedAuthSession,
+  getManagedDeviceCookieFromRequest,
   validateManagedAuthSessionFromCookieValues,
 } from '@/lib/server/authSessions';
 import { resolveEffectiveSubscriptionState } from '@/lib/server/subscriptions';
@@ -181,6 +182,7 @@ async function resolveAuthSessionValidation(options: {
   deviceCookie?: string;
   managedSessionCookie?: string;
   hydrateUserRecord?: boolean;
+  requireManagedSession?: boolean;
 }): Promise<AuthSessionValidationResult> {
   if (!options.sessionCookie) {
     return { session: null, reason: 'session_missing' };
@@ -205,7 +207,7 @@ async function resolveAuthSessionValidation(options: {
       return { session: null, reason: 'session_revoked' };
     }
 
-    if (options.deviceCookie !== undefined || options.managedSessionCookie !== undefined) {
+    if (options.requireManagedSession || (options.deviceCookie && options.managedSessionCookie)) {
       const validation = await validateManagedAuthSessionFromCookieValues({
         userId: decoded.uid,
         deviceId: options.deviceCookie || '',
@@ -321,7 +323,7 @@ export async function getRequestAuthSessionValidation(request: Request | NextReq
     return { session: null, reason: 'session_missing' };
   }
   const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
-  const deviceCookie = getCookieValueFromRequest(request, AUTH_DEVICE_COOKIE);
+  const deviceCookie = getManagedDeviceCookieFromRequest(request as Request);
   const managedSessionCookie = getCookieValueFromRequest(request, AUTH_DEVICE_SESSION_COOKIE);
 
   return resolveAuthSessionValidation({
@@ -330,6 +332,7 @@ export async function getRequestAuthSessionValidation(request: Request | NextReq
     deviceCookie,
     managedSessionCookie,
     hydrateUserRecord: false,
+    requireManagedSession: true,
   });
 }
 
@@ -418,11 +421,11 @@ export async function requireAdminPage(redirectTo = '/admin') {
   const session = await getCurrentAuthSession();
 
   if (!session) {
-    redirect(`/login?redirect=${encodeURIComponent(redirectTo)}`);
+    redirect(`/admin/login?redirect=${encodeURIComponent(redirectTo)}`);
   }
 
   if (session.role !== 'admin') {
-    redirect('/browse');
+    redirect('/login');
   }
 
   return session;

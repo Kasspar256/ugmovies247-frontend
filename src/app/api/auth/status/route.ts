@@ -28,6 +28,7 @@ export async function GET(request: Request) {
         });
 
         if (recovered.session && recovered.managedSession) {
+          const sessionExpiresAt = new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS);
           const response = NextResponse.json({
             authenticated: true,
             user: {
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
           response.cookies.set(AUTH_DEVICE_COOKIE, recovered.managedSession.deviceCookieValue, {
             ...getAuthCookieConfig(),
             maxAge: AUTH_DEVICE_COOKIE_MAX_AGE_MS / 1000,
+            expires: new Date(Date.now() + AUTH_DEVICE_COOKIE_MAX_AGE_MS),
           });
           response.cookies.set(
             AUTH_DEVICE_SESSION_COOKIE,
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
             {
               ...getAuthCookieConfig(),
               maxAge: AUTH_SESSION_MAX_AGE_MS / 1000,
+              expires: sessionExpiresAt,
             }
           );
 

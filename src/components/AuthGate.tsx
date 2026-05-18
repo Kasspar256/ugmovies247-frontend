@@ -7,7 +7,8 @@ import {
   fetchAuthStatus,
   readCachedAuthStatus,
 } from '@/lib/auth/status-client';
-import { logoutCurrentUser } from '@/lib/auth/client';
+import { logoutCurrentUser, restoreServerSessionFromClientAuth } from '@/lib/auth/client';
+import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import { isLegalRoute } from '@/lib/legalRoutes';
 
 const AUTH_SESSION_HEARTBEAT_MS = 1000 * 20;
@@ -97,6 +98,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       try {
         const response = await fetch('/api/auth/heartbeat', {
           method: 'POST',
+          headers: getClientDeviceHeaders(),
           credentials: 'include',
           cache: 'no-store',
         });
@@ -111,6 +113,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         if (payload.reason === 'session_replaced' || payload.reason === 'session_revoked') {
           await redirectToLogin(payload.reason);
+          return;
+        }
+
+        const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+        if (restoredSession) {
           return;
         }
 
@@ -152,6 +160,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       if (status.reason === 'session_replaced' || status.reason === 'session_revoked') {
         await redirectToLogin(status.reason);
+        return;
+      }
+
+      const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+      if (restoredSession) {
         return;
       }
 
