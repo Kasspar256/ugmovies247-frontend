@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentAuthSession } from '@/lib/auth/server';
-import { createPresignedR2Download, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
+import { getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
 
 export const runtime = 'nodejs';
@@ -64,17 +64,13 @@ export async function POST(request: Request) {
   }
 
   const filename = sanitizeFilename(`${title}-${movieId}`);
-  const ticket = await createPresignedR2Download({
-    key: objectKey,
-    filename,
-  });
 
   return NextResponse.json({
     movieId,
     filename,
-    downloadUrl: ticket.downloadUrl,
-    expiresAt: ticket.expiresAt,
-    expiresIn: ticket.expiresIn,
+    downloadUrl: sourceUrl,
+    expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+    expiresIn: 6 * 60 * 60,
   });
 }
 
