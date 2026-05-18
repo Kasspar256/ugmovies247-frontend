@@ -147,7 +147,21 @@ function getPublicLinkRetentionHours() {
   return value;
 }
 
+function isPublicLinkAutoDeletePaused() {
+  const raw = String(
+    process.env.REQUEST_PUBLIC_LINK_AUTO_DELETE_PAUSED ||
+      process.env.PAUSE_PUBLIC_LINK_CLEANUP ||
+      'true'
+  ).trim().toLowerCase();
+
+  return !['0', 'false', 'no', 'off'].includes(raw);
+}
+
 function getPublicLinkExpiryIso() {
+  if (isPublicLinkAutoDeletePaused()) {
+    return '';
+  }
+
   return new Date(Date.now() + getPublicLinkRetentionHours() * 60 * 60 * 1000).toISOString();
 }
 
@@ -1129,6 +1143,11 @@ async function cleanupExpiredTelegramLinks(db) {
     return;
   }
 
+  if (isPublicLinkAutoDeletePaused()) {
+    console.log('[request-worker] temporary link auto-delete is paused; skipping expired ready-link cleanup');
+    return;
+  }
+
   const collections = getCollections();
   const now = nowIso();
   const snapshot = await db
@@ -1825,7 +1844,13 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
         outputMode === 'local' ? 'Temporary VPS source link:' : 'Final MP4 link:',
         publicVideoUrl,
         '',
-        `Auto-delete: ${outputMode === 'local' ? `${getPublicLinkRetentionHours()} hours` : 'handled by storage policy'}`,
+        `Auto-delete: ${
+          outputMode === 'local'
+            ? isPublicLinkAutoDeletePaused()
+              ? 'paused'
+              : `${getPublicLinkRetentionHours()} hours`
+            : 'handled by storage policy'
+        }`,
       ].join('\n')
     );
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
