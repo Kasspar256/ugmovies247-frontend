@@ -54,7 +54,7 @@ export function pickMovieCatalogCache(
   ...caches: Array<CachedMovieCatalog | null | undefined>
 ) {
   return caches
-    .filter((cache): cache is CachedMovieCatalog => Boolean(cache?.movies))
+    .filter((cache): cache is CachedMovieCatalog => Boolean(cache?.movies?.length))
     .sort(
       (left, right) =>
         new Date(right.cachedAt || 0).getTime() - new Date(left.cachedAt || 0).getTime()
@@ -62,7 +62,7 @@ export function pickMovieCatalogCache(
 }
 
 export function isFreshMovieCache(cache: CachedMovieCatalog | null) {
-  if (!cache?.cachedAt) {
+  if (!cache?.cachedAt || !cache.movies?.length) {
     return false;
   }
 
@@ -74,7 +74,11 @@ export async function readMovieCatalogFromDisk() {
     const raw = await readFile(MOVIE_CACHE_PATH, 'utf8');
     const parsed = JSON.parse(raw) as CachedMovieCatalog;
 
-    if (!Array.isArray(parsed.movies) || typeof parsed.cachedAt !== 'string') {
+    if (
+      !Array.isArray(parsed.movies) ||
+      parsed.movies.length === 0 ||
+      typeof parsed.cachedAt !== 'string'
+    ) {
       return null;
     }
 

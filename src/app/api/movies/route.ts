@@ -228,23 +228,33 @@ function sanitizeMovieForReviewMode(movie: Record<string, unknown>) {
   };
 }
 
-function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
-  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
-
-  if (parts.length === 0) {
-    const hasPrimaryPlaybackAsset = Boolean(movieDoc.video_url);
-
-    if (isPlaybackAssetReady(movieDoc) && hasPrimaryPlaybackAsset) {
-      return true;
-    }
+function hasPlayableAsset(asset: Record<string, unknown>) {
+  if (!isPlaybackAssetReady(asset)) {
+    return false;
   }
 
   if (
-    parts.some((part) => {
-      const rawPart = part as Record<string, unknown>;
-      return isPlaybackAssetReady(rawPart) && Boolean(rawPart.video_url);
-    })
+    String(asset.video_url || '').trim() ||
+    String(asset.sourceUrl || '').trim() ||
+    String(asset.masterPlaylistUrl || '').trim()
   ) {
+    return true;
+  }
+
+  const renditions = Array.isArray(asset.availableRenditions) ? asset.availableRenditions : [];
+  return renditions.some((rendition) =>
+    Boolean(String((rendition as Record<string, unknown>).playlistUrl || '').trim())
+  );
+}
+
+function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
+  if (hasPlayableAsset(movieDoc)) {
+    return true;
+  }
+
+  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
+
+  if (parts.some((part) => hasPlayableAsset(part as Record<string, unknown>))) {
     return true;
   }
 
@@ -255,8 +265,7 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
     const episodes = Array.isArray(rawSeason.episodes) ? rawSeason.episodes : [];
 
     return episodes.some((episode) => {
-      const rawEpisode = episode as Record<string, unknown>;
-      return isPlaybackAssetReady(rawEpisode) && Boolean(rawEpisode.video_url);
+      return hasPlayableAsset(episode as Record<string, unknown>);
     });
   });
 }
@@ -274,10 +283,16 @@ async function readMovieSnapshotWithFallback(
   hasFallback: boolean,
   reviewOnly: boolean
 ) {
-  const query = reviewOnly
-    ? adminDb.collection(collectionName).where('is_for_review', '==', true)
-    : adminDb.collection(collectionName).orderBy('date_added', 'desc');
-  const queryPromise = query.get();
+  const collection = adminDb.collection(collectionName);
+  const queryPromise = reviewOnly
+    ? collection.where('is_for_review', '==', true).get()
+    : collection.orderBy('date_added', 'desc').get().then(async (snapshot) => {
+        if (!snapshot.empty) {
+          return snapshot;
+        }
+
+        return collection.get();
+      });
 
   if (!hasFallback) {
     return queryPromise;
