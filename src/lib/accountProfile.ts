@@ -1,7 +1,7 @@
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import { resolveUserAvatar } from '@/lib/avatarPresets';
 import { isAppInReview } from '@/lib/appReview';
-import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 
 export type AccountNotificationPreferences = {
   marketing: boolean;
@@ -164,7 +164,7 @@ async function parseResponse<T>(response: Response) {
 
 export async function fetchAccountProfile() {
   const response = await fetch('/api/auth/me', {
-    headers: getClientDeviceHeaders(),
+    headers: await getHydratedClientDeviceHeaders(),
     credentials: 'include',
     cache: 'no-store',
   }).catch(() => {
@@ -214,7 +214,7 @@ export async function updateAccountProfile(input: {
 }) {
   const response = await fetch('/api/auth/me', {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify(input),
   });
@@ -227,7 +227,7 @@ export async function updateAccountProfile(input: {
 export async function deleteAccount(confirm: string) {
   const response = await fetch('/api/auth/me', {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify({ confirm }),
   });

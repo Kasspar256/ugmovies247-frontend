@@ -9,22 +9,6 @@ import {
   isReviewBlockedPath,
 } from '@/lib/appReview';
 
-const protectedPrefixes = [
-  '/browse',
-  '/movie',
-  '/downloads',
-  '/likes',
-  '/watchlist',
-  '/profile',
-  '/request',
-  '/notifications',
-  '/search',
-  '/genres',
-  '/category',
-  '/vjs',
-  '/subscribe',
-];
-
 const authPages = ['/login', '/signup', '/forgot-password'];
 
 function matchesProtectedPath(pathname: string) {
@@ -36,7 +20,7 @@ function matchesProtectedPath(pathname: string) {
 }
 
 export function middleware(request: NextRequest) {
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
   const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
   const role =
     request.cookies
@@ -102,11 +86,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (matchesProtectedPath(pathname) && !hasSession) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', `${pathname}${search}`);
-    return NextResponse.redirect(loginUrl);
-  }
+  // User-facing pages are guarded in AuthGate instead of here. The mobile app can
+  // lose the HTTP-only cookie before its native/Firebase session is restored; a
+  // middleware redirect would send that recoverable user straight to /login.
 
   if (pathname.startsWith('/api/admin') && (!hasSession || role !== 'admin')) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

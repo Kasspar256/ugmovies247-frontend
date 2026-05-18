@@ -1,4 +1,4 @@
-import { getClientDeviceHeaders, rememberClientDeviceSession } from '@/lib/auth/deviceIdentity';
+import { getHydratedClientDeviceHeaders, rememberClientDeviceSession } from '@/lib/auth/deviceIdentity';
 
 export type ClientAuthStatus = {
   authenticated: boolean;
@@ -138,7 +138,7 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
   }
 
   inFlightAuthStatusRequest = fetch('/api/auth/status', {
-    headers: getClientDeviceHeaders(),
+    headers: await getHydratedClientDeviceHeaders(),
     credentials: 'include',
     cache: 'no-store',
   })

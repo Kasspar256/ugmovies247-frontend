@@ -8,7 +8,7 @@ import {
   readCachedAuthStatus,
 } from '@/lib/auth/status-client';
 import { logoutCurrentUser, restoreServerSessionFromClientAuth } from '@/lib/auth/client';
-import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import { isLegalRoute } from '@/lib/legalRoutes';
 
 const AUTH_SESSION_HEARTBEAT_MS = 1000 * 20;
@@ -98,7 +98,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       try {
         const response = await fetch('/api/auth/heartbeat', {
           method: 'POST',
-          headers: getClientDeviceHeaders(),
+          headers: await getHydratedClientDeviceHeaders(),
           credentials: 'include',
           cache: 'no-store',
         });

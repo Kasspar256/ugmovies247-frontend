@@ -29,7 +29,7 @@ import {
 import { auth } from '@/lib/firebase';
 import {
   clearClientDeviceSession,
-  getClientDeviceHeaders,
+  getHydratedClientDeviceHeaders,
   rememberClientDeviceSession,
 } from '@/lib/auth/deviceIdentity';
 
@@ -599,7 +599,7 @@ async function createSessionFromIdToken(options: {
 }) {
   const response = await fetch('/api/auth/session', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify({
       idToken: options.idToken,
@@ -742,7 +742,7 @@ export async function loginWithEmailPassword(
 ) {
   const response = await fetch('/api/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify({
       email,
@@ -770,7 +770,7 @@ export async function signupWithEmailPassword(options: {
 }) {
   const response = await fetch('/api/auth/signup', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getClientDeviceHeaders() },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify(options),
   });
@@ -898,7 +898,7 @@ export async function restoreServerSessionFromClientAuth() {
 export async function logoutCurrentUser() {
   const response = await fetch('/api/auth/logout', {
     method: 'POST',
-    headers: getClientDeviceHeaders(),
+    headers: await getHydratedClientDeviceHeaders(),
     credentials: 'include',
   });
 
