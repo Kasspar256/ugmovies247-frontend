@@ -18,7 +18,10 @@ import {
   recordMovieCatalogQuotaFailure,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
-import { getMediaCollectionName } from '@/lib/server/movieCollection';
+import {
+  getMediaCollectionName,
+  TRAILER_MEDIA_COLLECTION,
+} from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 
@@ -258,6 +261,14 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
+function hasVisibleCatalogAsset(movieDoc: Record<string, unknown>, collectionName: string) {
+  if (collectionName === TRAILER_MEDIA_COLLECTION && String(movieDoc.trailer_url || '').trim()) {
+    return true;
+  }
+
+  return hasPublicPlaybackAsset(movieDoc);
+}
+
 async function readMovieSnapshotWithFallback(
   collectionName: string,
   hasFallback: boolean,
@@ -426,7 +437,7 @@ export async function GET(request: Request) {
     const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
     const movies = catalog.movies
       .filter((movieDoc) =>
-        isAppInReview ? movieDoc.is_for_review === true : hasPublicPlaybackAsset(movieDoc)
+        isAppInReview ? movieDoc.is_for_review === true : hasVisibleCatalogAsset(movieDoc, collectionName)
       )
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);

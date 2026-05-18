@@ -5,7 +5,10 @@ import {
   getSubscriptionSnapshotFromData,
   getViewerEntitlement,
 } from '@/lib/server/subscriptions';
-import { getMediaCollectionName } from '@/lib/server/movieCollection';
+import {
+  getMediaCollectionName,
+  TRAILER_MEDIA_COLLECTION,
+} from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
@@ -241,6 +244,14 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
+function hasVisibleCatalogAsset(movieDoc: Record<string, unknown>, collectionName: string) {
+  if (collectionName === TRAILER_MEDIA_COLLECTION && String(movieDoc.trailer_url || '').trim()) {
+    return true;
+  }
+
+  return hasPublicPlaybackAsset(movieDoc);
+}
+
 function withReviewTrailerFallback(movieDoc: Record<string, unknown>): Record<string, unknown> {
   const trailerUrl =
     String(movieDoc.trailer_url || '').trim() ||
@@ -299,7 +310,7 @@ export async function GET(
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
     }
 
-    if (!isAppInReview && !hasPublicPlaybackAsset(movieDoc)) {
+    if (!isAppInReview && !hasVisibleCatalogAsset(movieDoc, collectionName)) {
       return NextResponse.json({ error: 'Movie is not ready yet.' }, { status: 409 });
     }
 
