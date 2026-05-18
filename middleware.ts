@@ -22,6 +22,10 @@ function isNativeAppRequest(request: NextRequest) {
   );
 }
 
+function isMobileRequest(request: NextRequest) {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(request.headers.get('user-agent') || '');
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
@@ -39,7 +43,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname === '/' && isNativeAppRequest(request)) {
+  if (pathname === '/' && (hasSession || isNativeAppRequest(request) || isMobileRequest(request))) {
     return NextResponse.redirect(new URL('/browse', request.url));
   }
 

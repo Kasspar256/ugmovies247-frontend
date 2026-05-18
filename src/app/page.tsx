@@ -43,6 +43,32 @@ const browseRedirect = encodeURIComponent('/browse');
 const signInHref = `/login?redirect=${browseRedirect}`;
 const getStartedHref = `/signup?redirect=${browseRedirect}`;
 
+function SavedSessionRedirectScript() {
+  const script = `
+    (() => {
+      try {
+        if (window.location.pathname !== '/') return;
+
+        const statusCache = window.localStorage.getItem('ugmovies247.auth-status.v1');
+        const deviceSession = window.localStorage.getItem('ugmovies247.device-session.v1');
+        let hasSavedSession = Boolean(deviceSession);
+
+        if (statusCache) {
+          const parsed = JSON.parse(statusCache);
+          hasSavedSession = hasSavedSession || parsed?.value?.authenticated === true;
+        }
+
+        if (hasSavedSession) {
+          window.location.replace('/browse');
+        }
+      } catch {
+      }
+    })();
+  `;
+
+  return <script dangerouslySetInnerHTML={{ __html: script }} />;
+}
+
 const posterWall = [
   'https://image.tmdb.org/t/p/original/vUUqzWa2LnHIVqkaKVlVGkVcZIW.jpg',
   'https://image.tmdb.org/t/p/original/aabwWZWx6z1aYP4PX2ADvbDKktd.jpg',
@@ -120,6 +146,7 @@ export default function LandingPage() {
 
   return (
     <main className={`${bodyFont.className} relative min-h-screen overflow-hidden bg-[#08090D] text-white`}>
+      <SavedSessionRedirectScript />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(homepageSchemas) }}
