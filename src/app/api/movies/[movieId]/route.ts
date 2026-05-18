@@ -323,7 +323,11 @@ export async function GET(
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
     }
 
-    if (!isAppInReview && !hasVisibleCatalogAsset(movieDoc, collectionName)) {
+    if (
+      !isAppInReview &&
+      collectionName === TRAILER_MEDIA_COLLECTION &&
+      !hasVisibleCatalogAsset(movieDoc, collectionName)
+    ) {
       return NextResponse.json({ error: 'Movie is not ready yet.' }, { status: 409 });
     }
 

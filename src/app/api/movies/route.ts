@@ -451,9 +451,17 @@ export async function GET(request: Request) {
 
     const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
     const movies = catalog.movies
-      .filter((movieDoc) =>
-        isAppInReview ? movieDoc.is_for_review === true : hasVisibleCatalogAsset(movieDoc, collectionName)
-      )
+      .filter((movieDoc) => {
+        if (isAppInReview) {
+          return movieDoc.is_for_review === true;
+        }
+
+        if (collectionName === TRAILER_MEDIA_COLLECTION) {
+          return hasVisibleCatalogAsset(movieDoc, collectionName);
+        }
+
+        return true;
+      })
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
         return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
