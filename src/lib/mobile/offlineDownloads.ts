@@ -3,7 +3,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { FileTransfer } from '@capacitor/file-transfer';
-import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import type { DownloadMovieInput, DownloadRecord } from '@/types/downloads';
 
 const OFFLINE_DIR = 'offline-videos';
@@ -279,10 +278,9 @@ async function deleteDataFile(storagePath: string) {
 }
 
 async function requestDownloadTicket(movie: DownloadMovieInput) {
-  const deviceHeaders = await getHydratedClientDeviceHeaders();
   const response = await fetch('/api/download', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...deviceHeaders },
+    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({
       movieId: movie.movieId,
