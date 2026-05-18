@@ -3,10 +3,12 @@
 import { Capacitor } from '@capacitor/core';
 import { Directory, Encoding, Filesystem } from '@capacitor/filesystem';
 import { FileTransfer } from '@capacitor/file-transfer';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import type { DownloadMovieInput, DownloadRecord } from '@/types/downloads';
 
 const OFFLINE_DIR = 'offline-videos';
 const MANIFEST_PATH = `${OFFLINE_DIR}/manifest.json`;
+const ACTIVE_DOWNLOADS_STORAGE_KEY = 'ugmovies247-active-offline-downloads-v1';
 
 export type OfflineDownloadRecord = DownloadRecord & {
   downloadKey?: string;
@@ -15,6 +17,22 @@ export type OfflineDownloadRecord = DownloadRecord & {
   playbackUrl: string;
   isOfflineFile: true;
   downloadedAtIso: string;
+  fileSizeBytes?: number | null;
+};
+
+export type ActiveOfflineDownload = DownloadMovieInput & {
+  id: string;
+  userId: string;
+  downloadKey: string;
+  runId: string;
+  status: 'downloading' | 'failed';
+  downloadedBytes: number;
+  totalBytes: number | null;
+  startedAtIso: string;
+  updatedAtIso: string;
+  error?: string;
+  tempStoragePath?: string;
+  storagePath?: string;
 };
 
 type OfflineManifest = {
@@ -22,24 +40,25 @@ type OfflineManifest = {
   records: OfflineDownloadRecord[];
 };
 
-
-export type ActiveOfflineDownload = DownloadMovieInput & {
-  id: string;
-  userId: string;
-  downloadKey: string;
-  status: 'downloading' | 'failed';
-  downloadedBytes: number;
-  totalBytes: number | null;
-  startedAtIso: string;
-  updatedAtIso: string;
-  error?: string;
+type DownloadTicket = {
+  downloadUrl: string;
+  filename: string;
 };
 
 type DownloadListener = () => void;
 
 const activeDownloads = new Map<string, ActiveOfflineDownload>();
-const cancelledDownloadKeys = new Set<string>();
+const cancelledDownloadRunIds = new Set<string>();
 const downloadListeners = new Set<DownloadListener>();
+let restoredActiveDownloads = false;
+
+// The Capacitor FileTransfer promise is owned by the live WebView. This manager keeps
+// downloads alive across route changes; after a full app kill we recover the job as failed
+// because the plugin does not expose a resumable background transfer handle here.
+
+function isNative() {
+  return Capacitor.isNativePlatform();
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -49,11 +68,95 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'Download failed.');
 }
 
+function safeFilePart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 90) || 'video';
+}
+
+function hashString(value: string) {
+  let hash = 5381;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+
+  return Math.abs(hash >>> 0).toString(36);
+}
+
+function normalizeKeyPart(value: unknown) {
+  const normalized = String(value || '').trim();
+
+  return normalized ? safeFilePart(normalized) : '';
+}
+
+function createDownloadRunId(downloadKey: string) {
+  return `${downloadKey}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+function getStorage() {
+  return typeof window === 'undefined' ? null : window.localStorage;
+}
+
+function persistActiveDownloads() {
+  const storage = getStorage();
+
+  if (!storage) return;
+
+  try {
+    const records = Array.from(activeDownloads.values());
+
+    if (!records.length) {
+      storage.removeItem(ACTIVE_DOWNLOADS_STORAGE_KEY);
+      return;
+    }
+
+    storage.setItem(ACTIVE_DOWNLOADS_STORAGE_KEY, JSON.stringify(records));
+  } catch (error) {
+    console.warn('[offline-downloads] active download persistence failed', error);
+  }
+}
+
+function restoreInterruptedActiveDownloads() {
+  if (restoredActiveDownloads) return;
+
+  restoredActiveDownloads = true;
+
+  const storage = getStorage();
+
+  if (!storage) return;
+
+  try {
+    const parsed = JSON.parse(storage.getItem(ACTIVE_DOWNLOADS_STORAGE_KEY) || '[]') as ActiveOfflineDownload[];
+
+    parsed.forEach((job) => {
+      if (!job?.downloadKey) return;
+
+      activeDownloads.set(job.downloadKey, {
+        ...job,
+        status: 'failed',
+        error:
+          job.status === 'downloading'
+            ? 'Download was interrupted before it finished. Tap Retry to start it again.'
+            : job.error || 'Download failed.',
+        updatedAtIso: nowIso(),
+      });
+    });
+  } catch (error) {
+    console.warn('[offline-downloads] active download restore failed', error);
+  }
+}
+
 function notifyDownloadListeners() {
+  persistActiveDownloads();
   downloadListeners.forEach((listener) => listener());
 }
 
 export function subscribeOfflineDownloads(listener: DownloadListener) {
+  restoreInterruptedActiveDownloads();
   downloadListeners.add(listener);
 
   return () => {
@@ -62,30 +165,46 @@ export function subscribeOfflineDownloads(listener: DownloadListener) {
 }
 
 export function getActiveOfflineDownload(downloadKey: string) {
+  restoreInterruptedActiveDownloads();
+
   return activeDownloads.get(downloadKey) || null;
 }
 
 export function getActiveOfflineDownloads() {
+  restoreInterruptedActiveDownloads();
+
   return Array.from(activeDownloads.values()).sort((left, right) =>
     right.updatedAtIso.localeCompare(left.updatedAtIso)
   );
 }
 
 export async function cancelOfflineDownload(downloadKey: string) {
+  restoreInterruptedActiveDownloads();
+
   const job = activeDownloads.get(downloadKey);
 
   if (!job) {
     return { cancelled: false };
   }
 
-  cancelledDownloadKeys.add(downloadKey);
+  console.info('[offline-downloads] cancel requested', {
+    downloadKey,
+    title: job.title,
+    runId: job.runId,
+  });
+
+  cancelledDownloadRunIds.add(job.runId);
   activeDownloads.delete(downloadKey);
   notifyDownloadListeners();
+
+  await deleteDataFile(job.tempStoragePath || '').catch(() => undefined);
 
   return { cancelled: true };
 }
 
 export async function retryOfflineDownload(downloadKey: string) {
+  restoreInterruptedActiveDownloads();
+
   const job = activeDownloads.get(downloadKey);
 
   if (!job) {
@@ -114,7 +233,9 @@ export function formatDownloadBytes(bytes: number | null | undefined) {
     unitIndex += 1;
   }
 
-  return `${size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(2)}${units[unitIndex]}`;
+  const precision = unitIndex === 0 || size >= 10 ? 0 : 2;
+
+  return `${size.toFixed(precision)}${units[unitIndex]}`;
 }
 
 export function getDownloadPercent(job: Pick<ActiveOfflineDownload, 'downloadedBytes' | 'totalBytes'>) {
@@ -137,50 +258,17 @@ export function formatDownloadProgressLabel(job: ActiveOfflineDownload | null) {
   }
 
   const percent = getDownloadPercent(job);
+  const downloadedLabel = formatDownloadBytes(job.downloadedBytes);
 
   if (percent === null) {
-    return `Downloading ${formatDownloadBytes(job.downloadedBytes)}`;
+    return `Downloading ${downloadedLabel}`;
   }
 
-  return `Downloading ${percent}% (${formatDownloadBytes(job.downloadedBytes)} / ${formatDownloadBytes(job.totalBytes)})`;
+  return `Downloading ${percent}% (${downloadedLabel} / ${formatDownloadBytes(job.totalBytes)})`;
 }
 
 export function isOfflineDownloadActive(job: ActiveOfflineDownload | null) {
   return Boolean(job && job.status === 'downloading');
-}
-
-type DownloadTicket = {
-  downloadUrl: string;
-  filename: string;
-};
-
-function isNative() {
-  return Capacitor.isNativePlatform();
-}
-
-function safeFilePart(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 90) || 'video';
-}
-
-function hashString(value: string) {
-  let hash = 5381;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
-  }
-
-  return Math.abs(hash >>> 0).toString(36);
-}
-
-function normalizeKeyPart(value: unknown) {
-  const normalized = String(value || '').trim();
-
-  return normalized ? safeFilePart(normalized) : '';
 }
 
 export function createOfflineDownloadKey(input: DownloadMovieInput) {
@@ -215,7 +303,7 @@ export function withOfflineDownloadKey(input: DownloadMovieInput): DownloadMovie
 }
 
 function getRecordDownloadKey(record: OfflineDownloadRecord) {
-  return record.downloadKey || `movie:${safeFilePart(record.movieId)}`;
+  return record.downloadKey || createOfflineDownloadKey(record);
 }
 
 function isSameOfflineDownload(record: OfflineDownloadRecord, downloadKey: string) {
@@ -267,7 +355,6 @@ async function writeManifest(manifest: OfflineManifest) {
   });
 }
 
-
 async function deleteDataFile(storagePath: string) {
   if (!storagePath) return;
 
@@ -277,10 +364,21 @@ async function deleteDataFile(storagePath: string) {
   }).catch(() => undefined);
 }
 
+async function moveDataFile(from: string, to: string) {
+  await deleteDataFile(to);
+
+  await Filesystem.rename({
+    directory: Directory.Data,
+    from,
+    to,
+  });
+}
+
 async function requestDownloadTicket(movie: DownloadMovieInput) {
+  const deviceHeaders = await getHydratedClientDeviceHeaders();
   const response = await fetch('/api/download', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...deviceHeaders },
     credentials: 'include',
     body: JSON.stringify({
       movieId: movie.movieId,
@@ -298,6 +396,15 @@ async function requestDownloadTicket(movie: DownloadMovieInput) {
   return payload;
 }
 
+function updateActiveDownload(downloadKey: string, updater: (job: ActiveOfflineDownload) => ActiveOfflineDownload) {
+  const existing = activeDownloads.get(downloadKey);
+
+  if (!existing) return;
+
+  activeDownloads.set(downloadKey, updater(existing));
+  notifyDownloadListeners();
+}
+
 export function supportsNativeOfflineDownloads() {
   return isNative();
 }
@@ -313,7 +420,7 @@ export async function listOfflineDownloads() {
         path: record.storagePath,
       });
 
-      await Filesystem.stat({
+      const stat = await Filesystem.stat({
         directory: Directory.Data,
         path: record.storagePath,
       });
@@ -324,6 +431,7 @@ export async function listOfflineDownloads() {
         fileUri: uri.uri,
         playbackUrl: Capacitor.convertFileSrc(uri.uri),
         isOfflineFile: true,
+        fileSizeBytes: Number(stat.size) || record.fileSizeBytes || null,
       });
     } catch {
       // Drop records whose underlying file has been removed by the OS or user.
@@ -348,6 +456,7 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
     throw new Error('Offline video downloads are only available in the Android app.');
   }
 
+  restoreInterruptedActiveDownloads();
   await ensureOfflineDirectory();
 
   const downloadInput = withOfflineDownloadKey(movie);
@@ -363,47 +472,61 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
     throw new Error('This download is already in progress.');
   }
 
-  activeDownloads.delete(downloadInput.downloadKey);
-  cancelledDownloadKeys.delete(downloadInput.downloadKey);
+  if (currentJob?.status === 'failed') {
+    activeDownloads.delete(downloadInput.downloadKey);
+    notifyDownloadListeners();
+  }
 
   const startedAtIso = nowIso();
+  const runId = createDownloadRunId(downloadInput.downloadKey);
+  const finalStoragePath = `${OFFLINE_DIR}/${safeFilePart(downloadInput.downloadKey)}-${Date.now()}.mp4`;
+  const tempStoragePath = `${finalStoragePath}.tmp`;
   const job: ActiveOfflineDownload = {
     ...downloadInput,
     id: `active-${downloadInput.downloadKey}`,
     userId: 'local-device',
+    runId,
     status: 'downloading',
     downloadedBytes: 0,
     totalBytes: null,
     startedAtIso,
     updatedAtIso: startedAtIso,
+    tempStoragePath,
+    storagePath: finalStoragePath,
   };
 
   activeDownloads.set(downloadInput.downloadKey, job);
   notifyDownloadListeners();
 
-  let storagePath = '';
   let progressListener: { remove: () => Promise<void> } | undefined;
+
+  console.info('[offline-downloads] download started', {
+    downloadKey: downloadInput.downloadKey,
+    title: downloadInput.title,
+    contentType: downloadInput.contentType || 'movie',
+    seasonNumber: downloadInput.seasonNumber,
+    episodeNumber: downloadInput.episodeNumber,
+  });
 
   try {
     const ticket = await requestDownloadTicket(downloadInput);
-    storagePath = `${OFFLINE_DIR}/${safeFilePart(downloadInput.downloadKey)}-${Date.now()}.mp4`;
     const fileInfo = await Filesystem.getUri({
       directory: Directory.Data,
-      path: storagePath,
+      path: tempStoragePath,
     });
 
     progressListener = await FileTransfer.addListener('progress', (progress) => {
       if (progress.type !== 'download') return;
       if (progress.url && progress.url !== ticket.downloadUrl) return;
 
-      const latestJob = activeDownloads.get(downloadInput.downloadKey);
-
-      if (!latestJob) return;
-
-      latestJob.downloadedBytes = Math.max(latestJob.downloadedBytes, Number(progress.bytes) || 0);
-      latestJob.totalBytes = progress.lengthComputable ? Number(progress.contentLength) || null : latestJob.totalBytes;
-      latestJob.updatedAtIso = nowIso();
-      notifyDownloadListeners();
+      updateActiveDownload(downloadInput.downloadKey, (latestJob) => ({
+        ...latestJob,
+        downloadedBytes: Math.max(latestJob.downloadedBytes, Number(progress.bytes) || 0),
+        totalBytes: progress.lengthComputable
+          ? Number(progress.contentLength) || latestJob.totalBytes
+          : latestJob.totalBytes,
+        updatedAtIso: nowIso(),
+      }));
     });
 
     await FileTransfer.downloadFile({
@@ -412,25 +535,49 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       progress: true,
     });
 
-    if (cancelledDownloadKeys.delete(downloadInput.downloadKey)) {
-      await deleteDataFile(storagePath);
-      activeDownloads.delete(downloadInput.downloadKey);
-      notifyDownloadListeners();
+    if (cancelledDownloadRunIds.has(runId)) {
+      await deleteDataFile(tempStoragePath);
+      console.info('[offline-downloads] download cancelled', {
+        downloadKey: downloadInput.downloadKey,
+        title: downloadInput.title,
+      });
       throw new Error('Download cancelled.');
     }
 
-    const downloadedAtIso = new Date().toISOString();
+    const stat = await Filesystem.stat({
+      directory: Directory.Data,
+      path: tempStoragePath,
+    });
+    const fileSizeBytes = Number(stat.size) || 0;
+    const latestJob = activeDownloads.get(downloadInput.downloadKey) || job;
+
+    if (fileSizeBytes <= 0) {
+      throw new Error('The downloaded file was empty.');
+    }
+
+    if (latestJob.totalBytes && fileSizeBytes < latestJob.totalBytes) {
+      throw new Error('The downloaded file was incomplete.');
+    }
+
+    await moveDataFile(tempStoragePath, finalStoragePath);
+
+    const finalUri = await Filesystem.getUri({
+      directory: Directory.Data,
+      path: finalStoragePath,
+    });
+    const downloadedAtIso = nowIso();
     const record: OfflineDownloadRecord = {
       ...downloadInput,
       id: `offline-${downloadInput.downloadKey}`,
       userId: 'local-device',
       video_url: '',
       status: 'completed',
-      storagePath,
-      fileUri: fileInfo.uri,
-      playbackUrl: Capacitor.convertFileSrc(fileInfo.uri),
+      storagePath: finalStoragePath,
+      fileUri: finalUri.uri,
+      playbackUrl: Capacitor.convertFileSrc(finalUri.uri),
       isOfflineFile: true,
       downloadedAtIso,
+      fileSizeBytes,
       downloadedAt: {
         seconds: Math.floor(new Date(downloadedAtIso).getTime() / 1000),
       },
@@ -448,11 +595,17 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
     activeDownloads.delete(downloadInput.downloadKey);
     notifyDownloadListeners();
 
+    console.info('[offline-downloads] download completed', {
+      downloadKey: downloadInput.downloadKey,
+      title: downloadInput.title,
+      fileSizeBytes,
+    });
+
     return { alreadyExists: false, record };
   } catch (error) {
-    await deleteDataFile(storagePath);
+    await deleteDataFile(tempStoragePath);
 
-    if (cancelledDownloadKeys.delete(downloadInput.downloadKey)) {
+    if (cancelledDownloadRunIds.delete(runId) || getErrorMessage(error) === 'Download cancelled.') {
       activeDownloads.delete(downloadInput.downloadKey);
       notifyDownloadListeners();
       throw new Error('Download cancelled.');
@@ -467,6 +620,12 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
     });
     notifyDownloadListeners();
 
+    console.warn('[offline-downloads] download failed', {
+      downloadKey: downloadInput.downloadKey,
+      title: downloadInput.title,
+      error,
+    });
+
     throw error;
   } finally {
     await progressListener?.remove().catch(() => undefined);
@@ -480,10 +639,7 @@ export async function removeOfflineDownload(identifier: string) {
   );
 
   if (record) {
-    await Filesystem.deleteFile({
-      directory: Directory.Data,
-      path: record.storagePath,
-    }).catch(() => undefined);
+    await deleteDataFile(record.storagePath);
   }
 
   await writeManifest({

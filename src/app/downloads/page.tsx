@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Download, Film, Play, Trash2 } from 'lucide-react';
+import { Download, Film, Play, RotateCcw, Trash2, XCircle } from 'lucide-react';
 import { fetchUserDownloads, removeMovieDownload } from '@/lib/downloads';
 import {
   cancelOfflineDownload,
@@ -28,11 +28,13 @@ function isOfflineRecord(record: DownloadListItem): record is OfflineDownloadRec
 }
 
 function isActiveDownload(record: DownloadListItem): record is ActiveOfflineDownload {
-  return 'downloadedBytes' in record && 'startedAtIso' in record;
+  return 'runId' in record && 'downloadedBytes' in record && 'downloadKey' in record;
 }
 
 function getDownloadIdentity(record: DownloadListItem) {
-  return 'downloadKey' in record && record.downloadKey ? record.downloadKey : record.movieId;
+  if (isActiveDownload(record)) return record.downloadKey;
+
+  return isOfflineRecord(record) ? record.downloadKey || record.movieId : record.movieId;
 }
 
 export default function DownloadsPage() {
@@ -42,13 +44,12 @@ export default function DownloadsPage() {
   const [activeTab, setActiveTab] = useState<DownloadStatus>('completed');
   const [activeOfflineMovie, setActiveOfflineMovie] = useState<OfflineDownloadRecord | null>(null);
   const [actionMessage, setActionMessage] = useState('');
+  const nativeOffline = supportsNativeOfflineDownloads();
 
   const loadDownloads = async () => {
     try {
       setActionMessage('');
-      const downloads = supportsNativeOfflineDownloads()
-        ? await listOfflineDownloads()
-        : await fetchUserDownloads();
+      const downloads = nativeOffline ? await listOfflineDownloads() : await fetchUserDownloads();
 
       setDownloadedMovies(downloads);
     } catch (err) {
@@ -64,12 +65,11 @@ export default function DownloadsPage() {
   }, []);
 
   useEffect(() => {
-    if (!supportsNativeOfflineDownloads()) {
-      return;
-    }
+    if (!nativeOffline) return;
 
     const syncActiveDownloads = () => {
       const jobs = getActiveOfflineDownloads();
+
       setActiveDownloadJobs(jobs);
 
       if (jobs.length === 0) {
@@ -80,38 +80,47 @@ export default function DownloadsPage() {
     syncActiveDownloads();
 
     return subscribeOfflineDownloads(syncActiveDownloads);
-  }, []);
+  }, [nativeOffline]);
 
   const handleRemoveDownload = async (movie: DownloadListItem) => {
-    try {
-      const identity = getDownloadIdentity(movie);
+    const identity = getDownloadIdentity(movie);
 
+    try {
       if (isActiveDownload(movie)) {
-        await cancelOfflineDownload(movie.downloadKey);
-        setActiveDownloadJobs(getActiveOfflineDownloads());
+        await cancelOfflineDownload(identity);
+        setActiveDownloadJobs((current) => current.filter((item) => getDownloadIdentity(item) !== identity));
       } else if (isOfflineRecord(movie)) {
         await removeOfflineDownload(identity);
+        setDownloadedMovies((current) => current.filter((item) => getDownloadIdentity(item) !== identity));
       } else {
         await removeMovieDownload(movie.movieId);
+        setDownloadedMovies((current) => current.filter((item) => getDownloadIdentity(item) !== identity));
       }
 
-      setDownloadedMovies((current) => current.filter((item) => getDownloadIdentity(item) !== identity));
-      setActionMessage(isActiveDownload(movie) ? 'Download cancelled.' : 'Download removed.');
+      setActionMessage('Download removed.');
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : 'Download could not be removed.');
     }
   };
 
-  const handleRetryDownload = async (movie: ActiveOfflineDownload) => {
+  const handleCancelActiveDownload = async (downloadKey: string) => {
     try {
-      setActionMessage('Retrying download...');
-      await retryOfflineDownload(movie.downloadKey);
-      setActiveDownloadJobs(getActiveOfflineDownloads());
-      await loadDownloads();
-      setActionMessage('Download completed.');
+      await cancelOfflineDownload(downloadKey);
+      setActiveDownloadJobs((current) => current.filter((item) => item.downloadKey !== downloadKey));
+      setActionMessage('Download cancelled.');
     } catch (error) {
-      setActiveDownloadJobs(getActiveOfflineDownloads());
-      setActionMessage(error instanceof Error ? error.message : 'Download could not be retried.');
+      setActionMessage(error instanceof Error ? error.message : 'Download could not be cancelled.');
+    }
+  };
+
+  const handleRetryActiveDownload = async (downloadKey: string) => {
+    try {
+      setActionMessage('');
+      setActiveTab('downloading');
+      await retryOfflineDownload(downloadKey);
+      await loadDownloads();
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : 'Download could not be restarted.');
     }
   };
 
@@ -123,9 +132,7 @@ export default function DownloadsPage() {
     );
   }
 
-  const nativeOffline = supportsNativeOfflineDownloads();
   const visibleActiveJobs = nativeOffline ? activeDownloadJobs : [];
-
   const groupedDownloads: Record<DownloadStatus, DownloadListItem[]> = {
     completed: downloadedMovies.filter((movie) => (movie.status || 'completed') === 'completed'),
     downloading: visibleActiveJobs.filter((movie) => movie.status === 'downloading'),
@@ -150,33 +157,68 @@ export default function DownloadsPage() {
     completed: {
       label: 'Completed',
       description: nativeOffline
-        ? 'Movies saved inside this device for offline playback.'
+        ? 'Movies and episodes saved inside this device for offline playback.'
         : 'Movies saved to your account activity.',
       emptyText: nativeOffline
-        ? 'No offline videos yet. Use the Download button on a movie to save it to this device.'
+        ? 'No offline videos yet. Use the Download button on a movie or episode to save it to this device.'
         : 'No completed downloads yet. Use the Download button on any movie to save it here.',
       statusLabel: nativeOffline ? 'Offline ready' : 'Ready to play',
       statusTone: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
     },
     downloading: {
       label: 'Active',
-      description: 'Titles that are still downloading appear here.',
+      description: 'Titles that are still downloading appear here with live progress.',
       emptyText: 'No active downloads right now.',
       statusLabel: 'Downloading',
       statusTone: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
     },
     failed: {
       label: 'Failed',
-      description: 'Downloads that could not complete appear here for follow-up.',
+      description: 'Downloads that could not complete appear here for retry.',
       emptyText: 'No failed downloads right now.',
       statusLabel: 'Failed',
       statusTone: 'text-red-300 bg-red-500/10 border-red-500/30',
     },
   };
 
+  const renderDownloadProgress = (movie: DownloadListItem) => {
+    if (!isActiveDownload(movie)) return null;
+
+    const percent = getDownloadPercent(movie);
+    const remainingBytes = getDownloadRemainingBytes(movie);
+
+    return (
+      <div className="mt-3 rounded-2xl border border-white/10 bg-black/18 p-3">
+        {percent !== null ? (
+          <div className="mb-3 h-2 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-[#D90429]" style={{ width: `${percent}%` }} />
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[10px] font-bold uppercase tracking-[0.08em] text-white/58 sm:text-xs">
+          <span>
+            Downloaded: <b className="text-white">{formatDownloadBytes(movie.downloadedBytes)}</b>
+          </span>
+          <span>
+            Remaining:{' '}
+            <b className="text-white">{remainingBytes === null ? '--' : formatDownloadBytes(remainingBytes)}</b>
+          </span>
+          <span>
+            Progress: <b className="text-white">{percent === null ? '--' : `${percent}%`}</b>
+          </span>
+          <span>
+            Total:{' '}
+            <b className="text-white">{movie.totalBytes === null ? '--' : formatDownloadBytes(movie.totalBytes)}</b>
+          </span>
+        </div>
+        {movie.error ? (
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-red-200">{movie.error}</p>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderDownloadCard = (movie: DownloadListItem, statusLabel: string, statusTone: string) => {
-    const activeJob = isActiveDownload(movie) ? movie : null;
-    const percent = activeJob ? getDownloadPercent(activeJob) : null;
+    const identity = getDownloadIdentity(movie);
     const cardContent = (
       <>
         <div className="w-28 md:w-40 rounded relative overflow-hidden aspect-[16/9] flex-shrink-0 bg-black">
@@ -199,37 +241,23 @@ export default function DownloadsPage() {
         <div className="flex flex-col justify-center flex-1 min-w-0">
           <h3 className="text-white font-bold text-sm md:text-lg mb-1 line-clamp-2">{movie.title}</h3>
           <p className="text-[#888888] text-xs mb-2">
-            {isOfflineRecord(movie) ? 'Saved privately on this device' : 'Saved to your account history'}
+            {isActiveDownload(movie)
+              ? 'Downloading to this device'
+              : isOfflineRecord(movie)
+                ? 'Saved privately on this device'
+                : 'Saved to your account history'}
           </p>
           <p className={`text-[10px] font-black uppercase px-2 py-0.5 rounded w-max border ${statusTone}`}>
             {statusLabel}
           </p>
-
-          {activeJob ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center gap-3">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-[#D90429] transition-all"
-                    style={{ width: `${percent ?? 4}%` }}
-                  />
-                </div>
-                <span className="min-w-10 text-right text-[10px] font-black text-white">
-                  {percent === null ? '--' : `${percent}%`}
-                </span>
-              </div>
-              {activeJob.error ? (
-                <p className="text-[10px] font-bold text-red-200">{activeJob.error}</p>
-              ) : null}
-            </div>
-          ) : null}
+          {renderDownloadProgress(movie)}
         </div>
       </>
     );
 
     return (
       <div
-        key={movie.id}
+        key={identity}
         className="flex gap-4 bg-[#1F2833]/20 p-3 rounded-lg border border-transparent hover:border-white/10 group shadow-md"
       >
         {isOfflineRecord(movie) ? (
@@ -240,33 +268,35 @@ export default function DownloadsPage() {
           >
             {cardContent}
           </button>
+        ) : isActiveDownload(movie) ? (
+          <div className="flex min-w-0 flex-1 gap-4 text-left">{cardContent}</div>
         ) : (
           <Link href={`/movie/${movie.movieId}`} className="flex min-w-0 flex-1 gap-4">
             {cardContent}
           </Link>
         )}
 
-        <div className="flex items-center gap-2">
-          {activeJob?.status === 'downloading' ? (
+        <div className="flex flex-col items-center justify-center gap-2">
+          {isActiveDownload(movie) && movie.status === 'downloading' ? (
             <button
               type="button"
-              onClick={() => void handleRemoveDownload(activeJob)}
-              className="inline-flex items-center rounded-xl border border-red-400/35 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-red-100 transition hover:bg-red-500/15"
+              onClick={() => void handleCancelActiveDownload(movie.downloadKey)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-400/30 text-red-100 transition hover:bg-red-500/10"
+              aria-label={`Cancel ${movie.title}`}
             >
-              Cancel
+              <XCircle size={17} />
             </button>
           ) : null}
-
-          {activeJob?.status === 'failed' ? (
+          {isActiveDownload(movie) && movie.status === 'failed' ? (
             <button
               type="button"
-              onClick={() => void handleRetryDownload(activeJob)}
-              className="inline-flex items-center rounded-xl border border-[#D90429]/40 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#D90429] transition hover:bg-[#D90429] hover:text-white"
+              onClick={() => void handleRetryActiveDownload(movie.downloadKey)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white/70 transition hover:border-[#D90429]/45 hover:text-white"
+              aria-label={`Retry ${movie.title}`}
             >
-              Retry
+              <RotateCcw size={16} />
             </button>
           ) : null}
-
           {isOfflineRecord(movie) ? (
             <button
               type="button"
@@ -277,17 +307,14 @@ export default function DownloadsPage() {
               Play
             </button>
           ) : null}
-
-          {!activeJob ? (
-            <button
-              type="button"
-              onClick={() => void handleRemoveDownload(movie)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white/55 transition hover:border-red-500/35 hover:text-red-200"
-              aria-label={`Remove ${movie.title}`}
-            >
-              <Trash2 size={16} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleRemoveDownload(movie)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-white/55 transition hover:border-red-500/35 hover:text-red-200"
+            aria-label={`Remove ${movie.title}`}
+          >
+            <Trash2 size={16} />
+          </button>
         </div>
       </div>
     );

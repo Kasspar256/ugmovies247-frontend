@@ -24,13 +24,16 @@ import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist }
 import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
 import { Bookmark, Cast, Heart, Lock, Share2 } from 'lucide-react';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovieById, fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
 import {
   PersistentPlaybackHost,
   usePlayback,
 } from '@/components/player/PlaybackProvider';
+import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
+import { isAppInReview } from '@/lib/appReview';
+import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -114,6 +117,41 @@ function formatVjLabel(vj?: string) {
   return normalizedVj.toUpperCase().startsWith('VJ ') ? normalizedVj : `VJ ${normalizedVj}`;
 }
 
+function resolveMovieWithSeriesEntries(initialMovie: Movie, catalogMovies: Movie[]) {
+  if (!isSeriesMovie(initialMovie)) {
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: [] as Movie[],
+    };
+  }
+
+  const catalogWithInitial = catalogMovies.some((candidate) => candidate.id === initialMovie.id)
+    ? catalogMovies
+    : [initialMovie, ...catalogMovies];
+  const relatedSeriesEntries = catalogWithInitial.filter(
+    (candidate) => getMovieListingKey(candidate) === getMovieListingKey(initialMovie)
+  );
+  const mergedSeriesMovie = relatedSeriesEntries.length
+    ? mergeSeriesMovies(relatedSeriesEntries)
+    : null;
+
+  if (!mergedSeriesMovie) {
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: relatedSeriesEntries,
+    };
+  }
+
+  return {
+    resolvedMovie: {
+      ...mergedSeriesMovie,
+      id: initialMovie.id,
+      movieId: initialMovie.movieId || initialMovie.id,
+    },
+    sourceEntries: relatedSeriesEntries,
+  };
+}
+
 export default function MoviePlayerPage({ params }: { params: { id: string } }) {
 const [movie, setMovie] = useState<Movie | null>(null);
 const [loading, setLoading] = useState(true);
@@ -131,115 +169,101 @@ const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>([]);
 const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number | null>(null);
 const [selectedEpisodeNumber, setSelectedEpisodeNumber] = useState<number | null>(null);
 const [selectedPartIndex, setSelectedPartIndex] = useState(0);
+const [isTrailerPlaying, setIsTrailerPlaying] = useState(false);
 const router = useRouter();
 const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
 const { setPlaybackSource, videoElement } = usePlayback();
 const shouldAutoplay = searchParams.get('autoplay') === '1';
+const shouldBypassCatalogCache =
+  searchParams.get('fresh') === '1' || searchParams.get('fromRequest') === '1';
 
 useEffect(() => {
+setIsTrailerPlaying(false);
+}, [params.id]);
+
+useEffect(() => {
+let active = true;
 const fetchMovie = async () => {
-try {
-const allMovies = await fetchPublicMovies({ force: true });
+let renderedMovie = false;
 
-const loadMergedSeriesMovie = async (initialMovie: Movie) => {
-  if (!isSeriesMovie(initialMovie)) {
-    return {
-      resolvedMovie: initialMovie,
-      sourceEntries: [] as Movie[],
-    };
+const applyResolvedMovie = (nextMovie: Movie, catalogMovies: Movie[] = []) => {
+  if (!active) {
+    return;
   }
 
-  const relatedSeriesEntries = allMovies
-    .filter((candidate) => getMovieListingKey(candidate) === getMovieListingKey(initialMovie));
-
-  const mergedSeriesMovie = mergeSeriesMovies(relatedSeriesEntries);
-
-  if (!mergedSeriesMovie) {
-    return {
-      resolvedMovie: initialMovie,
-      sourceEntries: relatedSeriesEntries,
-    };
-  }
-
-  return {
-    resolvedMovie: {
-      ...mergedSeriesMovie,
-      id: initialMovie.id,
-      movieId: initialMovie.movieId || initialMovie.id,
-    },
-    sourceEntries: relatedSeriesEntries,
-  };
+  const { resolvedMovie, sourceEntries } = resolveMovieWithSeriesEntries(nextMovie, catalogMovies);
+  renderedMovie = true;
+  setMovie(resolvedMovie);
+  setSeriesSourceEntries(sourceEntries);
+  setLoading(false);
 };
 
-const matchedMovie = allMovies.find((candidate) => candidate.id === params.id);
+try {
+setLoading(true);
+setSeriesSourceEntries([]);
 
-if (matchedMovie) {
-const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(matchedMovie);
-setMovie(resolvedMovie);
-setSeriesSourceEntries(sourceEntries);
+const cachedMovies = shouldBypassCatalogCache ? [] : readCachedPublicMovies();
+const cachedMovie = cachedMovies.find((candidate) => candidate.id === params.id);
+
+if (cachedMovie) {
+  applyResolvedMovie(cachedMovie, cachedMovies);
+}
+
+const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
+  if (!renderedMovie) {
+    throw error;
+  }
+
+  console.warn('[movie-page] fresh movie lookup failed after cached render', error);
+  return null;
+});
+
+if (freshMovie) {
+applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
+void fetchPublicMovies({ force: shouldBypassCatalogCache })
+  .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
+  .catch((error) => {
+    console.warn('[movie-page] catalog refresh failed after movie render', error);
+  });
 return;
 }
 
+const allMovies = await fetchPublicMovies({ force: shouldBypassCatalogCache });
+const matchedMovie = allMovies.find((candidate) => candidate.id === params.id);
+
+if (matchedMovie) {
+applyResolvedMovie(matchedMovie, allMovies);
+return;
+}
+
+if (!isAppInReview) {
 const downloadRecord = await getUserDownloadByMovieId(params.id);
 
 if (downloadRecord) {
 const normalizedDownloadMovie = normalizeMovie(downloadRecord.movieId, downloadRecord);
-const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(normalizedDownloadMovie);
-setMovie(resolvedMovie);
-setSeriesSourceEntries(sourceEntries);
+applyResolvedMovie(normalizedDownloadMovie, allMovies);
 setIsSavedToDownloads(true);
 return;
 }
+}
 
 setSeriesSourceEntries([]);
+setMovie(null);
 } catch (err) {
 console.error(err);
 } finally {
+if (active && !renderedMovie) {
 setLoading(false);
+}
 }
 };
 fetchMovie();
-}, [params.id]);
-
-useEffect(() => {
-const loadUserMovieState = async () => {
-if (!movie?.id) {
-setIsSavedToDownloads(false);
-setIsSavedToWatchlist(false);
-setIsLiked(false);
-return;
-}
-
-try {
-if (supportsNativeOfflineDownloads() && downloadInput?.downloadKey) {
-setIsSavedToDownloads(Boolean(await findOfflineDownload(downloadInput.downloadKey)));
-} else {
-setIsSavedToDownloads(Boolean(await getUserDownloadByMovieId(movie.movieId || movie.id)));
-}
-} catch (downloadStateError) {
-console.error('[movie-page] failed to load download state', downloadStateError);
-setIsSavedToDownloads(false);
-}
-
-try {
-setIsSavedToWatchlist(Boolean(await getUserWatchlistMovie(movie.movieId || movie.id)));
-} catch (watchlistError) {
-console.error('[movie-page] failed to load watchlist state', watchlistError);
-setIsSavedToWatchlist(false);
-}
-
-try {
-setIsLiked(Boolean(await getUserLikedMovie(movie.movieId || movie.id)));
-} catch (likeError) {
-console.error('[movie-page] failed to load like state', likeError);
-setIsLiked(false);
-}
+return () => {
+active = false;
 };
-
-loadUserMovieState();
-}, [movie?.id, movie?.movieId, selectedSeasonNumber, selectedEpisodeNumber, selectedPartIndex]);
+}, [params.id, shouldBypassCatalogCache]);
 
 useEffect(() => {
 const fetchRelatedMovies = async () => {
@@ -517,7 +541,9 @@ const playbackDescription =
         movie?.description ||
         ''
       );
-const isPlaybackLocked = Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
+const isPlaybackLocked = isAppInReview
+  ? false
+  : Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
 const playbackGenreLabel =
   movie?.genres?.find((genre) => genre.trim()) ||
   'Unknown';
@@ -574,7 +600,6 @@ const playbackTitle = activeEpisode
   : selectedPart
     ? `${movie?.title || movie?.name} - ${selectedPart.title || selectedPart.label}`
   : (movie?.title || movie?.name || '');
-
 const downloadBaseInput = movie && playbackVideoUrl
   ? {
       movieId: movie.movieId || movie.id,
@@ -586,7 +611,11 @@ const downloadBaseInput = movie && playbackVideoUrl
       seasonNumber: activeEpisode ? selectedSeason?.seasonNumber || 1 : null,
       episodeNumber: activeEpisode ? activeEpisode.episodeNumber : null,
       episodeId: activeEpisode
-        ? String((activeEpisode as { id?: string; episodeId?: string }).id || (activeEpisode as { episodeId?: string }).episodeId || '')
+        ? String(
+            (activeEpisode as { id?: string; episodeId?: string }).id ||
+              (activeEpisode as { episodeId?: string }).episodeId ||
+              ''
+          )
         : null,
       episodeTitle: activeEpisode?.title || null,
       partIndex: selectedPart ? selectedPartIndex + 1 : null,
@@ -603,6 +632,83 @@ const activeDownloadPercent = offlineDownloadJob ? getDownloadPercent(offlineDow
 const activeDownloadRemainingBytes = offlineDownloadJob ? getDownloadRemainingBytes(offlineDownloadJob) : null;
 const activeDownloadLabel = formatDownloadProgressLabel(offlineDownloadJob);
 
+useEffect(() => {
+const loadUserMovieState = async () => {
+if (!movie?.id) {
+setIsSavedToDownloads(false);
+setIsSavedToWatchlist(false);
+setIsLiked(false);
+return;
+}
+
+try {
+setIsSavedToDownloads(
+isAppInReview
+  ? false
+  : supportsNativeOfflineDownloads() && downloadInput?.downloadKey
+    ? Boolean(await findOfflineDownload(downloadInput.downloadKey))
+    : Boolean(await getUserDownloadByMovieId(movie.movieId || movie.id))
+);
+} catch (downloadStateError) {
+console.error('[movie-page] failed to load download state', downloadStateError);
+setIsSavedToDownloads(false);
+}
+
+try {
+setIsSavedToWatchlist(Boolean(await getUserWatchlistMovie(movie.movieId || movie.id)));
+} catch (watchlistError) {
+console.error('[movie-page] failed to load watchlist state', watchlistError);
+setIsSavedToWatchlist(false);
+}
+
+try {
+setIsLiked(Boolean(await getUserLikedMovie(movie.movieId || movie.id)));
+} catch (likeError) {
+console.error('[movie-page] failed to load like state', likeError);
+setIsLiked(false);
+}
+};
+
+loadUserMovieState();
+}, [downloadInput?.downloadKey, movie?.id, movie?.movieId]);
+
+useEffect(() => {
+  if (!supportsNativeOfflineDownloads() || !downloadInput?.downloadKey) {
+    setOfflineDownloadJob(null);
+    return;
+  }
+
+  let active = true;
+
+  const syncActiveDownload = () => {
+    const job = getActiveOfflineDownload(downloadInput.downloadKey);
+
+    if (!active) return;
+
+    setOfflineDownloadJob(job);
+
+    if (job) {
+      setIsSavedToDownloads(false);
+      return;
+    }
+
+    void findOfflineDownload(downloadInput.downloadKey).then((record) => {
+      if (active) {
+        setIsSavedToDownloads(Boolean(record));
+      }
+    });
+  };
+
+  syncActiveDownload();
+
+  const unsubscribe = subscribeOfflineDownloads(syncActiveDownload);
+
+  return () => {
+    active = false;
+    unsubscribe();
+  };
+}, [downloadInput?.downloadKey]);
+
 const playbackSessionKey = activeEpisode
   ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
   : selectedPart
@@ -617,27 +723,12 @@ const currentMovieHref = movie
       : `/movie/${movie.id}`
   : '/';
 
-useEffect(() => {
-  if (!supportsNativeOfflineDownloads() || !downloadInput?.downloadKey) {
-    setOfflineDownloadJob(null);
-    return;
-  }
-
-  const syncActiveDownload = () => {
-    setOfflineDownloadJob(getActiveOfflineDownload(downloadInput.downloadKey));
-  };
-
-  syncActiveDownload();
-
-  return subscribeOfflineDownloads(syncActiveDownload);
-}, [downloadInput?.downloadKey]);
-
 useLayoutEffect(() => {
   if (!movie) {
     return;
   }
 
-  if (isPlaybackLocked || !playbackVideoUrl) {
+  if (isAppInReview || isPlaybackLocked || !playbackVideoUrl) {
     setPlaybackSource(null);
     return;
   }
@@ -651,7 +742,7 @@ useLayoutEffect(() => {
     playbackType,
     autoplay: shouldAutoplay,
     poster: playbackPoster,
-    title: playbackTitle || movie.title || movie.name || 'UG Movies 247',
+    title: playbackTitle || movie.title || movie.name || 'UGMOVIES247',
     description: playbackDescription,
     watchHref: currentMovieHref,
   });
@@ -676,18 +767,23 @@ const handleDownload = async () => {
     return;
   }
 
+  if (isAppInReview) {
+      setActionMessage('Downloads are not available in this app version.');
+    return;
+  }
+
   if (isPlaybackLocked) {
     setShowPremiumDownloadModal(true);
     return;
   }
 
-  if (isNativeDownloadActive) {
-    setActionMessage('This download is already running.');
+  if (isSavedToDownloads) {
+    setActionMessage('Already saved to your downloads.');
     return;
   }
 
-  if (isSavedToDownloads) {
-    setActionMessage('Already saved to your downloads.');
+  if (isNativeDownloadActive) {
+    setActionMessage('This download is already running.');
     return;
   }
 
@@ -715,7 +811,11 @@ const handleDownload = async () => {
     }
 
     setIsSavedToDownloads(true);
-    setActionMessage(supportsNativeOfflineDownloads() ? 'Movie downloaded for offline playback.' : 'Movie saved to your downloads.');
+    setActionMessage(
+      supportsNativeOfflineDownloads()
+        ? 'Movie downloaded for offline playback.'
+        : 'Movie saved to your downloads.'
+    );
   } catch (err) {
     const firebaseError = err as FirebaseError;
     console.error('[movie-page] download save failed', {
@@ -740,6 +840,7 @@ const handleCancelDownload = async () => {
     await cancelOfflineDownload(downloadInput.downloadKey);
     setOfflineDownloadJob(null);
     setIsDownloading(false);
+    setIsSavedToDownloads(false);
     setActionMessage('Download cancelled.');
   } catch (error) {
     setActionMessage(error instanceof Error ? error.message : 'Download could not be cancelled.');
@@ -836,8 +937,8 @@ const handleShare = async () => {
       : `/movie/${movie.movieId || movie.id}`;
   const shareUrl = `${window.location.origin}${shareTarget}`;
   const shareData = {
-    title: movie.title || movie.name || 'UGMovies247',
-    text: `Watch ${movie.title || movie.name || 'this movie'} on UGMovies247`,
+    title: movie.title || movie.name || 'UGMOVIES247',
+    text: `${isAppInReview ? 'Discover' : 'Watch'} ${movie.title || movie.name || 'this movie'} on UGMOVIES247`,
     url: shareUrl,
   };
 
@@ -856,7 +957,28 @@ const handleShare = async () => {
   }
 };
 
+const handleWatchTrailer = () => {
+  if (!movie) {
+    return;
+  }
+
+  const trailerUrl = getReviewTrailerUrl(movie);
+
+  if (!trailerUrl) {
+    setActionMessage('No trailer is available right now.');
+    return;
+  }
+
+  setActionMessage('');
+  setIsTrailerPlaying(true);
+};
+
 const handleCast = async () => {
+  if (isAppInReview) {
+      setActionMessage('Casting is not available in this app version.');
+    return;
+  }
+
   if (isPlaybackLocked) {
     setActionMessage('Unlock this movie first before casting it.');
     return;
@@ -873,7 +995,7 @@ const handleCast = async () => {
     const message = await startCasting({
       videoElement,
       playbackUrl: castPlaybackUrl || playbackVideoUrl,
-      title: playbackTitle || movie?.title || movie?.name || 'UG Movies 247',
+      title: playbackTitle || movie?.title || movie?.name || 'UGMOVIES247',
       poster: playbackPoster,
       playbackType,
     });
@@ -892,10 +1014,11 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 );
 
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
-const hasPlaybackSource = Boolean(playbackVideoUrl);
-const showPlayerPreviewBackdrop = Boolean(playerBackdrop) && !isPlaybackLocked && !hasPlaybackSource;
+const hasPlaybackSource = !isAppInReview && Boolean(playbackVideoUrl);
+const showPlayerPreviewBackdrop = Boolean(playerBackdrop) && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
+const reviewTrailerUrl = isAppInReview ? getReviewTrailerUrl(movie) : '';
 
-return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
+return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
 
   {/* Mobile Header */}
   <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
@@ -911,7 +1034,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         >
           <img
             src="/logow.png"
-            alt="UG Movies 247"
+            alt="UGMOVIES247"
             className="w-14 h-14 object-cover scale-125 translate-y-2"
           />
         </Link>
@@ -943,7 +1066,32 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         <div className="absolute inset-0 bg-gradient-to-b from-black/18 via-black/28 to-black/42" />
       </div>
     )}
-    {isPlaybackLocked ? (
+    {isAppInReview && isTrailerPlaying ? (
+      <div className="absolute inset-0 z-20 bg-black">
+        <TrailerEmbedPlayer
+          trailerUrl={reviewTrailerUrl}
+          title={`${playbackTitle || movie.title || movie.name || 'UGMOVIES247'} trailer`}
+          autoplay
+          fill
+        />
+      </div>
+    ) : isAppInReview ? (
+      <button
+        type="button"
+        onClick={handleWatchTrailer}
+        className="absolute inset-0 z-10 flex flex-col items-center justify-center overflow-hidden bg-black/18 px-6 text-center transition-colors hover:bg-black/24"
+        aria-label="Watch trailer"
+      >
+        <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full border border-white/18 bg-white/16 pl-1 shadow-[0_0_28px_rgba(255,255,255,0.20)] backdrop-blur-md md:h-20 md:w-20">
+          <svg className="h-7 w-7 text-white md:h-9 md:w-9" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M4 4l12 6-12 6z" />
+          </svg>
+        </div>
+        <div className="relative z-10 mt-4 rounded-full border border-white/12 bg-black/28 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/86 backdrop-blur-md">
+          Watch Trailer
+        </div>
+      </button>
+    ) : isPlaybackLocked ? (
       <button
         type="button"
         onClick={() => router.push(subscribeHref)}
@@ -954,7 +1102,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           <>
             <img
               src={playbackPoster}
-              alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UG Movies 247`}
+              alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UGMOVIES247`}
               className="absolute inset-0 h-full w-full object-contain object-top"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/18 to-black/36" />
@@ -1009,28 +1157,81 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           </div>
         </div>
 
-        <button
-          onClick={handleDownload}
-          disabled={isDownloading || isNativeDownloadActive || isSavedToDownloads}
-          className="relative flex w-full max-w-[620px] items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-r from-[#24344A] via-[#1E2A3B] to-[#131B28] px-5 py-4 text-sm font-black tracking-[0.18em] text-white shadow-[0_18px_35px_rgba(0,0,0,0.28)] transition-colors duration-200 hover:from-[#2D4059] hover:to-[#182334] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#2B2F38] disabled:text-white/45"
-        >
-          <span className="text-center">
-            {isNativeDownloadActive ? activeDownloadLabel : isDownloading ? 'Working...' : isSavedToDownloads ? 'Saved to Downloads' : offlineDownloadJob?.status === 'failed' ? 'Download failed - Retry' : 'Download'}
-          </span>
-          <span className="pointer-events-none absolute right-5">
-            {isPlaybackLocked ? <LockedDownloadIcon /> : <DownloadIcon />}
-          </span>
-        </button>
+        {!isAppInReview && (
+          <>
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading || isNativeDownloadActive || isSavedToDownloads}
+              className="relative flex w-full max-w-[620px] items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-r from-[#24344A] via-[#1E2A3B] to-[#131B28] px-5 py-4 text-sm font-black tracking-[0.12em] text-white shadow-[0_18px_35px_rgba(0,0,0,0.28)] transition-colors duration-200 hover:from-[#2D4059] hover:to-[#182334] disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#2B2F38] disabled:text-white/45 sm:tracking-[0.18em]"
+            >
+              <span className="max-w-[calc(100%-2.5rem)] text-center leading-5">
+                {isNativeDownloadActive
+                  ? activeDownloadLabel
+                  : isDownloading
+                    ? supportsNativeOfflineDownloads()
+                      ? 'Preparing download...'
+                      : 'Working...'
+                    : isSavedToDownloads
+                      ? 'Saved to Downloads'
+                      : offlineDownloadJob?.status === 'failed'
+                        ? 'Download failed - Retry'
+                        : 'Download'}
+              </span>
+              <span className="pointer-events-none absolute right-5">
+                {isPlaybackLocked ? <LockedDownloadIcon /> : <DownloadIcon />}
+              </span>
+            </button>
 
-        {isNativeDownloadActive ? (
-          <button
-            type="button"
-            onClick={handleCancelDownload}
-            className="w-full max-w-[620px] rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-red-100 transition hover:border-red-300/60"
-          >
-            Cancel Download
-          </button>
-        ) : null}
+            {offlineDownloadJob ? (
+              <div className="w-full max-w-[620px] rounded-2xl border border-white/10 bg-[#11141C]/86 px-4 py-4 text-left shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
+                {activeDownloadPercent !== null ? (
+                  <div className="mb-3 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-[#D90429] transition-all"
+                      style={{ width: `${activeDownloadPercent}%` }}
+                    />
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] font-bold uppercase tracking-[0.08em] text-white/62 sm:text-xs">
+                  <span>
+                    Downloaded: <b className="text-white">{formatDownloadBytes(offlineDownloadJob.downloadedBytes)}</b>
+                  </span>
+                  <span>
+                    Remaining:{' '}
+                    <b className="text-white">
+                      {activeDownloadRemainingBytes === null ? '--' : formatDownloadBytes(activeDownloadRemainingBytes)}
+                    </b>
+                  </span>
+                  <span>
+                    Progress:{' '}
+                    <b className="text-white">{activeDownloadPercent === null ? '--' : `${activeDownloadPercent}%`}</b>
+                  </span>
+                  <span>
+                    Total:{' '}
+                    <b className="text-white">
+                      {offlineDownloadJob.totalBytes === null ? '--' : formatDownloadBytes(offlineDownloadJob.totalBytes)}
+                    </b>
+                  </span>
+                </div>
+                {offlineDownloadJob.error ? (
+                  <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-red-200">
+                    {offlineDownloadJob.error}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {isNativeDownloadActive ? (
+              <button
+                type="button"
+                onClick={handleCancelDownload}
+                className="w-full max-w-[620px] rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-red-100 transition-colors hover:border-red-300/60 hover:bg-red-500/18"
+              >
+                Cancel Download
+              </button>
+            ) : null}
+          </>
+        )}
 
         {actionMessage && (
           <div className="w-full max-w-[620px] rounded-2xl border border-[#7AA2D6]/20 bg-[#182334]/88 px-4 py-3 text-center text-[11px] font-bold uppercase tracking-[0.14em] text-[#D9E7FF] shadow-[0_16px_28px_rgba(0,0,0,0.24)]">
@@ -1038,7 +1239,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           </div>
         )}
 
-        {showPremiumDownloadModal && (
+        {!isAppInReview && showPremiumDownloadModal && (
           <div
             className="fixed inset-0 z-[120] flex items-center justify-center bg-black/72 px-4 backdrop-blur-sm"
             onClick={() => setShowPremiumDownloadModal(false)}
@@ -1093,13 +1294,15 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             {isLiking ? 'Working...' : isLiked ? 'Unlike' : 'Like'}
           </button>
 
-          <button
-            onClick={handleCast}
-            className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white"
-          >
-            <Cast size={16} />
-            Cast
-          </button>
+          {!isAppInReview && (
+            <button
+              onClick={handleCast}
+              className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white"
+            >
+              <Cast size={16} />
+              Cast
+            </button>
+          )}
 
           <button
             onClick={handleShare}
@@ -1120,7 +1323,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
     </p>
 
     <p className="mb-6 text-sm leading-7 text-white/62">
-      Watch {playbackTitle} on UG Movies 247, featuring {playbackGenreLabel} entertainment and {playbackVjLabel} translation for Uganda movie fans, Luganda translated movie lovers, and VJ movie audiences.
+      {isAppInReview ? 'Discover' : 'Watch'} {playbackTitle} on UGMOVIES247, featuring {playbackGenreLabel} entertainment and {playbackVjLabel} translation for Uganda movie fans, Luganda translated movie lovers, and VJ movie audiences.
     </p>
 
     {movie.contentType !== 'series' && movie.parts && movie.parts.length > 0 && (
@@ -1267,7 +1470,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 )}
                 <img
                   src={relatedMovie.poster}
-                  alt={`Watch ${relatedMovie.title} on UG Movies 247`}
+                  alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UGMOVIES247`}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
               </div>
