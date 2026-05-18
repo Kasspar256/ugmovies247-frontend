@@ -24,6 +24,7 @@ import {
   getSubscriptionSnapshotFromData,
   resolveEffectiveSubscriptionState,
 } from '@/lib/server/subscriptions';
+import { BETA_TESTER_EMAIL } from '@/lib/server/movieCollection';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import {
   getDefaultAvatarPresetId,
@@ -332,12 +333,17 @@ export async function createAuthSessionResponse(options: {
   let managedSession: Awaited<ReturnType<typeof createManagedAuthSession>>;
 
   try {
+    const deviceLimit =
+      email === BETA_TESTER_EMAIL
+        ? Number.POSITIVE_INFINITY
+        : getDeviceLimitForSubscriptionSnapshot(effectiveSubscriptionSnapshot, role);
+
     managedSession = await createManagedAuthSession({
       request: options.request,
       userId: decoded.uid,
       role,
       subscriptionSnapshot: effectiveSubscriptionSnapshot,
-      deviceLimit: getDeviceLimitForSubscriptionSnapshot(effectiveSubscriptionSnapshot, role),
+      deviceLimit,
     });
   } catch (error) {
     const normalizedError = normalizeAuthRouteError(error, {

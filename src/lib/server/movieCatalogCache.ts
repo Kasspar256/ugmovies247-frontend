@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
-import { FIRESTORE_ENV_NAMESPACE } from './firestoreNamespaces';
+import { FIRESTORE_ENV_NAMESPACE, MOVIES_COLLECTION } from './firestoreNamespaces';
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 export const MOVIE_CACHE_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
@@ -13,6 +13,7 @@ export const MOVIE_CACHE_PATH = path.join(
 export type CachedMovieCatalog = {
   movies: Array<Record<string, unknown>>;
   cachedAt: string;
+  collectionName?: string;
   reviewOnly?: boolean;
 };
 
@@ -128,6 +129,7 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
   const nextCache: CachedMovieCatalog = {
     movies: nextMovies,
     cachedAt: new Date().toISOString(),
+    collectionName: MOVIES_COLLECTION,
     reviewOnly: isReviewOnlyCache ? true : undefined,
   };
 
@@ -195,6 +197,7 @@ async function updateMovieInCatalogCache(
       })
       .filter((movie): movie is Record<string, unknown> => Boolean(movie)),
     cachedAt: new Date().toISOString(),
+    collectionName: MOVIES_COLLECTION,
     reviewOnly: currentCache.reviewOnly === true ? true : undefined,
   };
 

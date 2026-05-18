@@ -18,7 +18,7 @@ import {
   recordMovieCatalogQuotaFailure,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
-import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { getMediaCollectionName } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 
@@ -258,10 +258,14 @@ function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
   });
 }
 
-async function readMovieSnapshotWithFallback(hasFallback: boolean, reviewOnly: boolean) {
+async function readMovieSnapshotWithFallback(
+  collectionName: string,
+  hasFallback: boolean,
+  reviewOnly: boolean
+) {
   const query = reviewOnly
-    ? adminDb.collection(MOVIES_COLLECTION).where('is_for_review', '==', true)
-    : adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc');
+    ? adminDb.collection(collectionName).where('is_for_review', '==', true)
+    : adminDb.collection(collectionName).orderBy('date_added', 'desc');
   const queryPromise = query.get();
 
   if (!hasFallback) {
@@ -286,8 +290,16 @@ async function readMovieSnapshotWithFallback(hasFallback: boolean, reviewOnly: b
   }
 }
 
-function matchesCatalogMode(cache: CachedMovieCatalog | null, reviewOnly: boolean) {
+function matchesCatalogMode(
+  cache: CachedMovieCatalog | null,
+  collectionName: string,
+  reviewOnly: boolean
+) {
   if (!cache) {
+    return null;
+  }
+
+  if (cache.collectionName !== collectionName) {
     return null;
   }
 
@@ -326,15 +338,19 @@ function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
   return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
 }
 
-async function fetchMovieCatalog(reviewOnly: boolean) {
-  const inMemoryCacheForMode = matchesCatalogMode(inMemoryMovieCache, reviewOnly);
+async function fetchMovieCatalog(collectionName: string, reviewOnly: boolean) {
+  const inMemoryCacheForMode = matchesCatalogMode(
+    inMemoryMovieCache,
+    collectionName,
+    reviewOnly
+  );
 
   if (isFreshMovieCache(inMemoryCacheForMode)) {
     return inMemoryCacheForMode;
   }
 
   const diskCache = await readMovieCatalogFromDisk();
-  const diskCacheForMode = matchesCatalogMode(diskCache, reviewOnly);
+  const diskCacheForMode = matchesCatalogMode(diskCache, collectionName, reviewOnly);
   const staleCache = pickMovieCatalogCache(inMemoryCacheForMode, diskCacheForMode);
 
   if (isFreshMovieCache(diskCacheForMode)) {
@@ -351,7 +367,11 @@ async function fetchMovieCatalog(reviewOnly: boolean) {
   }
 
   try {
-    const snapshot = await readMovieSnapshotWithFallback(Boolean(staleCache?.movies?.length), reviewOnly);
+    const snapshot = await readMovieSnapshotWithFallback(
+      collectionName,
+      Boolean(staleCache?.movies?.length),
+      reviewOnly
+    );
     const movies = sortMovieDocsByUploadDate(
       snapshot.docs.map((movieDoc) =>
         withReviewTrailerFallback({
@@ -363,6 +383,7 @@ async function fetchMovieCatalog(reviewOnly: boolean) {
     const cache: CachedMovieCatalog = {
       movies,
       cachedAt: new Date().toISOString(),
+      collectionName,
       reviewOnly,
     };
 
@@ -384,13 +405,14 @@ async function fetchMovieCatalog(reviewOnly: boolean) {
 
 export async function GET(request: Request) {
   try {
-    const session = await getCurrentAuthSession();
+    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
           email: session.email,
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
+    const collectionName = getMediaCollectionName(request, session?.userRecord || session);
 
     const adminSetupError = getFirebaseAdminSetupError();
 
@@ -401,9 +423,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const catalog = await fetchMovieCatalog(isAppInReview);
+    const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
     const movies = catalog.movies
-      .filter((movieDoc) => (isAppInReview ? movieDoc.is_for_review === true : hasPublicPlaybackAsset(movieDoc)))
+      .filter((movieDoc) =>
+        isAppInReview ? movieDoc.is_for_review === true : hasPublicPlaybackAsset(movieDoc)
+      )
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
         return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;

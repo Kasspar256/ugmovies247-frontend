@@ -5,7 +5,7 @@ import {
   getSubscriptionSnapshotFromData,
   getViewerEntitlement,
 } from '@/lib/server/subscriptions';
-import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { getMediaCollectionName } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
@@ -257,7 +257,7 @@ function withReviewTrailerFallback(movieDoc: Record<string, unknown>): Record<st
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { movieId: string } }
 ) {
   try {
@@ -276,14 +276,15 @@ export async function GET(
       return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
     }
 
-    const session = await getCurrentAuthSession();
+    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
           email: session.email,
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const snapshot = await adminDb.collection(MOVIES_COLLECTION).doc(movieId).get();
+    const collectionName = getMediaCollectionName(request, session?.userRecord || session);
+    const snapshot = await adminDb.collection(collectionName).doc(movieId).get();
 
     if (!snapshot.exists) {
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
