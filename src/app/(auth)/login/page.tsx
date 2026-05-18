@@ -16,7 +16,8 @@ import {
   loginWithEmailPassword,
   restoreServerSessionFromClientAuth,
 } from '@/lib/auth/client';
-import { fetchAuthStatus } from '@/lib/auth/status-client';
+import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
+import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 
 function getSessionNoticeFromReason(reason: string) {
   if (reason === 'session-replaced') {
@@ -45,6 +46,14 @@ function hasReviewSessionCookie() {
     .some((entry) => entry === `${APP_REVIEW_SESSION_COOKIE}=1`);
 }
 
+function shouldHideLoginWhileRestoring() {
+  return (
+    isNativeAndroidApp() ||
+    readCachedAuthStatus()?.authenticated === true ||
+    hasPendingGoogleRedirectSignIn()
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,6 +65,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [checkingExistingSession, setCheckingExistingSession] = useState(() =>
+    shouldHideLoginWhileRestoring()
+  );
   const [sessionNotice, setSessionNotice] = useState('');
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
@@ -97,41 +109,45 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
-      const status = await fetchAuthStatus({ force: true }).catch(() => null);
-
-      if (!active) {
-        return;
-      }
-
-      if (status?.authenticated) {
-        finishLoginNavigation(redirectTarget || '/browse', status.user?.email || '');
-        return;
-      }
-
-      const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
-
-      if (!active) {
-        return;
-      }
-
-      if (restoredSession) {
-        finishLoginNavigation(redirectTarget || restoredSession.redirectTo || '/browse', '');
-        return;
-      }
-
-      if (!hasPendingGoogleRedirectSignIn()) {
-        return;
-      }
-
-      setGoogleLoading(true);
+      let navigatingAway = false;
 
       try {
+        const status = await fetchAuthStatus({ force: true }).catch(() => null);
+
+        if (!active) {
+          return;
+        }
+
+        if (status?.authenticated) {
+          navigatingAway = true;
+          finishLoginNavigation(redirectTarget || '/browse', status.user?.email || '');
+          return;
+        }
+
+        const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+        if (!active) {
+          return;
+        }
+
+        if (restoredSession) {
+          navigatingAway = true;
+          finishLoginNavigation(redirectTarget || restoredSession.redirectTo || '/browse', '');
+          return;
+        }
+
+        if (!hasPendingGoogleRedirectSignIn()) {
+          return;
+        }
+
+        setGoogleLoading(true);
         const result = await completeGoogleRedirectSignIn();
 
         if (!active || !result?.session) {
           return;
         }
 
+        navigatingAway = true;
         finishLoginNavigation(redirectTarget || result.session.redirectTo || '/', '');
       } catch (authError) {
         if (!active) {
@@ -143,6 +159,10 @@ export default function LoginPage() {
       } finally {
         if (active) {
           setGoogleLoading(false);
+
+          if (!navigatingAway) {
+            setCheckingExistingSession(false);
+          }
         }
       }
     };
@@ -198,6 +218,26 @@ export default function LoginPage() {
       setGoogleLoading(false);
     }
   };
+
+  if (checkingExistingSession) {
+    return (
+      <div className="min-h-screen bg-[#0B0C10] relative flex items-center justify-center overflow-hidden px-6">
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-[0.12] blur-sm scale-105"
+          style={{ backgroundImage: 'url(https://image.tmdb.org/t/p/original/1E5baAaEse26fej7uHcjOgEE2t2.jpg)' }}
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,12,16,0.92),rgba(11,12,16,0.86)_40%,rgba(11,12,16,0.96))]" />
+        <div className="relative z-10 flex flex-col items-center gap-5 text-white">
+          <img
+            src="/logow.png"
+            alt="UGMOVIES247"
+            className="h-28 w-auto scale-[1.9] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.38)]"
+          />
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-[#D90429]" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0B0C10] relative overflow-hidden">
