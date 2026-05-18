@@ -19,6 +19,10 @@ const PRODUCTION_COLLECTION_CANDIDATES = Array.from(
 
 type MediaCollectionRequest = unknown;
 
+type MediaUserProfile = {
+  email?: string;
+} | null | undefined;
+
 export async function getMediaCollectionName(
   _req: MediaCollectionRequest,
   userProfile: MediaUserProfile
