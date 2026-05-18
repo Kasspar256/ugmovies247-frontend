@@ -7,6 +7,7 @@ import {
 } from '@/lib/server/subscriptions';
 import {
   getMediaCollectionName,
+  resolveMovieCollectionName,
   TRAILER_MEDIA_COLLECTION,
 } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
@@ -307,7 +308,9 @@ export async function GET(
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
+    const requestedCollectionName = await getMediaCollectionName(request, session?.userRecord || session);
+    const reviewOnly = requestedCollectionName === TRAILER_MEDIA_COLLECTION;
+    const collectionName = reviewOnly ? await resolveMovieCollectionName() : requestedCollectionName;
     const snapshot = await adminDb.collection(collectionName).doc(movieId).get();
 
     if (!snapshot.exists) {
@@ -319,20 +322,19 @@ export async function GET(
       ...snapshot.data(),
     });
 
-    if (isAppInReview && movieDoc.is_for_review !== true) {
+    if (reviewOnly && movieDoc.is_for_review !== true) {
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
     }
 
     if (
-      !isAppInReview &&
-      collectionName === TRAILER_MEDIA_COLLECTION &&
-      !hasVisibleCatalogAsset(movieDoc, collectionName)
+      reviewOnly &&
+      !hasVisibleCatalogAsset(movieDoc, requestedCollectionName)
     ) {
       return NextResponse.json({ error: 'Movie is not ready yet.' }, { status: 409 });
     }
 
     const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
-    const movie = isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
+    const movie = reviewOnly ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
 
     return NextResponse.json({ movie, entitlement });
   } catch (error) {

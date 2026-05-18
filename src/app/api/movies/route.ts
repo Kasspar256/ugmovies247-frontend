@@ -20,6 +20,7 @@ import {
 } from '@/lib/server/movieCatalogCache';
 import {
   getMediaCollectionName,
+  resolveMovieCollectionName,
   TRAILER_MEDIA_COLLECTION,
 } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
@@ -438,7 +439,9 @@ export async function GET(request: Request) {
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
+    const requestedCollectionName = await getMediaCollectionName(request, session?.userRecord || session);
+    const reviewOnly = requestedCollectionName === TRAILER_MEDIA_COLLECTION;
+    const collectionName = reviewOnly ? await resolveMovieCollectionName() : requestedCollectionName;
 
     const adminSetupError = getFirebaseAdminSetupError();
 
@@ -449,7 +452,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
+    const catalog = await fetchMovieCatalog(collectionName, reviewOnly);
     const movies = catalog.movies
       .filter((movieDoc) => {
         if (isAppInReview) {
@@ -464,7 +467,7 @@ export async function GET(request: Request) {
       })
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
-        return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
+        return reviewOnly ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
       });
 
     return NextResponse.json({ movies, entitlement });
