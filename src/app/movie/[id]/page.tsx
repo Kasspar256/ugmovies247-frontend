@@ -9,7 +9,7 @@ import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist }
 import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
 import { Bookmark, Cast, Heart, Lock, Share2 } from 'lucide-react';
-import { fetchPublicMovieById, fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovieById, fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
 import {
@@ -102,6 +102,41 @@ function formatVjLabel(vj?: string) {
   return normalizedVj.toUpperCase().startsWith('VJ ') ? normalizedVj : `VJ ${normalizedVj}`;
 }
 
+function resolveMovieWithSeriesEntries(initialMovie: Movie, catalogMovies: Movie[]) {
+  if (!isSeriesMovie(initialMovie)) {
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: [] as Movie[],
+    };
+  }
+
+  const catalogWithInitial = catalogMovies.some((candidate) => candidate.id === initialMovie.id)
+    ? catalogMovies
+    : [initialMovie, ...catalogMovies];
+  const relatedSeriesEntries = catalogWithInitial.filter(
+    (candidate) => getMovieListingKey(candidate) === getMovieListingKey(initialMovie)
+  );
+  const mergedSeriesMovie = relatedSeriesEntries.length
+    ? mergeSeriesMovies(relatedSeriesEntries)
+    : null;
+
+  if (!mergedSeriesMovie) {
+    return {
+      resolvedMovie: initialMovie,
+      sourceEntries: relatedSeriesEntries,
+    };
+  }
+
+  return {
+    resolvedMovie: {
+      ...mergedSeriesMovie,
+      id: initialMovie.id,
+      movieId: initialMovie.movieId || initialMovie.id,
+    },
+    sourceEntries: relatedSeriesEntries,
+  };
+}
+
 export default function MoviePlayerPage({ params }: { params: { id: string } }) {
 const [movie, setMovie] = useState<Movie | null>(null);
 const [loading, setLoading] = useState(true);
@@ -133,79 +168,57 @@ setIsTrailerPlaying(false);
 }, [params.id]);
 
 useEffect(() => {
+let active = true;
 const fetchMovie = async () => {
-try {
-let allMovies: Movie[] = [];
+let renderedMovie = false;
 
-if (shouldBypassCatalogCache) {
-  const freshMovie = await fetchPublicMovieById(params.id);
-
-  if (freshMovie) {
-    allMovies = await fetchPublicMovies().catch(() => [freshMovie]);
-    const matchingCatalogEntries = allMovies.some((candidate) => candidate.id === freshMovie.id)
-      ? allMovies
-      : [freshMovie, ...allMovies];
-    const relatedSeriesEntries = isSeriesMovie(freshMovie)
-      ? matchingCatalogEntries.filter(
-          (candidate) => getMovieListingKey(candidate) === getMovieListingKey(freshMovie)
-        )
-      : [];
-    const mergedSeriesMovie = relatedSeriesEntries.length
-      ? mergeSeriesMovies(relatedSeriesEntries)
-      : null;
-
-    setMovie(
-      mergedSeriesMovie
-        ? {
-            ...mergedSeriesMovie,
-            id: freshMovie.id,
-            movieId: freshMovie.movieId || freshMovie.id,
-          }
-        : freshMovie
-    );
-    setSeriesSourceEntries(relatedSeriesEntries);
+const applyResolvedMovie = (nextMovie: Movie, catalogMovies: Movie[] = []) => {
+  if (!active) {
     return;
   }
-}
 
-allMovies = await fetchPublicMovies();
-
-const loadMergedSeriesMovie = async (initialMovie: Movie) => {
-  if (!isSeriesMovie(initialMovie)) {
-    return {
-      resolvedMovie: initialMovie,
-      sourceEntries: [] as Movie[],
-    };
-  }
-
-  const relatedSeriesEntries = allMovies
-    .filter((candidate) => getMovieListingKey(candidate) === getMovieListingKey(initialMovie));
-
-  const mergedSeriesMovie = mergeSeriesMovies(relatedSeriesEntries);
-
-  if (!mergedSeriesMovie) {
-    return {
-      resolvedMovie: initialMovie,
-      sourceEntries: relatedSeriesEntries,
-    };
-  }
-
-  return {
-    resolvedMovie: {
-      ...mergedSeriesMovie,
-      id: initialMovie.id,
-      movieId: initialMovie.movieId || initialMovie.id,
-    },
-    sourceEntries: relatedSeriesEntries,
-  };
+  const { resolvedMovie, sourceEntries } = resolveMovieWithSeriesEntries(nextMovie, catalogMovies);
+  renderedMovie = true;
+  setMovie(resolvedMovie);
+  setSeriesSourceEntries(sourceEntries);
+  setLoading(false);
 };
 
+try {
+setLoading(true);
+setSeriesSourceEntries([]);
+
+const cachedMovies = shouldBypassCatalogCache ? [] : readCachedPublicMovies();
+const cachedMovie = cachedMovies.find((candidate) => candidate.id === params.id);
+
+if (cachedMovie) {
+  applyResolvedMovie(cachedMovie, cachedMovies);
+}
+
+const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
+  if (!renderedMovie) {
+    throw error;
+  }
+
+  console.warn('[movie-page] fresh movie lookup failed after cached render', error);
+  return null;
+});
+
+if (freshMovie) {
+applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
+void fetchPublicMovies({ force: shouldBypassCatalogCache })
+  .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
+  .catch((error) => {
+    console.warn('[movie-page] catalog refresh failed after movie render', error);
+  });
+return;
+}
+
+const allMovies = await fetchPublicMovies({ force: shouldBypassCatalogCache });
 const matchedMovie = allMovies.find((candidate) => candidate.id === params.id);
 
 if (matchedMovie) {
-const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(matchedMovie);
-setMovie(resolvedMovie);
-setSeriesSourceEntries(sourceEntries);
+applyResolvedMovie(matchedMovie, allMovies);
 return;
 }
 
@@ -214,22 +227,26 @@ const downloadRecord = await getUserDownloadByMovieId(params.id);
 
 if (downloadRecord) {
 const normalizedDownloadMovie = normalizeMovie(downloadRecord.movieId, downloadRecord);
-const { resolvedMovie, sourceEntries } = await loadMergedSeriesMovie(normalizedDownloadMovie);
-setMovie(resolvedMovie);
-setSeriesSourceEntries(sourceEntries);
+applyResolvedMovie(normalizedDownloadMovie, allMovies);
 setIsSavedToDownloads(true);
 return;
 }
 }
 
 setSeriesSourceEntries([]);
+setMovie(null);
 } catch (err) {
 console.error(err);
 } finally {
+if (active && !renderedMovie) {
 setLoading(false);
+}
 }
 };
 fetchMovie();
+return () => {
+active = false;
+};
 }, [params.id, shouldBypassCatalogCache]);
 
 useEffect(() => {
@@ -1312,4 +1329,3 @@ function DownloadIcon() {
 function LockedDownloadIcon() {
   return <Lock className="h-[18px] w-[18px] text-white/90" strokeWidth={2.1} aria-hidden="true" />;
 }
-

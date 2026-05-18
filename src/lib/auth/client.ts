@@ -266,7 +266,7 @@ async function warmPostLoginAppData(role: 'user' | 'admin') {
         row.movies.slice(0, row.usesSeriesBackdropCards ? 3 : 6)
       ),
     ]);
-    warmHomePageArtwork(prioritizedArtworkMovies.length ? prioritizedArtworkMovies : normalizedMovies, 28);
+    warmHomePageArtwork(prioritizedArtworkMovies.length ? prioritizedArtworkMovies : normalizedMovies, 8);
   } catch {
     // Keep sign-in fast even if background warming fails.
   }
@@ -555,7 +555,7 @@ async function createSessionFromIdToken(options: {
     email: options.email || '',
     role: session.role,
   });
-  await warmPostLoginAppData(session.role);
+  void warmPostLoginAppData(session.role);
 
   return session;
 }
@@ -694,7 +694,7 @@ export async function loginWithEmailPassword(
     email,
     role: session.role,
   });
-  await warmPostLoginAppData(session.role);
+  void warmPostLoginAppData(session.role);
   return { credential: null, session };
 }
 
@@ -717,7 +717,7 @@ export async function signupWithEmailPassword(options: {
     email: options.email,
     role: session.role,
   });
-  await warmPostLoginAppData(session.role);
+  void warmPostLoginAppData(session.role);
   return { credential: null, session };
 }
 

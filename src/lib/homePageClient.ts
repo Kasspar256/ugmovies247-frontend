@@ -15,7 +15,7 @@ type CachedHomePageCategories = {
 };
 
 const HOME_PAGE_CATEGORIES_CACHE_KEY = 'ugmovies247.home-categories.v1';
-const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 30;
+const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 5;
 
 let inMemoryHomePageCategories: CachedHomePageCategories | null = null;
 let inFlightHomePageCategoriesRequest: Promise<HomePageCategoryRecord[]> | null = null;
@@ -201,10 +201,21 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
     new Set(artworkUrls.map((url) => getArtworkOrigin(url)).filter(Boolean))
   );
 
-  const schedule =
-    typeof window.requestAnimationFrame === 'function'
-      ? (callback: () => void) => window.requestAnimationFrame(() => callback())
-      : (callback: () => void) => window.setTimeout(callback, 0);
+  const schedule = (callback: () => void) => {
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout?: number }
+      ) => number;
+    };
+
+    if (typeof idleWindow.requestIdleCallback === 'function') {
+      idleWindow.requestIdleCallback(() => callback(), { timeout: 1500 });
+      return;
+    }
+
+    window.setTimeout(callback, 250);
+  };
 
   schedule(() => {
     artworkOrigins.forEach((origin) => {
@@ -226,7 +237,7 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       document.head.appendChild(dnsPrefetch);
     });
 
-    artworkUrls.forEach((url, index) => {
+    artworkUrls.forEach((url) => {
       if (warmedArtworkUrls.has(url)) {
         return;
       }
@@ -234,11 +245,6 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       warmedArtworkUrls.add(url);
       const image = new window.Image();
       image.decoding = 'async';
-
-      if (index < 14) {
-        (image as HTMLImageElement & { fetchPriority?: 'high' | 'low' | 'auto' }).fetchPriority = 'high';
-      }
-
       image.onload = () => {
         markArtworkUrlLoaded(url);
       };

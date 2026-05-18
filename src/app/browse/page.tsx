@@ -1,5 +1,5 @@
 'use client';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
@@ -89,6 +89,10 @@ const DESKTOP_CATEGORY_PILLS = [
     idleClass: 'bg-emerald-900/40 text-emerald-200 hover:bg-emerald-800/50',
   },
 ] as const;
+
+const HOME_ROW_RENDER_LIMIT_DESKTOP = 30;
+const HOME_ROW_RENDER_LIMIT_MOBILE = 18;
+const CONTINUE_WATCHING_RENDER_LIMIT = 20;
 
 function getMovieVjLabel(movie: Movie) {
   return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
@@ -522,9 +526,9 @@ export default function Home() {
 
   useEffect(() => {
     if (priorityArtworkMovies.length) {
-      warmHomePageArtwork(priorityArtworkMovies, 28);
+      warmHomePageArtwork(priorityArtworkMovies, isAndroidMobile ? 8 : 12);
     }
-  }, [priorityArtworkMovies]);
+  }, [isAndroidMobile, priorityArtworkMovies]);
 
   const handleHeroTrailerClick = () => {
     if (!heroMovie) {
@@ -1112,29 +1116,38 @@ export default function Home() {
           </section>
         )}
         
-        {continueWatchingMovies.length > 0 && (
-          <MovieRow
-            title="CONTINUE WATCHING"
-            movies={continueWatchingMovies}
-            androidMobileLayout={isAndroidMobile}
-            priorityImageCount={6}
-            showProgressBars
-          />
-        )}
+        {homeRows.map((row, rowIndex) => {
+          const shouldShowContinueWatching =
+            continueWatchingMovies.length > 0 &&
+            (row.title === 'LATEST ON UGMOVIES247' ||
+              (!homeRows.some((homeRow) => homeRow.title === 'LATEST ON UGMOVIES247') &&
+                rowIndex === 0));
 
-        {homeRows.map((row, rowIndex) => (
-          <MovieRow
-            key={row.categoryKey}
-            title={row.title}
-            movies={row.movies}
-            categoryKey={row.categoryKey}
-            usesSeriesBackdropCards={row.usesSeriesBackdropCards}
-            androidMobileLayout={isAndroidMobile}
-            priorityImageCount={
-              rowIndex < 3 ? (row.usesSeriesBackdropCards ? 3 : 6) : 0
-            }
-          />
-        ))}
+          return (
+            <Fragment key={row.categoryKey}>
+              <MovieRow
+                title={row.title}
+                movies={row.movies}
+                categoryKey={row.categoryKey}
+                usesSeriesBackdropCards={row.usesSeriesBackdropCards}
+                androidMobileLayout={isAndroidMobile}
+                priorityImageCount={
+                  rowIndex < 3 ? (row.usesSeriesBackdropCards ? 3 : 6) : 0
+                }
+              />
+
+              {shouldShowContinueWatching && (
+                <MovieRow
+                  title="CONTINUE WATCHING"
+                  movies={continueWatchingMovies}
+                  androidMobileLayout={isAndroidMobile}
+                  priorityImageCount={6}
+                  showProgressBars
+                />
+              )}
+            </Fragment>
+          );
+        })}
 
         {unmatchedMovies.length > 0 && (
           <MovieRow
@@ -1172,7 +1185,15 @@ const MovieRow = memo(function MovieRow({
   priorityImageCount?: number,
   showProgressBars?: boolean,
 }) {
-  const rowMovies = useMemo(() => dedupeSeriesMovies(movies || []), [movies]);
+  const rowRenderLimit = showProgressBars
+    ? CONTINUE_WATCHING_RENDER_LIMIT
+    : androidMobileLayout
+      ? HOME_ROW_RENDER_LIMIT_MOBILE
+      : HOME_ROW_RENDER_LIMIT_DESKTOP;
+  const rowMovies = useMemo(
+    () => dedupeSeriesMovies(movies || []).slice(0, rowRenderLimit),
+    [movies, rowRenderLimit]
+  );
   const railRef = useRef<HTMLDivElement | null>(null);
 
   const scrollRail = (direction: 'left' | 'right') => {
