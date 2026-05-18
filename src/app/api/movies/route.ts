@@ -455,7 +455,7 @@ export async function GET(request: Request) {
     const catalog = await fetchMovieCatalog(collectionName, reviewOnly);
     const movies = catalog.movies
       .filter((movieDoc) => {
-        if (isAppInReview) {
+        if (reviewOnly) {
           return movieDoc.is_for_review === true;
         }
 
