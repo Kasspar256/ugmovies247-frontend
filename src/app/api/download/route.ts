@@ -79,10 +79,37 @@ export async function POST(request: Request) {
 }
 
 export async function GET(req: NextRequest) {
-  return NextResponse.json(
-    {
-      error: 'Use POST /api/download to request a protected native download ticket.',
-    },
-    { status: 405 }
-  );
+  const access = await requirePremiumDownloadAccess();
+
+  if (access.error) {
+    return access.error;
+  }
+
+  const url = req.nextUrl.searchParams.get('url');
+  const filename = sanitizeFilename(req.nextUrl.searchParams.get('filename') || 'movie.mp4');
+
+  if (!url) {
+    return new NextResponse('Missing url', { status: 400 });
+  }
+
+  try {
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return new NextResponse('Failed to fetch source file', { status: 502 });
+    }
+
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+
+    return new NextResponse(response.body, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return new NextResponse('Download proxy failed', { status: 500 });
+  }
 }

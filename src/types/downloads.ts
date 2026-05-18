@@ -23,5 +23,4 @@ export type DownloadRecord = DownloadMovieInput & {
   status?: DownloadStatus;
   description?: string;
   downloadedAt?: { seconds?: number } | null;
-  expiresAt?: { seconds?: number } | null;
 };

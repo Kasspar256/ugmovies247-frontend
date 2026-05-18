@@ -3,6 +3,12 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
+import {
+  createOfflineDownloadKey,
+  downloadMovieOffline,
+  findOfflineDownload,
+  supportsNativeOfflineDownloads,
+} from '@/lib/mobile/offlineDownloads';
 import type { FirebaseError } from 'firebase/app';
 import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
@@ -248,42 +254,6 @@ return () => {
 active = false;
 };
 }, [params.id, shouldBypassCatalogCache]);
-
-useEffect(() => {
-const loadUserMovieState = async () => {
-if (!movie?.id) {
-setIsSavedToDownloads(false);
-setIsSavedToWatchlist(false);
-setIsLiked(false);
-return;
-}
-
-try {
-setIsSavedToDownloads(
-isAppInReview ? false : Boolean(await getUserDownloadByMovieId(movie.movieId || movie.id))
-);
-} catch (downloadStateError) {
-console.error('[movie-page] failed to load download state', downloadStateError);
-setIsSavedToDownloads(false);
-}
-
-try {
-setIsSavedToWatchlist(Boolean(await getUserWatchlistMovie(movie.movieId || movie.id)));
-} catch (watchlistError) {
-console.error('[movie-page] failed to load watchlist state', watchlistError);
-setIsSavedToWatchlist(false);
-}
-
-try {
-setIsLiked(Boolean(await getUserLikedMovie(movie.movieId || movie.id)));
-} catch (likeError) {
-console.error('[movie-page] failed to load like state', likeError);
-setIsLiked(false);
-}
-};
-
-loadUserMovieState();
-}, [movie?.id, movie?.movieId]);
 
 useEffect(() => {
 const fetchRelatedMovies = async () => {
@@ -616,6 +586,73 @@ const playbackTitle = activeEpisode
   : selectedPart
     ? `${movie?.title || movie?.name} - ${selectedPart.title || selectedPart.label}`
   : (movie?.title || movie?.name || '');
+const downloadBaseInput = movie && playbackVideoUrl
+  ? {
+      movieId: movie.movieId || movie.id,
+      title: playbackTitle || movie.title || movie.name || 'Untitled movie',
+      video_url: playbackVideoUrl,
+      poster: playbackPoster,
+      contentType: activeEpisode ? 'episode' as const : selectedPart ? 'part' as const : 'movie' as const,
+      seriesId: activeEpisode ? movie.id || movie.movieId : undefined,
+      seasonNumber: activeEpisode ? selectedSeason?.seasonNumber || 1 : null,
+      episodeNumber: activeEpisode ? activeEpisode.episodeNumber : null,
+      episodeId: activeEpisode
+        ? String(
+            (activeEpisode as { id?: string; episodeId?: string }).id ||
+              (activeEpisode as { episodeId?: string }).episodeId ||
+              ''
+          )
+        : null,
+      episodeTitle: activeEpisode?.title || null,
+      partIndex: selectedPart ? selectedPartIndex + 1 : null,
+    }
+  : null;
+const downloadInput = downloadBaseInput
+  ? {
+      ...downloadBaseInput,
+      downloadKey: createOfflineDownloadKey(downloadBaseInput),
+    }
+  : null;
+
+useEffect(() => {
+const loadUserMovieState = async () => {
+if (!movie?.id) {
+setIsSavedToDownloads(false);
+setIsSavedToWatchlist(false);
+setIsLiked(false);
+return;
+}
+
+try {
+setIsSavedToDownloads(
+isAppInReview
+  ? false
+  : supportsNativeOfflineDownloads() && downloadInput?.downloadKey
+    ? Boolean(await findOfflineDownload(downloadInput.downloadKey))
+    : Boolean(await getUserDownloadByMovieId(movie.movieId || movie.id))
+);
+} catch (downloadStateError) {
+console.error('[movie-page] failed to load download state', downloadStateError);
+setIsSavedToDownloads(false);
+}
+
+try {
+setIsSavedToWatchlist(Boolean(await getUserWatchlistMovie(movie.movieId || movie.id)));
+} catch (watchlistError) {
+console.error('[movie-page] failed to load watchlist state', watchlistError);
+setIsSavedToWatchlist(false);
+}
+
+try {
+setIsLiked(Boolean(await getUserLikedMovie(movie.movieId || movie.id)));
+} catch (likeError) {
+console.error('[movie-page] failed to load like state', likeError);
+setIsLiked(false);
+}
+};
+
+loadUserMovieState();
+}, [downloadInput?.downloadKey, movie?.id, movie?.movieId]);
 const playbackSessionKey = activeEpisode
   ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
   : selectedPart
@@ -697,17 +734,14 @@ const handleDownload = async () => {
   setIsDownloading(true);
 
   try {
-    const result = await saveMovieDownload({
-      movieId: movie.movieId || movie.id,
-      title:
-        activeEpisode
-          ? `${movie.title || movie.name || 'Untitled movie'} - ${activeEpisode.title}`
-          : selectedPart
-            ? `${movie.title || movie.name || 'Untitled movie'} - ${selectedPart.title || selectedPart.label}`
-            : (movie.title || movie.name || 'Untitled movie'),
-      video_url: playbackVideoUrl,
-      poster: playbackPoster,
-    });
+    if (!downloadInput) {
+      setActionMessage('No in-app download data was found for this movie yet.');
+      return;
+    }
+
+    const result = supportsNativeOfflineDownloads()
+      ? await downloadMovieOffline(downloadInput)
+      : await saveMovieDownload(downloadInput);
 
     if (result.alreadyExists) {
       setIsSavedToDownloads(true);
@@ -716,7 +750,11 @@ const handleDownload = async () => {
     }
 
     setIsSavedToDownloads(true);
-    setActionMessage('Movie saved to your downloads.');
+    setActionMessage(
+      supportsNativeOfflineDownloads()
+        ? 'Movie downloaded for offline playback.'
+        : 'Movie saved to your downloads.'
+    );
   } catch (err) {
     const firebaseError = err as FirebaseError;
     console.error('[movie-page] download save failed', {
