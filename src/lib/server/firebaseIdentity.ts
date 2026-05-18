@@ -368,15 +368,15 @@ export async function createAuthSessionResponse(options: {
   });
 
   const cookieConfig = getAuthCookieConfig();
-  const cookieMaxAge = options.rememberMe === false ? undefined : AUTH_SESSION_MAX_AGE_MS / 1000;
+  const cookieMaxAge = AUTH_SESSION_MAX_AGE_MS / 1000;
 
   response.cookies.set(AUTH_SESSION_COOKIE, sessionCookie, {
     ...cookieConfig,
-    ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+    maxAge: cookieMaxAge,
   });
   response.cookies.set(AUTH_ROLE_COOKIE, getRoleCookieValue(role), {
     ...cookieConfig,
-    ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+    maxAge: cookieMaxAge,
   });
   response.cookies.set(AUTH_DEVICE_COOKIE, managedSession.deviceCookieValue, {
     ...cookieConfig,
@@ -384,15 +384,13 @@ export async function createAuthSessionResponse(options: {
   });
   response.cookies.set(AUTH_DEVICE_SESSION_COOKIE, managedSession.sessionCookieValue, {
     ...cookieConfig,
-    ...(cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
+    maxAge: cookieMaxAge,
   });
-
-  const isReviewerSession = email.toLowerCase() === BETA_TESTER_EMAIL;
-  response.cookies.set(APP_REVIEW_SESSION_COOKIE, isReviewerSession ? '1' : '', {
+  response.cookies.set(APP_REVIEW_SESSION_COOKIE, email.toLowerCase() === BETA_TESTER_EMAIL ? '1' : '', {
     ...cookieConfig,
     httpOnly: false,
-    ...(isReviewerSession && cookieMaxAge ? { maxAge: cookieMaxAge } : {}),
-    ...(!isReviewerSession ? { maxAge: 0 } : {}),
+    ...(email.toLowerCase() === BETA_TESTER_EMAIL ? { maxAge: cookieMaxAge } : {}),
+    ...(email.toLowerCase() === BETA_TESTER_EMAIL ? {} : { maxAge: 0 }),
   });
 
   return response;

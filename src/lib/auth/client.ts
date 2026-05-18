@@ -7,6 +7,7 @@ import {
   primeAuthStatusCache,
   type ClientAuthStatus,
 } from './status-client';
+import { clearAccountProfileCache } from '@/lib/accountProfile';
 import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
@@ -549,7 +550,6 @@ async function createSessionFromIdToken(options: {
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
-  clearPublicMovieCache();
   await confirmServerAuthSession({
     name: options.name || 'User',
     email: options.email || '',
@@ -688,7 +688,6 @@ export async function loginWithEmailPassword(
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
-  clearPublicMovieCache();
   await confirmServerAuthSession({
     name: 'User',
     email,
@@ -711,7 +710,6 @@ export async function signupWithEmailPassword(options: {
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
-  clearPublicMovieCache();
   await confirmServerAuthSession({
     name: options.name || 'User',
     email: options.email,
@@ -804,6 +802,7 @@ export async function logoutCurrentUser() {
   await signOut(auth).catch(() => undefined);
   clearPublicMovieCache();
   clearAuthStatusCache();
+  clearAccountProfileCache();
 }
 
 export async function sendResetPasswordEmail(email: string) {

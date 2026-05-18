@@ -109,7 +109,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           reason?: 'session_replaced' | 'session_revoked' | 'session_missing';
         };
 
-        await redirectToLogin(payload.reason || 'session_missing');
+        if (payload.reason === 'session_replaced' || payload.reason === 'session_revoked') {
+          await redirectToLogin(payload.reason);
+          return;
+        }
+
+        const status = await fetchAuthStatus({ force: true });
+
+        if (status.reason === 'session_replaced' || status.reason === 'session_revoked') {
+          await redirectToLogin(status.reason);
+        }
       } catch (error) {
         console.warn('[auth-gate] heartbeat failed', error);
       }
@@ -141,7 +150,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      await redirectToLogin(status.reason);
+      if (status.reason === 'session_replaced' || status.reason === 'session_revoked') {
+        await redirectToLogin(status.reason);
+        return;
+      }
+
+      if (!readCachedAuthStatus()) {
+        await redirectToLogin(status.reason);
+      }
     };
 
     void checkSession();

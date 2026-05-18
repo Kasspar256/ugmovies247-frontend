@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
+import { APP_REVIEW_SESSION_COOKIE, isAppInReview } from '@/lib/appReview';
 import {
   completeGoogleRedirectSignIn,
   continueWithGoogle,
@@ -31,7 +32,19 @@ function getSessionNoticeFromReason(reason: string) {
   return '';
 }
 
+function hasReviewSessionCookie() {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .some((entry) => entry === `${APP_REVIEW_SESSION_COOKIE}=1`);
+}
+
 export default function LoginPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/browse', [searchParams]);
   const sessionReason = useMemo(() => searchParams.get('reason') || '', [searchParams]);
@@ -44,6 +57,21 @@ export default function LoginPage() {
   const [sessionNotice, setSessionNotice] = useState('');
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  const finishLoginNavigation = useCallback((target: string, accountEmail = '') => {
+    const destination = target || '/browse';
+    const needsReviewModeReload =
+      isAppInReview ||
+      hasReviewSessionCookie() ||
+      accountEmail.trim().toLowerCase() === 'test@ugmovies247.com';
+
+    if (needsReviewModeReload) {
+      window.location.replace(destination);
+      return;
+    }
+
+    router.replace(destination);
+  }, [router]);
 
   useEffect(() => {
     setSessionNotice(getSessionNoticeFromReason(sessionReason));
@@ -80,7 +108,7 @@ export default function LoginPage() {
           return;
         }
 
-        window.location.replace(redirectTarget || result.session.redirectTo || '/');
+        finishLoginNavigation(redirectTarget || result.session.redirectTo || '/', '');
       } catch (authError) {
         if (!active) {
           return;
@@ -100,7 +128,7 @@ export default function LoginPage() {
     return () => {
       active = false;
     };
-  }, [redirectTarget]);
+  }, [finishLoginNavigation, redirectTarget]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -117,7 +145,7 @@ export default function LoginPage() {
 
     try {
       const result = await loginWithEmailPassword(email.trim(), password, { rememberMe });
-      window.location.replace(redirectTarget || result.session.redirectTo || '/');
+      finishLoginNavigation(redirectTarget || result.session.redirectTo || '/', email);
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));
@@ -139,7 +167,7 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.replace(redirectTarget || result.session.redirectTo || '/');
+      finishLoginNavigation(redirectTarget || result.session.redirectTo || '/', '');
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));

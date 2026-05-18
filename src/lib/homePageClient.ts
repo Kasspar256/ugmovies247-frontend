@@ -15,15 +15,15 @@ type CachedHomePageCategories = {
 };
 
 const HOME_PAGE_CATEGORIES_CACHE_KEY = 'ugmovies247.home-categories.v1';
-const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 5;
+const HOME_PAGE_CATEGORIES_TTL_MS = 1000 * 60 * 60 * 12;
 
 let inMemoryHomePageCategories: CachedHomePageCategories | null = null;
 let inFlightHomePageCategoriesRequest: Promise<HomePageCategoryRecord[]> | null = null;
 const warmedArtworkUrls = new Set<string>();
 const preconnectedArtworkOrigins = new Set<string>();
 
-function canUseSessionStorage() {
-  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+function canUsePersistentStorage() {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
 function isFreshCategoriesCache(cache: CachedHomePageCategories | null) {
@@ -65,24 +65,24 @@ function normalizeHomePageCategories(payload: unknown) {
 function persistHomePageCategories(cache: CachedHomePageCategories) {
   inMemoryHomePageCategories = cache;
 
-  if (!canUseSessionStorage()) {
+  if (!canUsePersistentStorage()) {
     return;
   }
 
   try {
-    window.sessionStorage.setItem(HOME_PAGE_CATEGORIES_CACHE_KEY, JSON.stringify(cache));
+    window.localStorage.setItem(HOME_PAGE_CATEGORIES_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // Ignore storage failures and keep the in-memory cache only.
   }
 }
 
-function readHomePageCategoriesFromSessionStorage() {
-  if (!canUseSessionStorage()) {
+function readHomePageCategoriesFromPersistentStorage() {
+  if (!canUsePersistentStorage()) {
     return null;
   }
 
   try {
-    const raw = window.sessionStorage.getItem(HOME_PAGE_CATEGORIES_CACHE_KEY);
+    const raw = window.localStorage.getItem(HOME_PAGE_CATEGORIES_CACHE_KEY);
 
     if (!raw) {
       return null;
@@ -108,7 +108,7 @@ function getBestAvailableHomePageCategories() {
     return inMemoryHomePageCategories;
   }
 
-  const storedCache = readHomePageCategoriesFromSessionStorage();
+  const storedCache = readHomePageCategoriesFromPersistentStorage();
 
   if (isFreshCategoriesCache(storedCache)) {
     inMemoryHomePageCategories = storedCache;
@@ -116,6 +116,10 @@ function getBestAvailableHomePageCategories() {
   }
 
   return null;
+}
+
+function getAnyAvailableHomePageCategories() {
+  return inMemoryHomePageCategories || readHomePageCategoriesFromPersistentStorage();
 }
 
 export function readCachedHomePageCategories() {
@@ -157,7 +161,7 @@ export async function fetchHomePageCategories(options?: { force?: boolean }) {
       return categories;
     })
     .catch((error) => {
-      const staleCategories = getBestAvailableHomePageCategories();
+      const staleCategories = getAnyAvailableHomePageCategories();
 
       if (staleCategories?.categories?.length) {
         return staleCategories.categories;

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Eye, EyeOff, Lock, Mail, User } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthDevHelper from '@/components/AuthDevHelper';
 import GoogleAuthButton from '@/components/GoogleAuthButton';
 import {
@@ -14,8 +14,21 @@ import {
   hasPendingGoogleRedirectSignIn,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
+import { APP_REVIEW_SESSION_COOKIE, isAppInReview } from '@/lib/appReview';
+
+function hasReviewSessionCookie() {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.cookie
+    .split(';')
+    .map((entry) => entry.trim())
+    .some((entry) => entry === `${APP_REVIEW_SESSION_COOKIE}=1`);
+}
 
 export default function SignupPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = useMemo(() => searchParams.get('redirect') || '/browse', [searchParams]);
   const [name, setName] = useState('');
@@ -28,6 +41,21 @@ export default function SignupPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);
+
+  const finishSignupNavigation = useCallback((target: string, accountEmail = '') => {
+    const destination = target || '/browse';
+    const needsReviewModeReload =
+      isAppInReview ||
+      hasReviewSessionCookie() ||
+      accountEmail.trim().toLowerCase() === 'test@ugmovies247.com';
+
+    if (needsReviewModeReload) {
+      window.location.replace(destination);
+      return;
+    }
+
+    router.replace(destination);
+  }, [router]);
 
   const clearFeedback = () => {
     if (error) {
@@ -56,7 +84,7 @@ export default function SignupPage() {
           return;
         }
 
-        window.location.replace(redirectTarget || result.session.redirectTo || '/');
+        finishSignupNavigation(redirectTarget || result.session.redirectTo || '/', '');
       } catch (authError) {
         if (!active) {
           return;
@@ -76,7 +104,7 @@ export default function SignupPage() {
     return () => {
       active = false;
     };
-  }, [redirectTarget]);
+  }, [finishSignupNavigation, redirectTarget]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -112,7 +140,7 @@ export default function SignupPage() {
         email: email.trim(),
         password,
       });
-      window.location.replace(redirectTarget || result.session.redirectTo || '/');
+      finishSignupNavigation(redirectTarget || result.session.redirectTo || '/', email);
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));
@@ -134,7 +162,7 @@ export default function SignupPage() {
         return;
       }
 
-      window.location.replace(redirectTarget || result.session.redirectTo || '/');
+      finishSignupNavigation(redirectTarget || result.session.redirectTo || '/', '');
     } catch (authError) {
       setError(getFirebaseAuthErrorMessage(authError));
       setDevDiagnostics(getAuthDevDiagnostics(authError));

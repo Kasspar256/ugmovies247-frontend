@@ -17,14 +17,14 @@ type CachedClientAuthStatus = {
   cachedAt: number;
 };
 
-const AUTH_STATUS_TTL_MS = 1000 * 60;
+const AUTH_STATUS_TTL_MS = 1000 * 60 * 5;
 const AUTH_STATUS_CACHE_KEY = 'ugmovies247.auth-status.v1';
 
 let cachedAuthStatus: CachedClientAuthStatus | null = null;
 let inFlightAuthStatusRequest: Promise<ClientAuthStatus> | null = null;
 
-function canUseSessionStorage() {
-  return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+function canUsePersistentStorage() {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
 function isFreshAuthStatus(cache: CachedClientAuthStatus | null) {
@@ -34,24 +34,24 @@ function isFreshAuthStatus(cache: CachedClientAuthStatus | null) {
 function persistAuthStatusCache(cache: CachedClientAuthStatus) {
   cachedAuthStatus = cache;
 
-  if (!canUseSessionStorage()) {
+  if (!canUsePersistentStorage()) {
     return;
   }
 
   try {
-    window.sessionStorage.setItem(AUTH_STATUS_CACHE_KEY, JSON.stringify(cache));
+    window.localStorage.setItem(AUTH_STATUS_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // Ignore storage failures and keep the in-memory cache only.
   }
 }
 
-function readAuthStatusFromSessionStorage() {
-  if (!canUseSessionStorage()) {
+function readAuthStatusFromPersistentStorage() {
+  if (!canUsePersistentStorage()) {
     return null;
   }
 
   try {
-    const raw = window.sessionStorage.getItem(AUTH_STATUS_CACHE_KEY);
+    const raw = window.localStorage.getItem(AUTH_STATUS_CACHE_KEY);
 
     if (!raw) {
       return null;
@@ -77,16 +77,27 @@ function readAuthStatusFromSessionStorage() {
   }
 }
 
+function readAnyStoredAuthStatus() {
+  return cachedAuthStatus || readAuthStatusFromPersistentStorage();
+}
+
 export function readCachedAuthStatus() {
   if (isFreshAuthStatus(cachedAuthStatus)) {
     return cachedAuthStatus?.value || null;
   }
 
-  const storedCache = readAuthStatusFromSessionStorage();
+  const storedCache = readAuthStatusFromPersistentStorage();
 
   if (isFreshAuthStatus(storedCache)) {
     cachedAuthStatus = storedCache;
     return storedCache?.value || null;
+  }
+
+  const staleCache = readAnyStoredAuthStatus();
+
+  if (staleCache?.value?.authenticated) {
+    cachedAuthStatus = staleCache;
+    return staleCache.value;
   }
 
   return null;
@@ -103,12 +114,9 @@ export function clearAuthStatusCache() {
   cachedAuthStatus = null;
   inFlightAuthStatusRequest = null;
 
-  if (!canUseSessionStorage()) {
-    return;
-  }
-
   try {
-    window.sessionStorage.removeItem(AUTH_STATUS_CACHE_KEY);
+    window.localStorage?.removeItem(AUTH_STATUS_CACHE_KEY);
+    window.sessionStorage?.removeItem(AUTH_STATUS_CACHE_KEY);
   } catch {
     // Ignore storage removal failures and keep the in-memory cache cleared.
   }
@@ -138,6 +146,13 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
       };
 
       if (!response.ok) {
+        const storedCache = response.status >= 500 ? readAnyStoredAuthStatus() : null;
+
+        if (storedCache?.value?.authenticated) {
+          cachedAuthStatus = storedCache;
+          return storedCache.value;
+        }
+
         return {
           authenticated: false,
           reason:
@@ -179,13 +194,19 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
 
       return value;
     })
-    .catch(
-      () =>
-        ({
-          authenticated: false,
-          reason: 'session_missing',
-        }) satisfies ClientAuthStatus
-    )
+    .catch(() => {
+      const storedCache = readAnyStoredAuthStatus();
+
+      if (storedCache?.value?.authenticated) {
+        cachedAuthStatus = storedCache;
+        return storedCache.value;
+      }
+
+      return {
+        authenticated: false,
+        reason: 'session_missing',
+      } satisfies ClientAuthStatus;
+    })
     .finally(() => {
       inFlightAuthStatusRequest = null;
     });

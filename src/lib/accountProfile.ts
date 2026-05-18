@@ -29,10 +29,127 @@ type AuthMeResponse = {
   error?: string;
 };
 
+type CachedAccountProfile = {
+  profile: AccountProfile;
+  cachedAt: number;
+};
+
 export const DEFAULT_NOTIFICATION_PREFERENCES: AccountNotificationPreferences = {
   marketing: false,
   productUpdates: true,
 };
+
+const ACCOUNT_PROFILE_CACHE_KEY = 'ugmovies247.account-profile.v1';
+const ACCOUNT_PROFILE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
+
+let inMemoryAccountProfile: CachedAccountProfile | null = null;
+
+function canUsePersistentStorage() {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function isFreshAccountProfileCache(cache: CachedAccountProfile | null) {
+  return Boolean(cache && Date.now() - cache.cachedAt < ACCOUNT_PROFILE_CACHE_TTL_MS);
+}
+
+function normalizeAccountProfile(profile: AccountProfile) {
+  return {
+    ...profile,
+    emailVerified: profile.emailVerified === true,
+    ...resolveUserAvatar({
+      avatarPresetId: profile.avatarPresetId,
+      avatarUrl: profile.avatarUrl,
+      fallbackSeed: profile.id || profile.email,
+    }),
+    notificationPreferences: {
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...(profile.notificationPreferences || {}),
+    },
+  } satisfies AccountProfile;
+}
+
+function persistAccountProfile(profile: AccountProfile) {
+  const cache = {
+    profile,
+    cachedAt: Date.now(),
+  } satisfies CachedAccountProfile;
+
+  inMemoryAccountProfile = cache;
+
+  if (!canUsePersistentStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(ACCOUNT_PROFILE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Keep the in-memory profile cache when persistent storage is unavailable.
+  }
+}
+
+function readAccountProfileFromPersistentStorage() {
+  if (!canUsePersistentStorage()) {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(ACCOUNT_PROFILE_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<CachedAccountProfile>;
+
+    if (!parsed.profile || typeof parsed.cachedAt !== 'number') {
+      return null;
+    }
+
+    return {
+      profile: normalizeAccountProfile(parsed.profile as AccountProfile),
+      cachedAt: parsed.cachedAt,
+    } satisfies CachedAccountProfile;
+  } catch {
+    return null;
+  }
+}
+
+function readAnyAccountProfileCache() {
+  return inMemoryAccountProfile || readAccountProfileFromPersistentStorage();
+}
+
+export function readCachedAccountProfile() {
+  if (isFreshAccountProfileCache(inMemoryAccountProfile)) {
+    return inMemoryAccountProfile?.profile || null;
+  }
+
+  const storedCache = readAccountProfileFromPersistentStorage();
+
+  if (isFreshAccountProfileCache(storedCache)) {
+    inMemoryAccountProfile = storedCache;
+    return storedCache?.profile || null;
+  }
+
+  const staleCache = readAnyAccountProfileCache();
+
+  if (staleCache?.profile) {
+    inMemoryAccountProfile = staleCache;
+    return staleCache.profile;
+  }
+
+  return null;
+}
+
+export function clearAccountProfileCache() {
+  inMemoryAccountProfile = null;
+
+  try {
+    window.localStorage?.removeItem(ACCOUNT_PROFILE_CACHE_KEY);
+    window.sessionStorage?.removeItem(ACCOUNT_PROFILE_CACHE_KEY);
+  } catch {
+    // Ignore storage removal failures and keep the in-memory cache cleared.
+  }
+}
 
 async function parseResponse<T>(response: Response) {
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
@@ -48,26 +165,44 @@ export async function fetchAccountProfile() {
   const response = await fetch('/api/auth/me', {
     credentials: 'include',
     cache: 'no-store',
+  }).catch(() => {
+    const cachedProfile = readAnyAccountProfileCache()?.profile;
+
+    if (cachedProfile) {
+      return null;
+    }
+
+    throw new Error('Your profile could not be loaded.');
   });
-  const payload = await parseResponse<AuthMeResponse>(response);
+
+  if (!response) {
+    const cachedProfile = readAnyAccountProfileCache()?.profile;
+
+    if (cachedProfile) {
+      return cachedProfile;
+    }
+
+    throw new Error('Your profile could not be loaded.');
+  }
+
+  const payload = await parseResponse<AuthMeResponse>(response).catch((error) => {
+    const cachedProfile = readAnyAccountProfileCache()?.profile;
+
+    if (cachedProfile) {
+      return { user: cachedProfile } satisfies AuthMeResponse;
+    }
+
+    throw error;
+  });
 
   if (!payload.user) {
     throw new Error('Your profile could not be loaded.');
   }
 
-  return {
-    ...payload.user,
-    emailVerified: payload.user.emailVerified === true,
-    ...resolveUserAvatar({
-      avatarPresetId: payload.user.avatarPresetId,
-      avatarUrl: payload.user.avatarUrl,
-      fallbackSeed: payload.user.id || payload.user.email,
-    }),
-    notificationPreferences: {
-      ...DEFAULT_NOTIFICATION_PREFERENCES,
-      ...(payload.user.notificationPreferences || {}),
-    },
-  } satisfies AccountProfile;
+  const profile = normalizeAccountProfile(payload.user);
+  persistAccountProfile(profile);
+
+  return profile;
 }
 
 export async function updateAccountProfile(input: {
@@ -82,7 +217,9 @@ export async function updateAccountProfile(input: {
     body: JSON.stringify(input),
   });
 
-  return parseResponse<{ success: boolean }>(response);
+  const payload = await parseResponse<{ success: boolean }>(response);
+  clearAccountProfileCache();
+  return payload;
 }
 
 export async function deleteAccount(confirm: string) {
@@ -93,7 +230,9 @@ export async function deleteAccount(confirm: string) {
     body: JSON.stringify({ confirm }),
   });
 
-  return parseResponse<{ success: boolean }>(response);
+  const payload = await parseResponse<{ success: boolean }>(response);
+  clearAccountProfileCache();
+  return payload;
 }
 
 export function getAccountInitials(name?: string, email?: string) {

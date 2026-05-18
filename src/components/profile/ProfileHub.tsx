@@ -23,6 +23,7 @@ import {
   getAccountAccessLabel,
   getAccountBadge,
   getAccountInitials,
+  readCachedAccountProfile,
   type AccountProfile,
 } from '@/lib/accountProfile';
 import { logoutCurrentUser } from '@/lib/auth/client';
@@ -315,14 +316,15 @@ function NavigationGroup({
 
 export default function ProfileHub() {
   const router = useRouter();
-  const [profile, setProfile] = useState<AccountProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedAccountProfile());
+  const [loading, setLoading] = useState(() => !readCachedAccountProfile());
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
+    const hasCachedProfile = Boolean(readCachedAccountProfile());
 
     const loadProfile = async () => {
       try {
@@ -334,7 +336,7 @@ export default function ProfileHub() {
 
         setProfile(nextProfile);
       } catch (loadError) {
-        if (mounted) {
+        if (mounted && !hasCachedProfile) {
           setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
         }
       } finally {
@@ -345,6 +347,10 @@ export default function ProfileHub() {
     };
 
     void loadProfile();
+
+    if (hasCachedProfile) {
+      setLoading(false);
+    }
 
     return () => {
       mounted = false;

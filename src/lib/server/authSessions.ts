@@ -602,7 +602,9 @@ export async function createManagedAuthSession(options: {
     if (Number.isFinite(deviceLimit) && nextSessionIds.length >= deviceLimit) {
       const replacementCandidate = activeRecords
         .filter(
-          (record) => !isEndedStatus(record.status) && record.isActive === false
+          (record) =>
+            !isEndedStatus(record.status) &&
+            (record.status === 'inactive' || record.isActive !== true)
         )
         .sort(sortByLeastRecentActivity)[0];
 
