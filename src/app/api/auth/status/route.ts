@@ -8,6 +8,7 @@ import {
   recoverManagedAuthSessionFromRequest,
 } from '@/lib/auth/server';
 import { AUTH_DEVICE_COOKIE_MAX_AGE_MS, AUTH_SESSION_MAX_AGE_MS } from '@/lib/auth/constants';
+import { CLIENT_DEVICE_ID_HEADER, CLIENT_DEVICE_SESSION_HEADER } from '@/lib/auth/deviceIdentity';
 import {
   AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
   AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
@@ -16,6 +17,26 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function persistClientManagedSessionCookies(response: NextResponse, request: Request) {
+  const deviceId = String(request.headers.get(CLIENT_DEVICE_ID_HEADER) || '').trim();
+  const deviceSession = String(request.headers.get(CLIENT_DEVICE_SESSION_HEADER) || '').trim();
+
+  if (!deviceId || !deviceSession) {
+    return;
+  }
+
+  response.cookies.set(AUTH_DEVICE_COOKIE, deviceId, {
+    ...getAuthCookieConfig(),
+    maxAge: AUTH_DEVICE_COOKIE_MAX_AGE_MS / 1000,
+    expires: new Date(Date.now() + AUTH_DEVICE_COOKIE_MAX_AGE_MS),
+  });
+  response.cookies.set(AUTH_DEVICE_SESSION_COOKIE, deviceSession, {
+    ...getAuthCookieConfig(),
+    maxAge: AUTH_SESSION_MAX_AGE_MS / 1000,
+    expires: new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS),
+  });
+}
 
 export async function GET(request: Request) {
   try {
@@ -31,6 +52,7 @@ export async function GET(request: Request) {
           const sessionExpiresAt = new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS);
           const response = NextResponse.json({
             authenticated: true,
+            clientSession: recovered.managedSession.sessionCookieValue,
             user: {
               id: recovered.session.uid,
               name: recovered.session.userRecord.name,
@@ -71,7 +93,7 @@ export async function GET(request: Request) {
     const hydratedSession = await getCurrentAuthSession({ hydrateUserRecord: true }).catch(() => null);
     const session = hydratedSession || validation.session;
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       authenticated: true,
       user: {
         id: session.uid,
@@ -81,6 +103,10 @@ export async function GET(request: Request) {
         emailVerified: session.userRecord.emailVerified === true,
       },
     });
+
+    persistClientManagedSessionCookies(response, request);
+
+    return response;
   } catch (error) {
     if (
       error instanceof DeviceLimitExceededError ||

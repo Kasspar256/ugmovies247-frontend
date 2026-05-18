@@ -14,7 +14,9 @@ import {
   getFirebaseAuthErrorMessage,
   hasPendingGoogleRedirectSignIn,
   loginWithEmailPassword,
+  restoreServerSessionFromClientAuth,
 } from '@/lib/auth/client';
+import { fetchAuthStatus } from '@/lib/auth/status-client';
 
 function getSessionNoticeFromReason(reason: string) {
   if (reason === 'session-replaced') {
@@ -95,6 +97,28 @@ export default function LoginPage() {
     let active = true;
 
     const finishRedirectLogin = async () => {
+      const status = await fetchAuthStatus({ force: true }).catch(() => null);
+
+      if (!active) {
+        return;
+      }
+
+      if (status?.authenticated) {
+        finishLoginNavigation(redirectTarget || '/browse', status.user?.email || '');
+        return;
+      }
+
+      const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+      if (!active) {
+        return;
+      }
+
+      if (restoredSession) {
+        finishLoginNavigation(redirectTarget || restoredSession.redirectTo || '/browse', '');
+        return;
+      }
+
       if (!hasPendingGoogleRedirectSignIn()) {
         return;
       }

@@ -7,6 +7,7 @@ import {
   recoverManagedAuthSessionFromRequest,
 } from '@/lib/auth/server';
 import { AUTH_DEVICE_COOKIE_MAX_AGE_MS, AUTH_SESSION_MAX_AGE_MS } from '@/lib/auth/constants';
+import { CLIENT_DEVICE_ID_HEADER, CLIENT_DEVICE_SESSION_HEADER } from '@/lib/auth/deviceIdentity';
 import {
   AUTH_DEVICE_LIMIT_EXCEEDED_CODE,
   AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
@@ -16,6 +17,26 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function persistClientManagedSessionCookies(response: NextResponse, request: Request) {
+  const deviceId = String(request.headers.get(CLIENT_DEVICE_ID_HEADER) || '').trim();
+  const deviceSession = String(request.headers.get(CLIENT_DEVICE_SESSION_HEADER) || '').trim();
+
+  if (!deviceId || !deviceSession) {
+    return;
+  }
+
+  response.cookies.set(AUTH_DEVICE_COOKIE, deviceId, {
+    ...getAuthCookieConfig(),
+    maxAge: AUTH_DEVICE_COOKIE_MAX_AGE_MS / 1000,
+    expires: new Date(Date.now() + AUTH_DEVICE_COOKIE_MAX_AGE_MS),
+  });
+  response.cookies.set(AUTH_DEVICE_SESSION_COOKIE, deviceSession, {
+    ...getAuthCookieConfig(),
+    maxAge: AUTH_SESSION_MAX_AGE_MS / 1000,
+    expires: new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS),
+  });
+}
 
 export async function POST(request: Request) {
   try {
@@ -32,6 +53,7 @@ export async function POST(request: Request) {
           const response = NextResponse.json({
             success: true,
             authenticated: true,
+            clientSession: recovered.managedSession.sessionCookieValue,
           });
 
           response.cookies.set(AUTH_DEVICE_COOKIE, recovered.managedSession.deviceCookieValue, {
@@ -77,11 +99,15 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       authenticated: true,
       lastActivityAt: touched.record.lastActivityAt,
     });
+
+    persistClientManagedSessionCookies(response, request);
+
+    return response;
   } catch (error) {
     if (
       error instanceof DeviceLimitExceededError ||

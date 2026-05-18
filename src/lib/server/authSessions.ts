@@ -10,7 +10,7 @@ import {
   AUTH_DEVICE_SESSION_COOKIE,
   AUTH_SESSION_ACTIVE_WINDOW_MS,
 } from '@/lib/auth/constants';
-import { CLIENT_DEVICE_ID_HEADER } from '@/lib/auth/deviceIdentity';
+import { CLIENT_DEVICE_ID_HEADER, CLIENT_DEVICE_SESSION_HEADER } from '@/lib/auth/deviceIdentity';
 import { getDeviceLimitForSubscriptionSnapshot } from '@/lib/server/subscriptions';
 import type { SubscriptionSnapshot } from '@/types/subscriptions';
 import type {
@@ -568,7 +568,10 @@ export function getManagedDeviceCookieFromRequest(request: Request) {
 }
 
 export function getManagedSessionCookieFromRequest(request: Request) {
-  return getRequestCookieValue(request, AUTH_DEVICE_SESSION_COOKIE);
+  return (
+    getRequestCookieValue(request, AUTH_DEVICE_SESSION_COOKIE) ||
+    String(request.headers.get(CLIENT_DEVICE_SESSION_HEADER) || '').trim()
+  );
 }
 
 export async function createManagedAuthSession(options: {
@@ -807,6 +810,95 @@ export async function validateManagedAuthSessionFromCookieValues(options: {
   };
 
   cacheManagedSessionValidation(validation, { userId: options.userId });
+  return validation;
+}
+
+export async function validateManagedAuthSessionFromSessionValue(options: {
+  deviceId?: string;
+  managedSessionCookie: string;
+}): Promise<ManagedSessionValidation> {
+  const deviceId = normalizeDeviceId(String(options.deviceId || ''));
+  const parsedCookie = parseSessionCookieValue(options.managedSessionCookie);
+
+  if (!parsedCookie) {
+    return {
+      valid: false,
+      reason: 'session_missing',
+      deviceId,
+      sessionId: '',
+      sessionToken: '',
+      record: null,
+    };
+  }
+
+  const snapshot = await adminDb.collection(AUTH_SESSIONS_COLLECTION).doc(parsedCookie.sessionId).get();
+
+  if (!snapshot.exists) {
+    return {
+      valid: false,
+      reason: 'session_missing',
+      deviceId,
+      sessionId: parsedCookie.sessionId,
+      sessionToken: parsedCookie.sessionToken,
+      record: null,
+    };
+  }
+
+  const record = normalizeAuthSessionRecord(
+    snapshot.id,
+    snapshot.data() as Partial<AuthSessionRecord> | undefined
+  );
+
+  if (
+    (deviceId && record.deviceId !== deviceId) ||
+    record.sessionTokenHash !== hashSessionToken(parsedCookie.sessionToken)
+  ) {
+    return {
+      valid: false,
+      reason: 'session_missing',
+      deviceId,
+      sessionId: parsedCookie.sessionId,
+      sessionToken: parsedCookie.sessionToken,
+      record,
+    };
+  }
+
+  if (record.status === 'replaced') {
+    return {
+      valid: false,
+      reason: 'session_replaced',
+      deviceId: record.deviceId,
+      sessionId: parsedCookie.sessionId,
+      sessionToken: parsedCookie.sessionToken,
+      record,
+    };
+  }
+
+  if (record.status === 'revoked' || record.status === 'logged_out') {
+    return {
+      valid: false,
+      reason: 'session_revoked',
+      deviceId: record.deviceId,
+      sessionId: parsedCookie.sessionId,
+      sessionToken: parsedCookie.sessionToken,
+      record,
+    };
+  }
+
+  if (record.status === 'active' && !isWithinActiveWindow(record)) {
+    record.status = 'inactive';
+    record.isActive = false;
+  }
+
+  const validation: ManagedSessionValidation = {
+    valid: true,
+    deviceId: record.deviceId,
+    sessionId: parsedCookie.sessionId,
+    sessionToken: parsedCookie.sessionToken,
+    record,
+  };
+
+  cacheManagedSessionValidation(validation, { userId: record.userId });
   return validation;
 }
 

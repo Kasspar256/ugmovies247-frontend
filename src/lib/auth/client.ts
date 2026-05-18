@@ -27,12 +27,18 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+import {
+  clearClientDeviceSession,
+  getClientDeviceHeaders,
+  rememberClientDeviceSession,
+} from '@/lib/auth/deviceIdentity';
 
 type SessionResponse = {
   success: boolean;
   role: 'user' | 'admin';
   redirectTo: string;
+  clientSession?: string;
+  deviceId?: string;
 };
 
 const GOOGLE_REMEMBER_ME_KEY = 'ugmovies247_google_auth_remember_me';
@@ -331,6 +337,10 @@ async function parseAuthResponse(response: Response) {
   return payload;
 }
 
+function rememberServerSession(session: Partial<SessionResponse>) {
+  rememberClientDeviceSession(session.clientSession);
+}
+
 function getFirebaseErrorCode(error: unknown) {
   return typeof (error as { code?: string })?.code === 'string'
     ? (error as { code: string }).code
@@ -599,6 +609,7 @@ async function createSessionFromIdToken(options: {
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
+  rememberServerSession(session);
   await confirmServerAuthSession({
     name: options.name || 'User',
     email: options.email || '',
@@ -735,6 +746,7 @@ export async function loginWithEmailPassword(
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
+  rememberServerSession(session);
   await persistEmailPasswordFirebaseSession(email, password);
   await confirmServerAuthSession({
     name: 'User',
@@ -758,6 +770,7 @@ export async function signupWithEmailPassword(options: {
   });
 
   const session = (await parseAuthResponse(response)) as SessionResponse;
+  rememberServerSession(session);
   await persistEmailPasswordFirebaseSession(options.email, options.password);
   await confirmServerAuthSession({
     name: options.name || 'User',
@@ -888,6 +901,7 @@ export async function logoutCurrentUser() {
 
   await signOut(auth).catch(() => undefined);
   await getNativeFirebaseAuthentication()?.signOut?.().catch(() => undefined);
+  clearClientDeviceSession();
   clearPublicMovieCache();
   clearAuthStatusCache();
   clearAccountProfileCache();

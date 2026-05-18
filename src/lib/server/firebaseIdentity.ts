@@ -365,6 +365,8 @@ export async function createAuthSessionResponse(options: {
     success: true,
     role,
     redirectTo: role === 'admin' ? '/admin' : '/browse',
+    deviceId: managedSession.deviceCookieValue,
+    clientSession: managedSession.sessionCookieValue,
   });
 
   const cookieConfig = getAuthCookieConfig();

@@ -1,4 +1,4 @@
-import { getClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+import { getClientDeviceHeaders, rememberClientDeviceSession } from '@/lib/auth/deviceIdentity';
 
 export type ClientAuthStatus = {
   authenticated: boolean;
@@ -144,9 +144,12 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
   })
     .then(async (response) => {
       const payload = (await response.json().catch(() => ({}))) as Partial<ClientAuthStatus> & {
+        clientSession?: string;
         code?: string;
         error?: string;
       };
+
+      rememberClientDeviceSession(payload.clientSession);
 
       if (!response.ok) {
         const storedCache = response.status >= 500 ? readAnyStoredAuthStatus() : null;

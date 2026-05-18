@@ -12,8 +12,10 @@ import {
   getAuthDevDiagnostics,
   getFirebaseAuthErrorMessage,
   hasPendingGoogleRedirectSignIn,
+  restoreServerSessionFromClientAuth,
   signupWithEmailPassword,
 } from '@/lib/auth/client';
+import { fetchAuthStatus } from '@/lib/auth/status-client';
 import { APP_REVIEW_SESSION_COOKIE, isAppInReview } from '@/lib/appReview';
 
 function hasReviewSessionCookie() {
@@ -71,6 +73,28 @@ export default function SignupPage() {
     let active = true;
 
     const finishRedirectSignup = async () => {
+      const status = await fetchAuthStatus({ force: true }).catch(() => null);
+
+      if (!active) {
+        return;
+      }
+
+      if (status?.authenticated) {
+        finishSignupNavigation(redirectTarget || '/browse', status.user?.email || '');
+        return;
+      }
+
+      const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+      if (!active) {
+        return;
+      }
+
+      if (restoredSession) {
+        finishSignupNavigation(redirectTarget || restoredSession.redirectTo || '/browse', '');
+        return;
+      }
+
       if (!hasPendingGoogleRedirectSignIn()) {
         return;
       }

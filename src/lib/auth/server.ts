@@ -12,6 +12,8 @@ import {
 import {
   createManagedAuthSession,
   getManagedDeviceCookieFromRequest,
+  getManagedSessionCookieFromRequest,
+  validateManagedAuthSessionFromSessionValue,
   validateManagedAuthSessionFromCookieValues,
 } from '@/lib/server/authSessions';
 import { resolveEffectiveSubscriptionState } from '@/lib/server/subscriptions';
@@ -236,6 +238,51 @@ async function resolveAuthSessionValidation(options: {
   }
 }
 
+async function resolveManagedOnlyAuthSessionValidation(options: {
+  deviceCookie?: string;
+  managedSessionCookie?: string;
+  hydrateUserRecord?: boolean;
+}): Promise<AuthSessionValidationResult> {
+  if (!options.managedSessionCookie) {
+    return { session: null, reason: 'session_missing' };
+  }
+
+  const validation = await validateManagedAuthSessionFromSessionValue({
+    deviceId: options.deviceCookie || '',
+    managedSessionCookie: options.managedSessionCookie,
+  });
+
+  if (!validation.valid) {
+    return {
+      session: null,
+      reason: 'reason' in validation ? validation.reason : 'session_missing',
+    };
+  }
+
+  const userRecord = await fetchUserRecord(validation.record.userId, {});
+
+  if (!userRecord.isActive) {
+    return { session: null, reason: 'session_revoked' };
+  }
+
+  return {
+    session: {
+      uid: validation.record.userId,
+      email: userRecord.email,
+      name: userRecord.name,
+      role: userRecord.role,
+      userRecord:
+        options.hydrateUserRecord === false
+          ? buildFallbackUserRecord(validation.record.userId, {
+              email: userRecord.email,
+              name: userRecord.name,
+              role: userRecord.role,
+            })
+          : userRecord,
+    },
+  };
+}
+
 async function resolveSessionFromVerifiedCookie(options: {
   uid: string;
   email: string;
@@ -318,13 +365,17 @@ export async function getAuthSessionFromSessionCookie(
 
 export async function getRequestAuthSessionValidation(request: Request | NextRequest) {
   const sessionCookie = getCookieValueFromRequest(request, AUTH_SESSION_COOKIE);
-
-  if (!sessionCookie) {
-    return { session: null, reason: 'session_missing' };
-  }
   const roleCookie = getCookieValueFromRequest(request, AUTH_ROLE_COOKIE);
   const deviceCookie = getManagedDeviceCookieFromRequest(request as Request);
-  const managedSessionCookie = getCookieValueFromRequest(request, AUTH_DEVICE_SESSION_COOKIE);
+  const managedSessionCookie = getManagedSessionCookieFromRequest(request as Request);
+
+  if (!sessionCookie) {
+    return resolveManagedOnlyAuthSessionValidation({
+      deviceCookie,
+      managedSessionCookie,
+      hydrateUserRecord: false,
+    });
+  }
 
   return resolveAuthSessionValidation({
     sessionCookie,
@@ -390,6 +441,14 @@ export async function getCurrentAuthSessionValidation(options?: { hydrateUserRec
   const roleCookie = getLatestCookieValue(cookieStore.getAll(AUTH_ROLE_COOKIE));
   const deviceCookie = getLatestCookieValue(cookieStore.getAll(AUTH_DEVICE_COOKIE));
   const managedSessionCookie = getLatestCookieValue(cookieStore.getAll(AUTH_DEVICE_SESSION_COOKIE));
+
+  if (!sessionCookie) {
+    return resolveManagedOnlyAuthSessionValidation({
+      deviceCookie,
+      managedSessionCookie,
+      hydrateUserRecord: options?.hydrateUserRecord,
+    });
+  }
 
   return resolveAuthSessionValidation({
     sessionCookie,
