@@ -423,7 +423,7 @@ export async function GET(request: Request) {
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const collectionName = getMediaCollectionName(request, session?.userRecord || session);
+    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
 
     const adminSetupError = getFirebaseAdminSetupError();
 

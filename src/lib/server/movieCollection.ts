@@ -4,7 +4,6 @@ import {
   MOVIES_COLLECTION,
 } from '@/lib/server/firestoreNamespaces';
 
-export const PRODUCTION_MEDIA_COLLECTION = 'movies__production';
 export const TRAILER_MEDIA_COLLECTION = 'movies__trailers';
 export const BETA_TESTER_EMAIL = 'test@ugmovies247.com';
 const LICENSED_COUNTRIES = new Set(['ZA', 'UG']);
@@ -38,7 +37,7 @@ function getHeaderValue(req: MediaCollectionRequest, headerName: string) {
   return Array.isArray(value) ? value[0] || '' : value || '';
 }
 
-export function getMediaCollectionName(
+export async function getMediaCollectionName(
   req: MediaCollectionRequest,
   userProfile: MediaUserProfile
 ) {
@@ -51,7 +50,7 @@ export function getMediaCollectionName(
   const countryCode = getHeaderValue(req, 'cf-ipcountry').trim().toUpperCase();
 
   if (LICENSED_COUNTRIES.has(countryCode)) {
-    return PRODUCTION_MEDIA_COLLECTION;
+    return resolveMovieCollectionName();
   }
 
   return TRAILER_MEDIA_COLLECTION;

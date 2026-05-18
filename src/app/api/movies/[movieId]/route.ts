@@ -294,7 +294,7 @@ export async function GET(
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const collectionName = getMediaCollectionName(request, session?.userRecord || session);
+    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
     const snapshot = await adminDb.collection(collectionName).doc(movieId).get();
 
     if (!snapshot.exists) {
