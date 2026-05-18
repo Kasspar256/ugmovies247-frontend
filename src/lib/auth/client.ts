@@ -672,7 +672,6 @@ async function prepareInteractiveGoogleSignIn() {
   await getNativeFirebaseAuthentication()?.signOut?.().catch(() => undefined);
 }
 
-
 function buildNativeGoogleUnavailableError() {
   const error = new Error(
     'Google sign-in needs the latest app update on this device. Please use email sign-in for now, or update the app and try again.'

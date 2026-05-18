@@ -1,4 +1,7 @@
-import { getHydratedClientDeviceHeaders, rememberClientDeviceSession } from '@/lib/auth/deviceIdentity';
+import {
+  getHydratedClientDeviceHeaders,
+  rememberClientDeviceSession,
+} from '@/lib/auth/deviceIdentity';
 
 export type ClientAuthStatus = {
   authenticated: boolean;

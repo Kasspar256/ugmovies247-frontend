@@ -11,14 +11,6 @@ import {
 
 const authPages = ['/login', '/signup', '/forgot-password'];
 
-function matchesProtectedPath(pathname: string) {
-  if (pathname === '/browse') {
-    return true;
-  }
-
-  return protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
-}
-
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
@@ -37,14 +29,6 @@ export function middleware(request: NextRequest) {
   }
 
   if (isReviewSession) {
-    if (pathname === '/api/admin/card-payments') {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-
-    if (pathname === '/cardspayments' || pathname.startsWith('/cardspayments/')) {
-      return NextResponse.redirect(new URL(hasSession ? APP_REVIEW_HOME_PATH : '/login', request.url));
-    }
-
     if (isReviewBlockedApiPath(pathname)) {
       return NextResponse.json({ error: 'Subscriptions are unavailable in this app build.' }, { status: 404 });
     }

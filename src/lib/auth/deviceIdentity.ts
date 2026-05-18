@@ -17,29 +17,56 @@ let memoryDeviceSession = '';
 
 function createDeviceId() {
   const cryptoApi = typeof crypto !== 'undefined' ? crypto : null;
-  return cryptoApi?.randomUUID
-    ? cryptoApi.randomUUID()
-    : `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID();
+  }
+
+  return `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function getNativePreferences() {
-  if (typeof window === 'undefined') return null;
-  const capacitor = (window as typeof window & { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor;
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const capacitor = (window as typeof window & {
+    Capacitor?: { Plugins?: Record<string, unknown> };
+  }).Capacitor;
+
   return (capacitor?.Plugins?.Preferences || null) as NativePreferencesPlugin | null;
 }
 
 function readLocalStorageValue(key: string) {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') return '';
-  try { return window.localStorage.getItem(key) || ''; } catch { return ''; }
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return '';
+  }
+
+  try {
+    return window.localStorage.getItem(key) || '';
+  } catch {
+    return '';
+  }
 }
 
 function writeLocalStorageValue(key: string, value: string) {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined' || !value) return;
-  try { window.localStorage.setItem(key, value); } catch {}
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined' || !value) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures; native storage or cookies may still carry auth.
+  }
 }
 
 function writeNativeValue(key: string, value: string) {
-  if (value) void getNativePreferences()?.set?.({ key, value }).catch(() => undefined);
+  if (!value) {
+    return;
+  }
+
+  void getNativePreferences()?.set?.({ key, value }).catch(() => undefined);
 }
 
 function removeNativeValue(key: string) {
@@ -47,16 +74,26 @@ function removeNativeValue(key: string) {
 }
 
 export async function hydrateClientDeviceIdentity() {
-  if (hydratedNativeIdentity) return;
-  if (nativeHydrationPromise) return nativeHydrationPromise;
+  if (hydratedNativeIdentity) {
+    return;
+  }
+
+  if (nativeHydrationPromise) {
+    return nativeHydrationPromise;
+  }
 
   nativeHydrationPromise = (async () => {
     const preferences = getNativePreferences();
     const localDeviceId = readLocalStorageValue(CLIENT_DEVICE_ID_STORAGE_KEY);
     const localSession = readLocalStorageValue(CLIENT_DEVICE_SESSION_STORAGE_KEY);
 
-    if (localDeviceId) memoryDeviceId = localDeviceId;
-    if (localSession) memoryDeviceSession = localSession;
+    if (localDeviceId) {
+      memoryDeviceId = localDeviceId;
+    }
+
+    if (localSession) {
+      memoryDeviceSession = localSession;
+    }
 
     if (!preferences?.get) {
       hydratedNativeIdentity = true;
@@ -67,9 +104,11 @@ export async function hydrateClientDeviceIdentity() {
       preferences.get({ key: CLIENT_DEVICE_ID_STORAGE_KEY }).catch(() => ({ value: '' })),
       preferences.get({ key: CLIENT_DEVICE_SESSION_STORAGE_KEY }).catch(() => ({ value: '' })),
     ]);
+    const nativeDeviceId = String(nativeDeviceIdResult.value || '').trim();
+    const nativeSession = String(nativeSessionResult.value || '').trim();
 
-    memoryDeviceId = localDeviceId || String(nativeDeviceIdResult.value || '').trim() || memoryDeviceId;
-    memoryDeviceSession = localSession || String(nativeSessionResult.value || '').trim() || memoryDeviceSession;
+    memoryDeviceId = localDeviceId || nativeDeviceId || memoryDeviceId;
+    memoryDeviceSession = localSession || nativeSession || memoryDeviceSession;
 
     if (memoryDeviceId) {
       writeLocalStorageValue(CLIENT_DEVICE_ID_STORAGE_KEY, memoryDeviceId);
@@ -82,13 +121,16 @@ export async function hydrateClientDeviceIdentity() {
     }
 
     hydratedNativeIdentity = true;
-  })().finally(() => { nativeHydrationPromise = null; });
+  })().finally(() => {
+    nativeHydrationPromise = null;
+  });
 
   return nativeHydrationPromise;
 }
 
 export function getClientDeviceId() {
   const storedDeviceId = readLocalStorageValue(CLIENT_DEVICE_ID_STORAGE_KEY) || memoryDeviceId;
+
   if (storedDeviceId) {
     memoryDeviceId = storedDeviceId;
     return storedDeviceId;
@@ -102,7 +144,10 @@ export function getClientDeviceId() {
 }
 
 export function rememberClientDeviceSession(sessionValue?: string | null) {
-  if (!sessionValue) return;
+  if (!sessionValue) {
+    return;
+  }
+
   memoryDeviceSession = sessionValue;
   writeLocalStorageValue(CLIENT_DEVICE_SESSION_STORAGE_KEY, sessionValue);
   writeNativeValue(CLIENT_DEVICE_SESSION_STORAGE_KEY, sessionValue);
@@ -116,15 +161,22 @@ export function getClientDeviceSession() {
 
 export function clearClientDeviceSession() {
   memoryDeviceSession = '';
+
   if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-    try { window.localStorage.removeItem(CLIENT_DEVICE_SESSION_STORAGE_KEY); } catch {}
+    try {
+      window.localStorage.removeItem(CLIENT_DEVICE_SESSION_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
   }
+
   removeNativeValue(CLIENT_DEVICE_SESSION_STORAGE_KEY);
 }
 
 export function getClientDeviceHeaders() {
   const deviceId = getClientDeviceId();
   const deviceSession = getClientDeviceSession();
+
   return {
     ...(deviceId ? { [CLIENT_DEVICE_ID_HEADER]: deviceId } : {}),
     ...(deviceSession ? { [CLIENT_DEVICE_SESSION_HEADER]: deviceSession } : {}),
