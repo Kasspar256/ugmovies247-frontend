@@ -24,6 +24,7 @@ type AdminMovieMetadata = {
   category?: string[];
   vj?: string;
   releaseDate?: string;
+  language?: string;
   country?: string;
   tmdbId?: number | null;
   status?: string;
@@ -75,6 +76,7 @@ function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
     category: categories,
     vj: input?.vj || 'Unknown',
     release_date: input?.releaseDate || '',
+    language: input?.language || '',
     date_added: isoNow(),
     country: input?.country || 'Unknown',
     tmdb_id: typeof input?.tmdbId === 'number' ? input.tmdbId : null,

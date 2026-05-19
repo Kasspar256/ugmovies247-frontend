@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebaseAdmin';
 import {
+  FIRESTORE_ENV_NAMESPACE,
   LEGACY_MOVIES_COLLECTION,
   MOVIES_COLLECTION,
 } from '@/lib/server/firestoreNamespaces';
@@ -27,10 +28,14 @@ export async function getMediaCollectionName(
   _req: MediaCollectionRequest,
   userProfile: MediaUserProfile
 ) {
-  const email = userProfile?.email || '';
+  const email = String(userProfile?.email || '').trim().toLowerCase();
 
   if (email === BETA_TESTER_EMAIL) {
     return TRAILER_MEDIA_COLLECTION;
+  }
+
+  if (FIRESTORE_ENV_NAMESPACE !== 'production') {
+    return MOVIES_COLLECTION;
   }
 
   return PRODUCTION_MEDIA_COLLECTION;

@@ -16,6 +16,10 @@ import {
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
+import {
+  isIndianCatalogMovie,
+  mergeUniqueRegionalValues,
+} from '@/lib/regionalCatalog';
 import type { VideoJobStatus } from '@/types/videoJobs';
 
 type PublishMode = 'upload' | 'link';
@@ -27,6 +31,7 @@ type TmdbResult = {
   overview?: string;
   poster_path?: string | null;
   release_date?: string;
+  original_language?: string;
 };
 
 type TmdbMovieDetails = {
@@ -36,9 +41,19 @@ type TmdbMovieDetails = {
   overview?: string;
   poster_path?: string | null;
   release_date?: string;
+  original_language?: string;
   genres?: Array<{
     id: number;
     name: string;
+  }>;
+  production_countries?: Array<{
+    iso_3166_1?: string;
+    name?: string;
+  }>;
+  spoken_languages?: Array<{
+    english_name?: string;
+    iso_639_1?: string;
+    name?: string;
   }>;
 };
 
@@ -57,6 +72,45 @@ const MANUAL_CATEGORY_ORDER = [
 
 function buildTmdbPosterUrl(path?: string | null) {
   return path ? `https://image.tmdb.org/t/p/w780${path}` : '';
+}
+
+const LANGUAGE_CODE_LABELS: Record<string, string> = {
+  as: 'Assamese',
+  bn: 'Bengali',
+  gu: 'Gujarati',
+  hi: 'Hindi',
+  kn: 'Kannada',
+  ml: 'Malayalam',
+  mr: 'Marathi',
+  or: 'Odia',
+  pa: 'Punjabi',
+  ta: 'Tamil',
+  te: 'Telugu',
+  ur: 'Urdu',
+};
+
+function getTmdbCountryLabel(details: TmdbMovieDetails | null) {
+  const countries = details?.production_countries || [];
+  const india = countries.find((country) => country.iso_3166_1 === 'IN');
+  const selectedCountry = india || countries[0];
+
+  return selectedCountry?.name?.trim() || '';
+}
+
+function getTmdbLanguageLabel(details: TmdbMovieDetails | null) {
+  const spokenLanguage = details?.spoken_languages?.find(
+    (language) => language.english_name || language.name
+  );
+  const languageCode = String(
+    spokenLanguage?.iso_639_1 || details?.original_language || ''
+  ).toLowerCase();
+
+  return (
+    spokenLanguage?.english_name?.trim() ||
+    spokenLanguage?.name?.trim() ||
+    LANGUAGE_CODE_LABELS[languageCode] ||
+    languageCode
+  );
 }
 
 function formatBytes(value: number) {
@@ -124,6 +178,7 @@ export function AdminMovieCreateView() {
   const [tmdbResults, setTmdbResults] = useState<TmdbResult[]>([]);
   const [tmdbLoading, setTmdbLoading] = useState(false);
   const [selectedTmdb, setSelectedTmdb] = useState<TmdbResult | null>(null);
+  const [selectedTmdbDetails, setSelectedTmdbDetails] = useState<TmdbMovieDetails | null>(null);
   const [showTmdbResults, setShowTmdbResults] = useState(false);
   const [posterOverrideFile, setPosterOverrideFile] = useState<File | null>(null);
   const [posterOverridePreview, setPosterOverridePreview] = useState('');
@@ -227,6 +282,7 @@ export function AdminMovieCreateView() {
     setTmdbQuery('');
     setTmdbResults([]);
     setSelectedTmdb(null);
+    setSelectedTmdbDetails(null);
     setShowTmdbResults(false);
     setPosterOverrideFile(null);
     setPosterOverridePreview('');
@@ -295,13 +351,26 @@ export function AdminMovieCreateView() {
     details: TmdbMovieDetails,
     result?: TmdbResult | null
   ) => {
+    const tmdbGenres = details.genres?.map((genre) => genre.name).filter(Boolean) || [];
+    const tmdbCountry = getTmdbCountryLabel(details);
+    const tmdbLanguage = getTmdbLanguageLabel(details);
+    const shouldMarkIndian = isIndianCatalogMovie({
+      country: tmdbCountry,
+      language: tmdbLanguage,
+      original_language: details.original_language,
+      genres: tmdbGenres,
+    });
+    const nextGenres = mergeUniqueRegionalValues(
+      tmdbGenres.length ? tmdbGenres : splitCommaList(genres),
+      shouldMarkIndian ? ['Indian'] : []
+    );
+
     setSelectedTmdb(result || null);
+    setSelectedTmdbDetails(details);
     setTitle(details.title || result?.title || title);
     setDescription(details.overview || result?.overview || description);
     setReleaseYear(details.release_date?.slice(0, 4) || result?.release_date?.slice(0, 4) || releaseYear);
-    setGenres(
-      details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || genres
-    );
+    setGenres(nextGenres.join(', ') || genres);
     setShowTmdbResults(false);
   };
 
@@ -309,6 +378,7 @@ export function AdminMovieCreateView() {
     setTmdbLoading(true);
     setErrorMessage('');
     setSelectedTmdb(result);
+    setSelectedTmdbDetails(null);
     setShowTmdbResults(false);
 
     try {
@@ -379,15 +449,36 @@ export function AdminMovieCreateView() {
         ? await uploadPosterToAdmin(posterOverrideFile)
         : null;
       const isTrendingTikTok = selectedCategories.includes(TRENDING_CATEGORY);
+      const tmdbCountry = getTmdbCountryLabel(selectedTmdbDetails);
+      const fallbackLanguageCode = String(selectedTmdb?.original_language || '').toLowerCase();
+      const tmdbLanguage =
+        getTmdbLanguageLabel(selectedTmdbDetails) ||
+        LANGUAGE_CODE_LABELS[fallbackLanguageCode] ||
+        fallbackLanguageCode;
+      const baseGenres = splitCommaList(genres);
+      const isIndianTitle = isIndianCatalogMovie({
+        country: tmdbCountry,
+        language: tmdbLanguage,
+        original_language: selectedTmdbDetails?.original_language || selectedTmdb?.original_language,
+        genres: baseGenres,
+        category: selectedCategories,
+      });
+      const finalGenres = mergeUniqueRegionalValues(baseGenres, isIndianTitle ? ['Indian'] : []);
+      const finalCategories = mergeUniqueRegionalValues(
+        selectedCategories,
+        isIndianTitle ? ['Indian movies'] : []
+      );
       const metadata = {
         title: title.trim(),
         originalTitle: selectedTmdb?.original_title || title.trim(),
         description: description.trim(),
         poster: uploadedPoster?.publicUrl || currentPoster,
-        genres: splitCommaList(genres),
-        category: selectedCategories,
+        genres: finalGenres,
+        category: finalCategories,
         vj: vj.trim() || 'Unknown',
         releaseDate: releaseYear.trim() ? `${releaseYear.trim()}-01-01` : '',
+        country: tmdbCountry,
+        language: tmdbLanguage,
         tmdbId: typeof selectedTmdb?.id === 'number' ? selectedTmdb.id : null,
         isTrendingTikTok,
         contentType: 'movie' as const,

@@ -14,6 +14,7 @@ export type Episode = {
   video_url: string;
   poster?: string;
   thumbnail?: string;
+  overriddenBackdrop?: string;
   sourceType?: SourceType;
   sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
@@ -116,6 +117,9 @@ export type Movie = {
   tags?: string[];
   cast?: string[];
   poster: string;
+  overriddenBackdrop?: string;
+  overriddenPlayerBackdrop?: string;
+  playerBackdrop?: string;
   genres: string[];
   category?: string[];
   vj?: string;
@@ -264,6 +268,10 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                 video_url: typeof rawEpisode.video_url === 'string' ? rawEpisode.video_url : '',
                 poster: typeof rawEpisode.poster === 'string' ? rawEpisode.poster : '',
                 thumbnail: typeof rawEpisode.thumbnail === 'string' ? rawEpisode.thumbnail : '',
+                overriddenBackdrop:
+                  typeof rawEpisode.overriddenBackdrop === 'string'
+                    ? rawEpisode.overriddenBackdrop
+                    : '',
                 sourceType: normalizeSourceType(rawEpisode.sourceType),
                 sourcePipeline: normalizeSourcePipeline(rawEpisode.sourcePipeline),
                 sourceFileName: typeof rawEpisode.sourceFileName === 'string' ? rawEpisode.sourceFileName : '',
@@ -359,6 +367,12 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
       ? data.cast.filter((castMember): castMember is string => typeof castMember === 'string')
       : [],
     poster: typeof data.poster === 'string' ? data.poster : '',
+    overriddenBackdrop:
+      typeof data.overriddenBackdrop === 'string' ? data.overriddenBackdrop : '',
+    overriddenPlayerBackdrop:
+      typeof data.overriddenPlayerBackdrop === 'string' ? data.overriddenPlayerBackdrop : '',
+    playerBackdrop:
+      typeof data.playerBackdrop === 'string' ? data.playerBackdrop : '',
     genres: Array.isArray(data.genres)
       ? data.genres.filter((genre): genre is string => typeof genre === 'string')
       : [],

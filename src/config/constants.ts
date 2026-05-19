@@ -69,6 +69,7 @@ export const GENRE_DIRECTORY = [
   'Fantasy',
   'History',
   'Horror',
+  'Indian',
   'K-Drama',
   'Mystery',
   'Romance',

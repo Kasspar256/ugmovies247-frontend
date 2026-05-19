@@ -23,7 +23,6 @@ import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
 import { Bookmark, Cast, Heart, Lock, Share2 } from 'lucide-react';
 import { fetchPublicMovieById, fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
-import MobileBackButton from '@/components/MobileBackButton';
 import { startCasting } from '@/lib/cast';
 import {
   PersistentPlaybackHost,
@@ -76,6 +75,7 @@ function mergeEpisodePlaybackCandidate(
     video_url: incoming.video_url || existing?.video_url || '',
     sourceUrl: incoming.sourceUrl || existing?.sourceUrl || '',
     masterPlaylistUrl: '',
+    overriddenBackdrop: incoming.overriddenBackdrop || existing?.overriddenBackdrop || '',
     poster: incoming.poster || existing?.poster || '',
     thumbnail: incoming.thumbnail || existing?.thumbnail || '',
     playbackType: 'mp4',
@@ -415,6 +415,7 @@ seriesSourceEntries.forEach((entry) => {
           video_url: episode.video_url,
           sourceUrl: episode.sourceUrl,
           masterPlaylistUrl: episode.masterPlaylistUrl,
+          overriddenBackdrop: episode.overriddenBackdrop || entry.overriddenBackdrop,
           poster: episode.poster || season.poster || entry.poster,
           thumbnail: episode.thumbnail || episode.poster || season.poster || entry.poster,
           playbackType: episode.playbackType,
@@ -442,6 +443,7 @@ seriesSourceEntries.forEach((entry) => {
       video_url: entry.video_url || '',
       sourceUrl: entry.sourceUrl || '',
       masterPlaylistUrl: entry.masterPlaylistUrl || '',
+      overriddenBackdrop: entry.overriddenBackdrop || '',
       poster: entry.poster || '',
       thumbnail: entry.poster || '',
       playbackType: entry.playbackType,
@@ -467,6 +469,11 @@ const activeEpisode = selectedEpisode
       sourceUrl: selectedEpisodePlaybackCandidate?.sourceUrl || selectedEpisode.sourceUrl || '',
       masterPlaylistUrl:
         selectedEpisodePlaybackCandidate?.masterPlaylistUrl || selectedEpisode.masterPlaylistUrl || '',
+      overriddenBackdrop:
+        selectedEpisode.overriddenBackdrop ||
+        selectedEpisodePlaybackCandidate?.overriddenBackdrop ||
+        movie?.overriddenBackdrop ||
+        '',
       poster: selectedEpisodePlaybackCandidate?.poster || selectedEpisode.poster || '',
       thumbnail: selectedEpisodePlaybackCandidate?.thumbnail || selectedEpisode.thumbnail || '',
       playbackType: selectedEpisodePlaybackCandidate?.playbackType || selectedEpisode.playbackType,
@@ -515,15 +522,23 @@ const castPlaybackUrl =
   movie?.contentType === 'series'
     ? activeEpisode?.masterPlaylistUrl || seriesPlaybackVideoUrl
     : selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || moviePlaybackVideoUrl;
-const playbackPoster =
-  selectedPart?.poster ||
-  selectedPart?.thumbnail ||
-  activeEpisode?.poster ||
+const seriesPlaybackPoster =
+  activeEpisode?.overriddenBackdrop ||
+  movie?.overriddenBackdrop ||
   activeEpisode?.thumbnail ||
+  activeEpisode?.poster ||
   selectedSeason?.poster ||
   movie?.poster ||
   '';
-const playerBackdrop = playbackPoster || movie?.poster || '';
+const moviePlayerBackdrop =
+  movie?.contentType === 'series'
+    ? ''
+    : movie?.overriddenPlayerBackdrop || movie?.playerBackdrop || '';
+const playbackPoster =
+  movie?.contentType === 'series' ? seriesPlaybackPoster : moviePlayerBackdrop;
+const playerBackdrop = playbackPoster;
+const downloadArtwork =
+  (movie?.contentType === 'series' ? playbackPoster : movie?.poster || playbackPoster) || '';
 const playbackDescription =
   movie?.contentType === 'series'
     ? (
@@ -603,7 +618,7 @@ const downloadBaseInput = movie && playbackVideoUrl
       movieId: movie.movieId || movie.id,
       title: playbackTitle || movie.title || movie.name || 'Untitled movie',
       video_url: playbackVideoUrl,
-      poster: playbackPoster,
+      poster: downloadArtwork,
       contentType: activeEpisode ? 'episode' as const : selectedPart ? 'part' as const : 'movie' as const,
       seriesId: activeEpisode ? movie.id || movie.movieId : undefined,
       seasonNumber: activeEpisode ? selectedSeason?.seasonNumber || 1 : null,
@@ -1017,41 +1032,8 @@ const reviewTrailerUrl = isAppInReview ? getReviewTrailerUrl(movie) : '';
 
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
 
-  {/* Mobile Header */}
-  <header className="fixed top-4 left-4 right-4 z-50 md:hidden">
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <MobileBackButton
-          fallbackHref="/browse"
-          className="pointer-events-auto h-[38px] w-[38px] rounded-[22px] border border-white/10 bg-[#1B2230]/62 p-0 shadow-[0_6px_18px_rgba(0,0,0,0.30)] backdrop-blur-xl"
-        />
-        <Link
-          href="/browse"
-          className="pointer-events-auto h-[38px] w-[68px] rounded-[22px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center overflow-hidden"
-        >
-          <img
-            src="/logow.png"
-            alt="UGMOVIES247"
-            className="w-14 h-14 object-cover scale-125 translate-y-2"
-          />
-        </Link>
-      </div>
-
-      <div className="pointer-events-auto h-[34px] px-2 rounded-[20px] bg-[#1B2230]/62 backdrop-blur-xl border border-white/10 shadow-[0_6px_18px_rgba(0,0,0,0.30)] flex items-center justify-center gap-2">
-        <Link href="/watchlist" className="text-white/90 hover:text-white transition-colors" aria-label="My List">
-          <Bookmark size={18} />
-        </Link>
-        <Link href="/profile" className="text-white/90 hover:text-white transition-colors" aria-label="Profile">
-          <svg className="w-[20px] h-[20px]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-          </svg>
-        </Link>
-      </div>
-    </div>
-  </header>
-
   {/* Video Player */}
-  <div className="relative isolate mt-20 h-[40vh] min-h-[220px] w-full overflow-hidden bg-black md:mx-auto md:mt-[118px] md:h-[72vh] md:max-w-[1380px] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
+  <div className="relative isolate mt-0 h-[40vh] min-h-[220px] w-full overflow-hidden bg-black md:mx-auto md:mt-6 md:h-[72vh] md:max-w-[1380px] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
     {showPlayerPreviewBackdrop && (
       <div className="absolute inset-0">
         <img
@@ -1353,7 +1335,13 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           {selectedSeasonEpisodes.map((episode) => {
             const episodeLabel = getEpisodeLabel(episode.episodeNumber);
             const episodeDisplayTitle = getEpisodeDisplayTitle(episode.episodeNumber, episode.title);
-            const episodePreview = episode.thumbnail || episode.poster || selectedSeason?.poster || movie.poster;
+            const episodePreview =
+              episode.overriddenBackdrop ||
+              movie.overriddenBackdrop ||
+              episode.thumbnail ||
+              episode.poster ||
+              selectedSeason?.poster ||
+              movie.poster;
 
             return (
               <button

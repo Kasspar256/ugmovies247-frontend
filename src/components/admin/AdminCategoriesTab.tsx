@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { AdminCategory } from '@/types/admin';
 import type { Movie } from '@/types/movie';
+import { isIndianCatalogMovie, isIndianSectionName } from '@/lib/regionalCatalog';
 import {
   Card,
   FieldLabel,
@@ -37,6 +38,10 @@ function getCategoryItems(category: AdminCategory, movies: Movie[]) {
   const categorySlug = slugify(category.name);
 
   return movies.filter((movie) => {
+    if (isIndianSectionName(category.name)) {
+      return isIndianCatalogMovie(movie);
+    }
+
     if (category.type === 'genre') {
       return includesIgnoreCase(movie.genres, category.name);
     }

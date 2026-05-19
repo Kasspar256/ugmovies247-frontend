@@ -147,12 +147,6 @@ const MODE_CONFIG: Array<{
   icon: typeof Clapperboard;
 }> = [
   {
-    id: 'create-series',
-    label: 'Create New Series',
-    description: 'Search TMDb, set up a brand new series, and upload Season 1 Episode 1.',
-    icon: Sparkles,
-  },
-  {
     id: 'upload-episode',
     label: 'Upload Episode',
     description: 'Pick an existing series, choose the right season, and publish one episode.',
@@ -163,6 +157,12 @@ const MODE_CONFIG: Array<{
     label: 'Add New Season',
     description: 'Open an existing series, create the next season, and upload its first episode.',
     icon: FolderPlus,
+  },
+  {
+    id: 'create-series',
+    label: 'Create New Series',
+    description: 'Set up a brand new series, create Season 1, and upload Episode 1.',
+    icon: Sparkles,
   },
 ];
 
@@ -399,7 +399,7 @@ export function AdminSeriesUploadView() {
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [mode, setMode] = useState<SeriesMode>('create-series');
+  const [mode, setMode] = useState<SeriesMode>('upload-episode');
   const [createSeriesEntryMode, setCreateSeriesEntryMode] = useState<'tmdb' | 'manual'>('tmdb');
   const [seriesSearch, setSeriesSearch] = useState('');
   const [selectedSeriesId, setSelectedSeriesId] = useState('');
@@ -621,9 +621,7 @@ export function AdminSeriesUploadView() {
           cache: 'no-store',
         }
       );
-      const payload = (await response.json()) as
-        | TmdbTvResult[]
-        | { results?: TmdbTvResult[]; error?: string };
+      const payload = (await response.json()) as TmdbTvResult[] | { error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -631,7 +629,7 @@ export function AdminSeriesUploadView() {
         );
       }
 
-      setSeriesTmdbResults(Array.isArray(payload) ? payload : payload.results || []);
+      setSeriesTmdbResults(Array.isArray(payload) ? payload : []);
       setShowSeriesTmdbResults(true);
       setCreateSeriesEntryMode('tmdb');
     } catch (error) {
@@ -1307,7 +1305,8 @@ export function AdminSeriesUploadView() {
     : null;
   const selectedCreateSeasonOneTmdb =
     selectedSeriesTmdbDetails?.seasons?.find((season) => season.season_number === 1) || null;
-  const createSeriesFormVisible = mode === 'create-series';
+  const createSeriesFormVisible =
+    createSeriesEntryMode === 'manual' || Boolean(selectedSeriesTmdbDetails || selectedSeriesTmdb);
   const uploadEpisodePosterPreviewUrl =
     uploadEpisodeSeasonPosterPreview ||
     uploadEpisodeDraft.seasonPosterUrl ||
@@ -1375,7 +1374,7 @@ export function AdminSeriesUploadView() {
           <div className="space-y-6">
             <Card
               title="Choose Workflow"
-              description="Create New Series opens first with TMDb search; switch only when adding episodes to an existing series."
+              description="Keep the page focused. Only the fields for the workflow you are using stay visible."
               className="border-[#D90429]/14 bg-[linear-gradient(180deg,rgba(20,10,14,0.94),rgba(17,20,28,0.9))]"
             >
               <div className="space-y-3">

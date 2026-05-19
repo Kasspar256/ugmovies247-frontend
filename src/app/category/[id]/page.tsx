@@ -7,6 +7,26 @@ import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { isAppInReview } from '@/lib/appReview';
+import { isIndianCatalogMovie, isIndianSectionName, normalizeRegionalCatalogValue } from '@/lib/regionalCatalog';
+
+function movieHasCategorySignal(movie: Movie, categorySlug: string) {
+  const categoryLabel = categorySlug.replace(/[-_]+/g, ' ');
+
+  if (isIndianSectionName(categoryLabel)) {
+    return isIndianCatalogMovie(movie);
+  }
+
+  const normalizedCategory = normalizeRegionalCatalogValue(categoryLabel);
+  const metadata = [
+    ...(movie.category || []),
+    ...(movie.genres || []),
+    ...(movie.tags || []),
+    movie.country || '',
+    movie.language || '',
+  ];
+
+  return metadata.some((entry) => normalizeRegionalCatalogValue(entry) === normalizedCategory);
+}
 
 function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
   if (categorySlug === 'latest') {
@@ -21,29 +41,29 @@ function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
     return catalog.slice(2, 22);
   }
 
-  return catalog;
+  return catalog.filter((movie) => movieHasCategorySignal(movie, categorySlug));
 }
 
 function getCategoryIntro(categoryTitle: string) {
   const normalized = categoryTitle.toLowerCase();
 
   if (isAppInReview) {
-    return `Discover ${categoryTitle.toLowerCase()} trailers, VJ catalog entries, movie details, and curated discovery picks on UG Movies 247.`;
+    return `Discover ${categoryTitle.toLowerCase()} trailers, VJ catalog entries, movie details, and curated discovery picks on UGMOVIES247.`;
   }
 
   if (normalized.includes('luganda')) {
-    return 'Watch Luganda translated movies online, including VJ translated action, drama, comedy, and Hollywood movies on UG Movies 247.';
+    return 'Watch Luganda translated movies online, including VJ translated action, drama, comedy, and Hollywood movies on UGMOVIES247.';
   }
 
   if (normalized.includes('vj')) {
-    return 'Browse Ugandan VJ movies online from popular translators and discover the latest translated movies added to UG Movies 247.';
+    return 'Browse Ugandan VJ movies online from popular translators and discover the latest translated movies added to UGMOVIES247.';
   }
 
   if (normalized.includes('uganda')) {
     return 'Explore Uganda movies online, Ugandan films, series, comedy, action, and trending East African entertainment.';
   }
 
-  return `Watch ${categoryTitle.toLowerCase()} online on UG Movies 247 with latest movies, series, and translated entertainment.`;
+  return `Watch ${categoryTitle.toLowerCase()} online on UGMOVIES247 with latest movies, series, and translated entertainment.`;
 }
 
 export default function CategoryDetail({ params }: { params: { id: string } }) {

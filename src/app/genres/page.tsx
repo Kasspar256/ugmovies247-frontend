@@ -6,6 +6,7 @@ import { type Movie } from '@/types/movie';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
 
 const GENRES = [
   "Action", "Adventure", "Animation", "Comedy", "Crime", 
@@ -15,7 +16,12 @@ const GENRES = [
 ];
 
 const getGenreImage = (genreName: string, movies: Movie[]) => {
-  const movie = movies.find(m => m.genres?.includes(genreName) || m.country === genreName || (genreName === 'Indian' && m.country === 'India'));
+  const movie = movies.find(
+    (m) =>
+      m.genres?.includes(genreName) ||
+      m.country === genreName ||
+      (genreName === 'Indian' && isIndianCatalogMovie(m))
+  );
   return movie
     ? getOptimizedArtworkUrl(movie.poster, 'genre')
     : 'https://image.tmdb.org/t/p/w500/1E5baAaEse26fej7uHcjOgEE2t2.jpg';
@@ -55,7 +61,7 @@ export default function GenresDirectory() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
+    <div className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-14 md:pt-[118px] lg:px-10 font-sans">
       
       <MobilePageHeader
         title="Movie Genres"

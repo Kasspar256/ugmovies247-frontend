@@ -179,16 +179,6 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      createdMovie.contentType === 'series' &&
-      (!createdMovie.seasons || createdMovie.seasons.length === 0)
-    ) {
-      return NextResponse.json(
-        { error: 'Series entries need at least one season with one episode.' },
-        { status: 400 }
-      );
-    }
-
     const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(createdMovie, movieRef.id);
 
     await movieRef.set(preparedMovie.movie);

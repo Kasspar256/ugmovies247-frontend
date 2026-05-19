@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
 import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
@@ -79,10 +79,40 @@ async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 12000): Promise<
   }
 }
 
+function getImageDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('That image could not be read. Try another landscape backdrop.'));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function assertLandscapeBackdrop(file: File) {
+  const dimensions = await getImageDimensions(file);
+
+  if (dimensions.width <= dimensions.height) {
+    throw new Error('Player backdrops must be landscape. Please choose a wider horizontal image.');
+  }
+
+  if (dimensions.width / dimensions.height < 1.55) {
+    throw new Error('Player backdrops should be close to 16:9. Please choose a wider backdrop.');
+  }
+}
+
 export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingPlayerBackdrop, setSavingPlayerBackdrop] = useState(false);
   const [movie, setMovie] = useState<Movie | null>(null);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [title, setTitle] = useState('');
@@ -94,6 +124,8 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const [genres, setGenres] = useState('');
   const [posterFile, setPosterFile] = useState<File | null>(null);
   const [posterPreview, setPosterPreview] = useState('');
+  const [playerBackdropFile, setPlayerBackdropFile] = useState<File | null>(null);
+  const [playerBackdropPreview, setPlayerBackdropPreview] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -159,6 +191,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
         );
         setGenres((nextMovie.genres || []).join(', '));
         setPosterPreview(nextMovie.poster || '');
+        setPlayerBackdropPreview(nextMovie.overriddenPlayerBackdrop || nextMovie.playerBackdrop || '');
       } catch (error) {
         if (mounted) {
           setErrorMessage(error instanceof Error ? error.message : 'Failed to load movie editor.');
@@ -193,12 +226,92 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
     };
   }, [movie?.poster, posterFile]);
 
+  useEffect(() => {
+    if (!playerBackdropFile) {
+      setPlayerBackdropPreview(movie?.overriddenPlayerBackdrop || movie?.playerBackdrop || '');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(playerBackdropFile);
+    setPlayerBackdropPreview(previewUrl);
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [movie?.overriddenPlayerBackdrop, movie?.playerBackdrop, playerBackdropFile]);
+
   const toggleCategory = (name: string) => {
     setSelectedHomeCategories((current) =>
       current.includes(name)
         ? current.filter((entry) => entry !== name)
         : [...current, name]
     );
+  };
+
+  const handlePlayerBackdropFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] || null;
+
+    if (!file) {
+      setPlayerBackdropFile(null);
+      return;
+    }
+
+    setStatusMessage('');
+    setErrorMessage('');
+
+    try {
+      await assertLandscapeBackdrop(file);
+      setPlayerBackdropFile(file);
+    } catch (error) {
+      input.value = '';
+      setPlayerBackdropFile(null);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Please choose a landscape player backdrop.'
+      );
+    }
+  };
+
+  const handleSavePlayerBackdrop = async () => {
+    if (!movie) {
+      return;
+    }
+
+    if (!playerBackdropFile) {
+      setErrorMessage('Choose a landscape player backdrop before saving.');
+      return;
+    }
+
+    setSavingPlayerBackdrop(true);
+    setStatusMessage('');
+    setErrorMessage('');
+
+    try {
+      const uploadedBackdrop = await uploadPosterToAdmin(playerBackdropFile);
+      const response = await fetch(`/api/admin/movies/${movie.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          overriddenPlayerBackdrop: uploadedBackdrop.publicUrl,
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to save player backdrop.');
+      }
+
+      const nextMovie = result.payload.movie as Movie;
+      setMovie(nextMovie);
+      setPlayerBackdropFile(null);
+      setPlayerBackdropPreview(nextMovie.overriddenPlayerBackdrop || uploadedBackdrop.publicUrl);
+      setStatusMessage('Player backdrop override saved. Catalog posters and metadata were preserved.');
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save player backdrop.');
+    } finally {
+      setSavingPlayerBackdrop(false);
+    }
   };
 
   const handleSaveMovie = async () => {
@@ -413,6 +526,54 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                     No poster is currently set for this movie.
                   </div>
                 )}
+              </div>
+            </Card>
+
+            <Card
+              title="Player Backdrop"
+              description="Override only the wide landscape image used on the movie player. Catalog posters, descriptions, genres, and video links stay unchanged."
+            >
+              <div className="space-y-4">
+                <div>
+                  <FieldLabel>Override Player Backdrop</FieldLabel>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePlayerBackdropFileChange}
+                    className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                  />
+                  <div className="mt-2 text-xs leading-6 text-white/45">
+                    Landscape images only. If this is empty, the player uses the official TMDB backdrop for this movie.
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                  <div className="relative aspect-video w-full">
+                    {playerBackdropPreview ? (
+                      <img
+                        src={playerBackdropPreview}
+                        alt={`${title || 'Movie'} player backdrop preview`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm font-bold text-white/45">
+                        No custom player backdrop is set yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={savingPlayerBackdrop || !playerBackdropFile}
+                    onClick={handleSavePlayerBackdrop}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#D90429] px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-60"
+                  >
+                    <Save size={14} />
+                    {savingPlayerBackdrop ? 'Saving Backdrop...' : 'Save Player Backdrop'}
+                  </button>
+                </div>
               </div>
             </Card>
           </div>

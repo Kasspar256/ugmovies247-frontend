@@ -2,6 +2,7 @@ import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
+import { isIndianCatalogMovie, mergeUniqueRegionalValues } from '@/lib/regionalCatalog';
 
 type TmdbMovieSearchResult = {
   id: number;
@@ -15,9 +16,19 @@ type TmdbMovieDetails = {
   title?: string;
   original_title?: string;
   release_date?: string;
+  original_language?: string;
   genres?: Array<{
     id: number;
     name: string;
+  }>;
+  production_countries?: Array<{
+    iso_3166_1?: string;
+    name?: string;
+  }>;
+  spoken_languages?: Array<{
+    english_name?: string;
+    iso_639_1?: string;
+    name?: string;
   }>;
 };
 
@@ -33,6 +44,32 @@ export type GenreRepairSummary = {
   updatedFromSearch: number;
   unresolvedMovies: number;
   unresolvedTitles: string[];
+};
+
+export type RegionalMetadataRepairSummary = {
+  scannedMovies: number;
+  candidateMovies: number;
+  updatedMovies: number;
+  taggedIndianMovies: number;
+  updatedCountries: number;
+  updatedLanguages: number;
+  unresolvedMovies: number;
+  unresolvedTitles: string[];
+};
+
+const LANGUAGE_CODE_LABELS: Record<string, string> = {
+  as: 'Assamese',
+  bn: 'Bengali',
+  gu: 'Gujarati',
+  hi: 'Hindi',
+  kn: 'Kannada',
+  ml: 'Malayalam',
+  mr: 'Marathi',
+  or: 'Odia',
+  pa: 'Punjabi',
+  ta: 'Tamil',
+  te: 'Telugu',
+  ur: 'Urdu',
 };
 
 function normalizeTitle(value: string) {
@@ -85,6 +122,36 @@ function hasUsableGenres(value: unknown) {
   }
 
   return normalized.some((entry) => entry !== 'unknown');
+}
+
+function isBlankRegionalValue(value: unknown) {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  return !normalized || normalized === 'unknown' || normalized === 'n/a' || normalized === 'na';
+}
+
+function getTmdbCountryLabel(details: TmdbMovieDetails) {
+  const countries = details.production_countries || [];
+  const india = countries.find((country) => country.iso_3166_1 === 'IN');
+  const selectedCountry = india || countries[0];
+
+  return selectedCountry?.name?.trim() || '';
+}
+
+function getTmdbLanguageLabel(details: TmdbMovieDetails) {
+  const spokenLanguage = details.spoken_languages?.find(
+    (language) => language.english_name || language.name
+  );
+  const languageCode = String(
+    spokenLanguage?.iso_639_1 || details.original_language || ''
+  ).toLowerCase();
+
+  return (
+    spokenLanguage?.english_name?.trim() ||
+    spokenLanguage?.name?.trim() ||
+    LANGUAGE_CODE_LABELS[languageCode] ||
+    languageCode
+  );
 }
 
 async function fetchTmdbJson(path: string, params?: URLSearchParams) {
@@ -274,6 +341,103 @@ export async function repairMissingMovieGenres(): Promise<GenreRepairSummary> {
     updatedMovies,
     updatedFromTmdbId,
     updatedFromSearch,
+    unresolvedMovies: unresolvedTitles.length,
+    unresolvedTitles: unresolvedTitles.slice(0, 20),
+  };
+}
+
+export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRepairSummary> {
+  const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
+  const allMovies = snapshot.docs.map((doc) => toRepairCandidate(doc));
+  const candidateMovies = allMovies.filter((movie) => {
+    const contentType = typeof movie.contentType === 'string' ? movie.contentType : 'movie';
+    return (
+      contentType !== 'series' &&
+      typeof movie.tmdb_id === 'number' &&
+      Number.isFinite(movie.tmdb_id) &&
+      (isBlankRegionalValue(movie.country) || isBlankRegionalValue(movie.language))
+    );
+  });
+
+  let updatedMovies = 0;
+  let taggedIndianMovies = 0;
+  let updatedCountries = 0;
+  let updatedLanguages = 0;
+  const unresolvedTitles: string[] = [];
+
+  for (const movie of candidateMovies) {
+    try {
+      const details = await fetchMovieDetailsByTmdbId(movie.tmdb_id as number);
+      const tmdbCountry = getTmdbCountryLabel(details);
+      const tmdbLanguage = getTmdbLanguageLabel(details);
+      const existingGenres = Array.isArray(movie.genres)
+        ? movie.genres.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+      const tmdbGenres = (details.genres || [])
+        .map((genre) => genre.name?.trim() || '')
+        .filter(Boolean);
+      const existingCategories = Array.isArray(movie.category)
+        ? movie.category.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+      const nextPayload: Record<string, unknown> = {};
+
+      if (tmdbCountry && isBlankRegionalValue(movie.country)) {
+        nextPayload.country = tmdbCountry;
+        updatedCountries += 1;
+      }
+
+      if (tmdbLanguage && isBlankRegionalValue(movie.language)) {
+        nextPayload.language = tmdbLanguage;
+        updatedLanguages += 1;
+      }
+
+      if (!hasUsableGenres(movie.genres) && tmdbGenres.length) {
+        nextPayload.genres = tmdbGenres;
+      }
+
+      const nextGenres = (nextPayload.genres as string[] | undefined) || existingGenres;
+      const isIndianTitle = isIndianCatalogMovie({
+        category: existingCategories,
+        country: String(nextPayload.country || movie.country || ''),
+        genres: nextGenres,
+        language: String(nextPayload.language || movie.language || ''),
+        original_language: details.original_language,
+      });
+
+      if (isIndianTitle) {
+        nextPayload.category = mergeUniqueRegionalValues(existingCategories, ['Indian movies']);
+        nextPayload.genres = mergeUniqueRegionalValues(nextGenres, ['Indian']);
+      }
+
+      if (!Object.keys(nextPayload).length) {
+        continue;
+      }
+
+      nextPayload.updatedAt = new Date().toISOString();
+
+      await adminDb.collection(MOVIES_COLLECTION).doc(movie.id).update(nextPayload);
+      await upsertMovieInCatalogCache({
+        ...movie,
+        ...nextPayload,
+      });
+
+      updatedMovies += 1;
+
+      if (isIndianTitle) {
+        taggedIndianMovies += 1;
+      }
+    } catch {
+      unresolvedTitles.push(getMovieTitle(movie));
+    }
+  }
+
+  return {
+    scannedMovies: allMovies.length,
+    candidateMovies: candidateMovies.length,
+    updatedMovies,
+    taggedIndianMovies,
+    updatedCountries,
+    updatedLanguages,
     unresolvedMovies: unresolvedTitles.length,
     unresolvedTitles: unresolvedTitles.slice(0, 20),
   };

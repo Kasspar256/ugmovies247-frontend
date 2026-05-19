@@ -9,14 +9,11 @@ import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 import { isAppInReview } from '@/lib/appReview';
+import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
 
 function getGenreMovies(genreId: string, allMovies: Movie[]) {
   if (genreId.toLowerCase() === 'indian') {
-    return allMovies.filter(
-      (movie) =>
-        movie.country === 'India' ||
-        movie.genres?.map((genre) => genre.toLowerCase()).includes('indian')
-    );
+    return allMovies.filter((movie) => isIndianCatalogMovie(movie));
   }
 
   if (genreId.toLowerCase() === 'k-drama' || genreId.toLowerCase() === 'k drama') {
@@ -36,10 +33,10 @@ function getGenreIntro(genreId: string, count: number) {
   const normalizedGenre = genreId.replace(/[-_]+/g, ' ').trim();
   const readableGenre = normalizedGenre || 'movie';
   if (isAppInReview) {
-    return `Discover ${count} ${readableGenre} trailer picks on UG Movies 247, including VJ catalog entries, movie details, and discovery lists selected for Uganda and East Africa.`;
+    return `Discover ${count} ${readableGenre} trailer picks on UGMOVIES247, including VJ catalog entries, movie details, and discovery lists selected for Uganda and East Africa.`;
   }
 
-  return `Watch ${count} ${readableGenre} titles on UG Movies 247, including Ugandan movies, Luganda translated movies, VJ translated movies, and online entertainment selected for Uganda and East Africa.`;
+  return `Watch ${count} ${readableGenre} titles on UGMOVIES247, including Ugandan movies, Luganda translated movies, VJ translated movies, and online entertainment selected for Uganda and East Africa.`;
 }
 
 export default function GenreDetail({ params }: { params: { id: string } }) {
@@ -120,7 +117,7 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
             <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">
               <img
                 src={getOptimizedArtworkUrl(movie.poster, 'card')}
-                alt={`${isAppInReview ? 'Discover' : 'Watch'} ${movie.title} on UG Movies 247`}
+                alt={`${isAppInReview ? 'Discover' : 'Watch'} ${movie.title} on UGMOVIES247`}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 loading={index < 6 ? 'eager' : 'lazy'}
                 decoding="async"

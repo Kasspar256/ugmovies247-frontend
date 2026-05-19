@@ -42,6 +42,7 @@ export function AdminMoviesTab({
   actionBusy,
   onSearchChange,
   onRepairMissingGenres,
+  onRepairRegionalMetadata,
   onDeleteMovie,
 }: {
   movies: Movie[];
@@ -49,6 +50,7 @@ export function AdminMoviesTab({
   actionBusy: boolean;
   onSearchChange: (value: string) => void;
   onRepairMissingGenres: () => void;
+  onRepairRegionalMetadata: () => void;
   onDeleteMovie: (movieId: string, title: string) => void;
 }) {
   return (
@@ -84,15 +86,26 @@ export function AdminMoviesTab({
         title="Movie Catalog"
         description="Search, open a dedicated edit page, or delete an existing movie."
         action={
-          <button
-            type="button"
-            onClick={onRepairMissingGenres}
-            disabled={actionBusy}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10 disabled:opacity-60"
-          >
-            <RefreshCw size={14} />
-            Repair Missing Genres
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onRepairRegionalMetadata}
+              disabled={actionBusy}
+              className="inline-flex items-center gap-2 rounded-full border border-[#D90429]/35 bg-[#D90429]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#D90429]/18 disabled:opacity-60"
+            >
+              <RefreshCw size={14} />
+              Repair Regions
+            </button>
+            <button
+              type="button"
+              onClick={onRepairMissingGenres}
+              disabled={actionBusy}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/10 disabled:opacity-60"
+            >
+              <RefreshCw size={14} />
+              Repair Genres
+            </button>
+          </div>
         }
       >
         <div className="mb-4 relative">

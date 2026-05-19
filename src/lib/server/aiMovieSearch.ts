@@ -3,6 +3,7 @@ import { isAppInReview } from '@/lib/appReview';
 import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { VJ_DIRECTORY } from '@/config/constants';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
 import { createGeminiEmbedding, getGeminiEmbeddingDimensions } from '@/lib/server/aiGemini';
 import type { AuthSession } from '@/lib/auth/server';
 import type { Movie } from '@/types/movie';
@@ -251,7 +252,7 @@ function matchesAutoHomeRow(movie: AiMovieCandidate, rowKey: string) {
     case 'adventure':
       return hasCatalogLabel(movie, 'adventure');
     case 'indian-movies':
-      return normalizeCatalogLabel(movie.country || '') === 'india' || hasCatalogLabel(movie, 'indian', 'india', 'indian movies');
+      return isIndianCatalogMovie(movie);
     default:
       return false;
   }

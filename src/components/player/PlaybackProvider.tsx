@@ -18,6 +18,7 @@ import {
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  ArrowLeft,
   Cast,
   GripHorizontal,
   Loader2,
@@ -99,6 +100,14 @@ type IOSVideoElement = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void;
   webkitExitFullscreen?: () => void;
   webkitDisplayingFullscreen?: boolean;
+  requestPictureInPicture?: () => Promise<unknown>;
+  disablePictureInPicture?: boolean;
+};
+
+type PictureInPictureDocument = Document & {
+  pictureInPictureElement?: Element | null;
+  pictureInPictureEnabled?: boolean;
+  exitPictureInPicture?: () => Promise<void>;
 };
 
 type ScreenOrientationWithLock = ScreenOrientation & {
@@ -131,6 +140,7 @@ const MINI_PLAYER_BOTTOM_MOBILE = 92;
 const VOLUME_STORAGE_KEY = 'ugmovies247.player.volume';
 const MUTE_STORAGE_KEY = 'ugmovies247.player.muted';
 const PLAYBACK_RATE_STORAGE_KEY = 'ugmovies247.player.rate';
+const BRIGHTNESS_STORAGE_KEY = 'ugmovies247.player.brightness';
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -345,6 +355,25 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
   );
 }
 
+function PictureInPictureIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <rect x="12" y="11" width="7" height="5" rx="1" />
+    </svg>
+  );
+}
+
 function useIsDesktopViewport() {
   const [isDesktop, setIsDesktop] = useState(false);
 
@@ -390,6 +419,26 @@ function useIsIOSDevice() {
   return isIOSDevice;
 }
 
+function useIsTouchDevice() {
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') {
+      return;
+    }
+
+    const hasTouchPoints = (navigator.maxTouchPoints || 0) > 0;
+    const hasCoarsePointer =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches;
+
+    setIsTouchDevice(hasTouchPoints || hasCoarsePointer);
+  }, []);
+
+  return isTouchDevice;
+}
+
 async function lockLandscapeOrientation() {
   if (typeof window === 'undefined') {
     return;
@@ -401,8 +450,10 @@ async function lockLandscapeOrientation() {
     return;
   }
 
-  await orientation.lock('landscape').catch(() => {
-    // Some browsers/WebViews only allow orientation lock after fullscreen starts.
+  await orientation.lock('landscape-primary').catch(async () => {
+    await orientation.lock?.('landscape').catch(() => {
+      // Some browsers/WebViews only allow orientation lock after fullscreen starts.
+    });
   });
 }
 
@@ -422,6 +473,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const isDesktop = useIsDesktopViewport();
   const isIOSDevice = useIsIOSDevice();
+  const isTouchDevice = useIsTouchDevice();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const scrubberRef = useRef<HTMLDivElement | null>(null);
@@ -449,6 +501,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     startX: number;
     startY: number;
   } | null>(null);
+  const sideGestureStateRef = useRef<{
+    pointerId: number;
+    side: 'brightness' | 'volume';
+    startY: number;
+    startValue: number;
+  } | null>(null);
 
   const [activeSource, setActiveSourceState] = useState<PlaybackSource | null>(null);
   const [inlineHost, setInlineHost] = useState<HTMLDivElement | null>(null);
@@ -462,7 +520,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [videoBrightness, setVideoBrightness] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPictureInPicture, setIsPictureInPicture] = useState(false);
+  const [pictureInPictureSupported, setPictureInPictureSupported] = useState(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [desktopSeekFeedback, setDesktopSeekFeedback] = useState('');
@@ -556,6 +617,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setIsMuted(shouldMute);
   }, []);
 
+  const updateBrightnessState = useCallback((nextBrightness: number) => {
+    setVideoBrightness(clamp(nextBrightness, 0.55, 1.45));
+  }, []);
+
   const showControls = useCallback(
     (keepOpen = false) => {
       setControlsVisible(true);
@@ -592,6 +657,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         node.volume = clamp(volume, 0, 1);
         node.muted = isMuted;
         node.playbackRate = playbackRate;
+        (node as IOSVideoElement).disablePictureInPicture = false;
       }
     },
     [isMuted, playbackRate, volume]
@@ -610,8 +676,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setInlineRect(nextRect);
-  }, [inlineHost]);
+    setInlineRect((currentRect) => {
+      if (
+        !isDesktop &&
+        currentRect &&
+        Math.abs(currentRect.width - nextRect.width) < 2 &&
+        Math.abs(currentRect.height - nextRect.height) < 2
+      ) {
+        return currentRect;
+      }
+
+      return nextRect;
+    });
+  }, [inlineHost, isDesktop]);
 
   useLayoutEffect(() => {
     syncInlineRect();
@@ -630,12 +707,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     resizeObserver?.observe(inlineHost);
     window.addEventListener('resize', syncInlineRect);
-    window.addEventListener('scroll', syncInlineRect, true);
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', syncInlineRect);
-      window.removeEventListener('scroll', syncInlineRect, true);
     };
   }, [inlineHost, syncInlineRect]);
 
@@ -678,14 +753,43 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [isDesktop, videoElementState]);
 
   useEffect(() => {
+    const videoElement = videoElementState as IOSVideoElement | null;
+    const pipDocument = document as PictureInPictureDocument;
+    const canUsePictureInPicture = Boolean(
+      videoElement?.requestPictureInPicture &&
+        pipDocument.pictureInPictureEnabled !== false
+    );
+
+    setPictureInPictureSupported(canUsePictureInPicture);
+    setIsPictureInPicture(Boolean(pipDocument.pictureInPictureElement));
+
+    if (!videoElement) {
+      return;
+    }
+
+    const handleEnterPictureInPicture = () => setIsPictureInPicture(true);
+    const handleLeavePictureInPicture = () => setIsPictureInPicture(false);
+
+    videoElement.addEventListener('enterpictureinpicture', handleEnterPictureInPicture);
+    videoElement.addEventListener('leavepictureinpicture', handleLeavePictureInPicture);
+
+    return () => {
+      videoElement.removeEventListener('enterpictureinpicture', handleEnterPictureInPicture);
+      videoElement.removeEventListener('leavepictureinpicture', handleLeavePictureInPicture);
+    };
+  }, [videoElementState]);
+
+  useEffect(() => {
     const storedVolume = clamp(readStoredNumber(VOLUME_STORAGE_KEY, 1), 0, 1);
     const storedMuted = readStoredBoolean(MUTE_STORAGE_KEY, false);
     const storedPlaybackRate = clamp(readStoredNumber(PLAYBACK_RATE_STORAGE_KEY, 1), 0.75, 2);
+    const storedBrightness = clamp(readStoredNumber(BRIGHTNESS_STORAGE_KEY, 1), 0.55, 1.45);
 
     lastVolumeBeforeMuteRef.current = storedVolume > 0.001 ? storedVolume : 1;
     setVolume(storedVolume);
     setIsMuted(storedMuted);
     setPlaybackRate(storedPlaybackRate);
+    setVideoBrightness(storedBrightness);
   }, []);
 
   useEffect(() => {
@@ -693,6 +797,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
       window.localStorage.setItem(MUTE_STORAGE_KEY, String(isMuted));
       window.localStorage.setItem(PLAYBACK_RATE_STORAGE_KEY, String(playbackRate));
+      window.localStorage.setItem(BRIGHTNESS_STORAGE_KEY, String(videoBrightness));
     }
 
     const videoElement = videoRef.current;
@@ -704,7 +809,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     videoElement.volume = clamp(volume, 0, 1);
     videoElement.muted = isMuted;
     videoElement.playbackRate = playbackRate;
-  }, [isMuted, playbackRate, volume]);
+  }, [isMuted, playbackRate, videoBrightness, volume]);
 
   useEffect(() => {
     if (!settingsOpen || !controlsVisible) {
@@ -1072,11 +1177,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (isIOSDevice && typeof videoElement.webkitEnterFullscreen === 'function') {
+      await lockLandscapeOrientation();
       videoElement.webkitEnterFullscreen();
+      window.setTimeout(() => {
+        void lockLandscapeOrientation();
+      }, 250);
       return;
     }
 
     if (shellElement && typeof shellElement.requestFullscreen === 'function') {
+      if (!isDesktop) {
+        await lockLandscapeOrientation();
+      }
       await shellElement.requestFullscreen();
       if (!isDesktop) {
         await lockLandscapeOrientation();
@@ -1085,12 +1197,42 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (typeof videoElement.requestFullscreen === 'function') {
+      if (!isDesktop) {
+        await lockLandscapeOrientation();
+      }
       await videoElement.requestFullscreen();
       if (!isDesktop) {
         await lockLandscapeOrientation();
       }
     }
   }, [isDesktop, isIOSDevice, showControls]);
+
+  const tryTogglePictureInPicture = useCallback(async () => {
+    const videoElement = videoRef.current as IOSVideoElement | null;
+    const pipDocument = document as PictureInPictureDocument;
+
+    showControls(true);
+
+    if (!videoElement?.requestPictureInPicture || pipDocument.pictureInPictureEnabled === false) {
+      showCastFeedback('Picture-in-picture is not supported on this browser.');
+      return;
+    }
+
+    try {
+      if (pipDocument.pictureInPictureElement) {
+        await pipDocument.exitPictureInPicture?.();
+        return;
+      }
+
+      await videoElement.requestPictureInPicture();
+    } catch (error) {
+      showCastFeedback(
+        error instanceof Error
+          ? error.message
+          : 'Picture-in-picture could not be started right now.'
+      );
+    }
+  }, [showCastFeedback, showControls]);
 
   const openWatchView = useCallback(() => {
     if (!activeSource?.watchHref) {
@@ -1292,11 +1434,95 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [activeSource, currentTime, showCastFeedback, showControls]
   );
 
+  useEffect(() => {
+    if (!activeSource || typeof navigator === 'undefined' || !('mediaSession' in navigator)) {
+      return;
+    }
+
+    try {
+      if (typeof MediaMetadata !== 'undefined') {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: activeSource.title,
+          artist: 'UGMOVIES247',
+          album: activeSource.description || 'UGMOVIES247',
+          artwork: activeSource.poster
+            ? [
+                {
+                  src: activeSource.poster,
+                  sizes: '512x512',
+                  type: 'image/jpeg',
+                },
+              ]
+            : [],
+        });
+      }
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        const videoElement = videoRef.current;
+        if (videoElement?.paused || videoElement?.ended) {
+          void videoElement.play().catch(() => undefined);
+        }
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        videoRef.current?.pause();
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', () => seekBy(-10));
+      navigator.mediaSession.setActionHandler('seekforward', () => seekBy(10));
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (typeof details.seekTime === 'number') {
+          seekTo(details.seekTime);
+        }
+      });
+    } catch {
+      // Media Session is best effort and varies by Android browser/WebView.
+    }
+
+    return () => {
+      try {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.setActionHandler('seekbackward', null);
+        navigator.mediaSession.setActionHandler('seekforward', null);
+        navigator.mediaSession.setActionHandler('seekto', null);
+      } catch {
+        // Ignore browsers that expose a partial Media Session API.
+      }
+    };
+  }, [activeSource, seekBy, seekTo]);
+
+  useEffect(() => {
+    if (!activeSource || !pictureInPictureSupported || typeof document === 'undefined') {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      const videoElement = videoRef.current as IOSVideoElement | null;
+      const pipDocument = document as PictureInPictureDocument;
+
+      if (
+        document.visibilityState !== 'hidden' ||
+        playbackPhaseRef.current !== 'playing' ||
+        !videoElement?.requestPictureInPicture ||
+        pipDocument.pictureInPictureElement
+      ) {
+        return;
+      }
+
+      // Browsers may block automatic PiP without a recent user gesture; the manual PiP button
+      // below remains the reliable path when the platform requires explicit permission.
+      void videoElement.requestPictureInPicture().catch(() => undefined);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [activeSource, pictureInPictureSupported]);
+
   const hasInlineHost = Boolean(inlineHost);
   const isInlineMode = Boolean(activeSource && hasInlineHost);
   const isMiniMode = Boolean(activeSource && !hasInlineHost && hasStartedPlayback);
-  const isMobileInlineMode = isInlineMode && !isDesktop;
-  const isDesktopInlineMode = isInlineMode && isDesktop;
+  const isMobileInlineMode = isInlineMode && (!isDesktop || (isFullscreen && isTouchDevice));
+  const isDesktopInlineMode = isInlineMode && !isMobileInlineMode;
 
   useEffect(() => {
     if (!isMiniMode || typeof window === 'undefined') {
@@ -1391,11 +1617,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       : inlineRect
       ? {
           position: 'fixed',
-          top: inlineRect.top,
-          left: inlineRect.left,
-          width: inlineRect.width,
+          top: isDesktop ? inlineRect.top : 0,
+          left: isDesktop ? inlineRect.left : 0,
+          width: isDesktop ? inlineRect.width : '100vw',
           height: inlineRect.height,
-          zIndex: 35,
+          zIndex: isDesktop ? 35 : 70,
         }
       : {
           position: 'fixed',
@@ -1749,13 +1975,28 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (event.key.toLowerCase() === 'p') {
+        event.stopPropagation();
+        event.preventDefault();
+        void tryTogglePictureInPicture();
+        return;
+      }
+
       if (event.key.toLowerCase() === 'm') {
         event.stopPropagation();
         event.preventDefault();
         toggleMute();
       }
     },
-    [adjustVolumeBy, isInlineMode, seekBy, toggleMute, togglePlayPause, tryEnterFullscreen]
+    [
+      adjustVolumeBy,
+      isInlineMode,
+      seekBy,
+      toggleMute,
+      togglePlayPause,
+      tryEnterFullscreen,
+      tryTogglePictureInPicture,
+    ]
   );
 
   useEffect(() => {
@@ -1816,6 +2057,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        void tryTogglePictureInPicture();
+        return;
+      }
+
       if (event.key.toLowerCase() === 'm') {
         event.preventDefault();
         toggleMute();
@@ -1832,6 +2079,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     toggleMute,
     togglePlayPause,
     tryEnterFullscreen,
+    tryTogglePictureInPicture,
   ]);
 
   const handleSurfaceClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -1855,23 +2103,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     showControls();
-
-    if (isMobileInlineMode) {
-      return;
-    }
-
-    clearClickIntentTimer();
-    clickIntentTimerRef.current = setTimeout(() => {
-      togglePlayPause();
-      clickIntentTimerRef.current = null;
-    }, 220);
   }, [
     clearClickIntentTimer,
     isMiniMode,
     isMobileInlineMode,
     seekBy,
     showControls,
-    togglePlayPause,
     tryEnterFullscreen,
   ]);
 
@@ -1915,6 +2152,75 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     },
     [isMiniMode, miniPlayerPosition, showControls]
   );
+
+  const handleSideGestureStart = useCallback(
+    (side: 'brightness' | 'volume', event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isMobileInlineMode) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      showControls(true);
+
+      sideGestureStateRef.current = {
+        pointerId: event.pointerId,
+        side,
+        startY: event.clientY,
+        startValue: side === 'brightness' ? videoBrightness : isMuted ? 0 : volume,
+      };
+    },
+    [isMobileInlineMode, isMuted, showControls, videoBrightness, volume]
+  );
+
+  const handleSideGestureMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const gestureState = sideGestureStateRef.current;
+
+      if (!gestureState || gestureState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const delta = (gestureState.startY - event.clientY) / 180;
+
+      if (gestureState.side === 'brightness') {
+        updateBrightnessState(gestureState.startValue + delta);
+      } else {
+        const nextVolume = clamp(gestureState.startValue + delta, 0, 1);
+        const videoElement = videoRef.current;
+
+        if (videoElement) {
+          try {
+            videoElement.muted = nextVolume <= 0.001;
+            videoElement.volume = nextVolume;
+          } catch {
+            // Some mobile browsers only allow hardware buttons to control real device volume.
+          }
+        }
+
+        updateVolumeState(nextVolume, nextVolume <= 0.001);
+      }
+
+      showControls(true);
+    },
+    [showControls, updateBrightnessState, updateVolumeState]
+  );
+
+  const handleSideGestureEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const gestureState = sideGestureStateRef.current;
+
+    if (!gestureState || gestureState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    sideGestureStateRef.current = null;
+  }, []);
 
   const handleShellPointerMove = useCallback(() => {
     if (!isMiniMode) {
@@ -2026,7 +2332,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               playsInline
               autoPlay={Boolean(activeSource.autoplay)}
               controls={false}
-              style={{ WebkitTapHighlightColor: 'transparent' }}
+              style={{
+                WebkitTapHighlightColor: 'transparent',
+                filter: `brightness(${videoBrightness})`,
+              }}
               className="h-full w-full object-contain bg-black"
               onLoadStart={handleLoadStart}
               onLoadedMetadata={handleLoadedMetadata}
@@ -2093,7 +2402,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         </p>
                       </div>
                     ) : (
-                      <div />
+                      <div className="flex min-w-0 items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label="Go back"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            router.back();
+                          }}
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#D90429]/30 bg-black/48 text-white shadow-[0_12px_28px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+                        >
+                          <ArrowLeft size={17} />
+                        </button>
+                        <div className="hidden min-w-0 rounded-full border border-white/10 bg-black/38 px-3 py-2 backdrop-blur-xl min-[390px]:block">
+                          <p className="max-w-[34vw] truncate text-[10px] font-black uppercase tracking-[0.18em] text-white/72">
+                            {activeSource.title}
+                          </p>
+                        </div>
+                      </div>
                     )}
 
                     <div className="flex items-center gap-2">
@@ -2106,6 +2432,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                       >
                         <Cast size={isMobileInlineMode ? 15 : 18} />
                       </PlayerShellButton>
+                      {pictureInPictureSupported ? (
+                        <PlayerShellButton
+                          ariaLabel={
+                            isPictureInPicture
+                              ? 'Exit picture-in-picture'
+                              : 'Watch in picture-in-picture'
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void tryTogglePictureInPicture();
+                          }}
+                          className={`${isMobileInlineMode ? 'h-9 w-9' : ''} ${
+                            isPictureInPicture ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                          }`}
+                        >
+                          <PictureInPictureIcon size={isMobileInlineMode ? 15 : 18} />
+                        </PlayerShellButton>
+                      ) : null}
                       <PlayerShellButton
                         ariaLabel="Player settings"
                         onClick={(event) => {
@@ -2257,6 +2601,68 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                       </div>
 
                       <div
+                        className={`pointer-events-auto absolute bottom-[5.1rem] left-0 top-[4.5rem] z-20 flex w-[24%] max-w-[112px] touch-none items-center justify-start pl-3 transition-all duration-300 ${
+                          controlsVisible || playbackPhase !== 'playing'
+                            ? 'opacity-100'
+                            : 'opacity-0'
+                        }`}
+                        aria-label="Swipe up or down to adjust brightness"
+                        role="slider"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(((videoBrightness - 0.55) / 0.9) * 100)}
+                        onPointerDown={(event) => handleSideGestureStart('brightness', event)}
+                        onPointerMove={handleSideGestureMove}
+                        onPointerUp={handleSideGestureEnd}
+                        onPointerCancel={handleSideGestureEnd}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="flex h-28 w-10 flex-col items-center justify-center gap-2 rounded-full border border-white/10 bg-black/42 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+                          <Settings2 size={14} className="text-white/82" />
+                          <div className="relative h-14 w-1.5 overflow-hidden rounded-full bg-white/20">
+                            <div
+                              className="absolute inset-x-0 bottom-0 rounded-full bg-[#D90429]"
+                              style={{ height: `${clamp(((videoBrightness - 0.55) / 0.9) * 100, 0, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[8px] font-black tabular-nums text-white/70">
+                            {Math.round(videoBrightness * 100)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`pointer-events-auto absolute bottom-[5.1rem] right-0 top-[4.5rem] z-20 flex w-[24%] max-w-[112px] touch-none items-center justify-end pr-3 transition-all duration-300 ${
+                          controlsVisible || playbackPhase !== 'playing'
+                            ? 'opacity-100'
+                            : 'opacity-0'
+                        }`}
+                        aria-label="Swipe up or down to adjust volume"
+                        role="slider"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round((isMuted ? 0 : volume) * 100)}
+                        onPointerDown={(event) => handleSideGestureStart('volume', event)}
+                        onPointerMove={handleSideGestureMove}
+                        onPointerUp={handleSideGestureEnd}
+                        onPointerCancel={handleSideGestureEnd}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="flex h-28 w-10 flex-col items-center justify-center gap-2 rounded-full border border-white/10 bg-black/42 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+                          {volumeIcon}
+                          <div className="relative h-14 w-1.5 overflow-hidden rounded-full bg-white/20">
+                            <div
+                              className="absolute inset-x-0 bottom-0 rounded-full bg-[#D90429]"
+                              style={{ height: `${clamp((isMuted ? 0 : volume) * 100, 0, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-[8px] font-black tabular-nums text-white/70">
+                            {Math.round((isMuted ? 0 : volume) * 100)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
                         className={`pointer-events-auto absolute inset-x-0 bottom-0 z-20 px-3 pb-3 transition-all duration-300 ${
                           controlsVisible || playbackPhase !== 'playing'
                             ? 'translate-y-0 opacity-100'
@@ -2303,9 +2709,86 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                           ) : null}
                         </div>
 
-                        <div className="flex items-center justify-center">
-                          <div className="rounded-full border border-white/10 bg-black/42 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-white/82">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              aria-label="Rewind 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(-10);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                            >
+                              <SkipBack size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={playbackPhase === 'playing' ? 'Pause video' : 'Play video'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                togglePlayPause();
+                              }}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
+                            >
+                              {playbackPhase === 'playing' ? (
+                                <Pause size={18} />
+                              ) : (
+                                <Play size={18} className="translate-x-[1px]" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Forward 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(10);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                            >
+                              <SkipForward size={16} />
+                            </button>
+                          </div>
+
+                          <div className="min-w-0 flex-1 text-center text-[10px] font-black tabular-nums tracking-[0.12em] text-white/86">
                             {activeTimeLabel}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleMute();
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+                            >
+                              {volumeIcon}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSettingsOpen((currentState) => !currentState);
+                                showControls(true);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label="Player settings"
+                            >
+                              <Settings2 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void tryEnterFullscreen();
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                            >
+                              {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                            </button>
                           </div>
                         </div>
                       </div>

@@ -7,7 +7,6 @@ import {
 } from '@/lib/server/subscriptions';
 import {
   getMediaCollectionName,
-  resolveMovieCollectionName,
   TRAILER_MEDIA_COLLECTION,
 } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
@@ -22,6 +21,85 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   requiresSubscription: true,
   subscription: getSubscriptionSnapshotFromData(null),
 };
+
+function buildTmdbImageUrl(path: unknown, size = 'w1280') {
+  const normalizedPath = typeof path === 'string' ? path.trim() : '';
+
+  if (!normalizedPath) {
+    return '';
+  }
+
+  if (normalizedPath.startsWith('http://') || normalizedPath.startsWith('https://')) {
+    return normalizedPath;
+  }
+
+  return `https://image.tmdb.org/t/p/${size}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
+}
+
+async function fetchTmdbMovieBackdrop(tmdbId: unknown) {
+  const normalizedTmdbId =
+    typeof tmdbId === 'number'
+      ? tmdbId
+      : typeof tmdbId === 'string' && tmdbId.trim()
+        ? Number(tmdbId)
+        : null;
+
+  if (!normalizedTmdbId || !Number.isFinite(normalizedTmdbId)) {
+    return '';
+  }
+
+  const apiKey = process.env.TMDB_API_KEY;
+
+  if (!apiKey) {
+    return '';
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.themoviedb.org/3/movie/${normalizedTmdbId}?api_key=${apiKey}&language=en-US`,
+      { cache: 'no-store' }
+    );
+
+    if (!response.ok) {
+      console.warn('[movie-api] failed to fetch TMDB player backdrop', {
+        tmdbId: normalizedTmdbId,
+        status: response.status,
+      });
+      return '';
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as { backdrop_path?: string | null };
+    return buildTmdbImageUrl(payload.backdrop_path);
+  } catch (error) {
+    console.warn('[movie-api] failed to fetch TMDB player backdrop', {
+      tmdbId: normalizedTmdbId,
+      error: error instanceof Error ? error.message : error,
+    });
+    return '';
+  }
+}
+
+async function withMoviePlayerBackdrop(movieDoc: Record<string, unknown>) {
+  if (movieDoc.contentType === 'series') {
+    return movieDoc;
+  }
+
+  const overriddenPlayerBackdrop = String(movieDoc.overriddenPlayerBackdrop || '').trim();
+
+  if (overriddenPlayerBackdrop) {
+    return {
+      ...movieDoc,
+      playerBackdrop: overriddenPlayerBackdrop,
+    };
+  }
+
+  const tmdbBackdrop = await fetchTmdbMovieBackdrop(movieDoc.tmdb_id);
+
+  return {
+    ...movieDoc,
+    playerBackdrop: tmdbBackdrop,
+  };
+}
 
 function isPremiumAccessTier(accessTier: unknown) {
   return accessTier !== 'free';
@@ -308,33 +386,28 @@ export async function GET(
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const requestedCollectionName = await getMediaCollectionName(request, session?.userRecord || session);
-    const reviewOnly = requestedCollectionName === TRAILER_MEDIA_COLLECTION;
-    const collectionName = reviewOnly ? await resolveMovieCollectionName() : requestedCollectionName;
+    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
     const snapshot = await adminDb.collection(collectionName).doc(movieId).get();
 
     if (!snapshot.exists) {
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
     }
 
-    const movieDoc = withReviewTrailerFallback({
+    const movieDoc = await withMoviePlayerBackdrop(withReviewTrailerFallback({
       id: snapshot.id,
       ...snapshot.data(),
-    });
+    }));
 
-    if (reviewOnly && movieDoc.is_for_review !== true) {
+    if (isAppInReview && movieDoc.is_for_review !== true) {
       return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
     }
 
-    if (
-      reviewOnly &&
-      !hasVisibleCatalogAsset(movieDoc, requestedCollectionName)
-    ) {
+    if (!isAppInReview && !hasVisibleCatalogAsset(movieDoc, collectionName)) {
       return NextResponse.json({ error: 'Movie is not ready yet.' }, { status: 409 });
     }
 
     const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
-    const movie = reviewOnly ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
+    const movie = isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
 
     return NextResponse.json({ movie, entitlement });
   } catch (error) {

@@ -1,11 +1,9 @@
-import { requireAdminPage } from '@/lib/auth/server';
-import { AdminSeriesEditView } from '@/components/admin/AdminSeriesEditView';
+import { redirect } from 'next/navigation';
 
-export default async function AdminSeriesEditPage({
+export default function AdminSeriesEditPage({
   params,
 }: {
   params: { seriesId: string };
 }) {
-  await requireAdminPage(`/admin/series/${params.seriesId}`);
-  return <AdminSeriesEditView seriesId={params.seriesId} />;
+  redirect(`/admin/series/${params.seriesId}/seasons`);
 }

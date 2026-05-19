@@ -140,6 +140,8 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
       sourceUrl: nextEpisode.sourceUrl || existingEpisode.sourceUrl || '',
       masterPlaylistUrl:
         nextEpisode.masterPlaylistUrl || existingEpisode.masterPlaylistUrl || '',
+      overriddenBackdrop:
+        nextEpisode.overriddenBackdrop || existingEpisode.overriddenBackdrop || '',
       poster: nextEpisode.poster || existingEpisode.poster || '',
       thumbnail: nextEpisode.thumbnail || existingEpisode.thumbnail || '',
       playbackType: nextEpisode.playbackType || existingEpisode.playbackType || 'mp4',

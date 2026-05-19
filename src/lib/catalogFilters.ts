@@ -1,4 +1,5 @@
 import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
+import { isIndianCatalogMovie, isIndianSectionName } from '@/lib/regionalCatalog';
 import type { Movie } from '@/types/movie';
 
 export const CATALOG_FILTER_ALL = '__all__';
@@ -129,6 +130,7 @@ export function filterCatalogBySelection(catalog: Movie[], selectedVj: string, s
       matchesCatalogSelectedVj(getCatalogVjName(movie), selectedVj);
     const matchesGenre =
       selectedGenre === CATALOG_FILTER_ALL ||
+      (isIndianSectionName(selectedGenre) && isIndianCatalogMovie(movie)) ||
       getCatalogMovieGenres(movie).some((genre) => matchesCatalogSelectedValue(genre, selectedGenre));
 
     return matchesVj && matchesGenre;

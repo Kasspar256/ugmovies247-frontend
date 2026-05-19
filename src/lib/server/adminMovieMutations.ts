@@ -66,6 +66,7 @@ function normalizeEpisodeInput(input: Record<string, unknown>, episodeIndex: num
     video_url: videoUrl,
     poster: String(input.poster || ''),
     thumbnail: String(input.thumbnail || ''),
+    overriddenBackdrop: String(input.overriddenBackdrop || ''),
     sourceType,
     sourcePipeline: normalizeSourcePipeline(input.sourcePipeline, sourceType),
     sourceFileName: String(input.sourceFileName || videoUrl.split('/').pop() || ''),
@@ -271,6 +272,10 @@ export function buildEditableMovieDocument(
     tags: normalizeEditableStringList(input.tags ?? existingMovie?.tags),
     cast: normalizeEditableStringList(input.cast ?? existingMovie?.cast),
     poster: String(input.poster || existingMovie?.poster || ''),
+    overriddenBackdrop: String(input.overriddenBackdrop || existingMovie?.overriddenBackdrop || ''),
+    overriddenPlayerBackdrop: String(
+      input.overriddenPlayerBackdrop || existingMovie?.overriddenPlayerBackdrop || ''
+    ),
     genres: normalizeEditableStringList(input.genres ?? existingMovie?.genres),
     category: normalizedCategories,
     vj: String(input.vj || existingMovie?.vj || 'Unknown'),

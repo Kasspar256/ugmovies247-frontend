@@ -18,6 +18,58 @@ import type { Episode, Movie, MoviePart } from '@/types/movie';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+export async function GET(
+  _request: Request,
+  context: { params: { movieId: string } }
+) {
+  try {
+    const session = await getCurrentAuthSession();
+
+    if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const adminSetupError = getFirebaseAdminSetupError();
+
+    if (adminSetupError) {
+      return NextResponse.json(
+        {
+          error: 'Admin backend is not configured yet.',
+          detail: adminSetupError,
+        },
+        { status: 500 }
+      );
+    }
+
+    const { movieId } = context.params;
+
+    if (!movieId) {
+      return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
+    }
+
+    const snapshot = await adminDb.collection(MOVIES_COLLECTION).doc(movieId).get();
+
+    if (!snapshot.exists) {
+      return NextResponse.json({ error: 'Movie not found.' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      movie: {
+        id: snapshot.id,
+        ...snapshot.data(),
+      },
+    });
+  } catch (error) {
+    console.error('[admin] failed to load movie', error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Failed to load movie.',
+      },
+      { status: 500 }
+    );
+  }
+}
+
 function collectCandidateUrlsFromEpisode(episode: Partial<Episode>) {
   const urls = new Set<string>();
 
@@ -35,6 +87,10 @@ function collectCandidateUrlsFromEpisode(episode: Partial<Episode>) {
 
   if (episode.thumbnail) {
     urls.add(episode.thumbnail);
+  }
+
+  if (episode.overriddenBackdrop) {
+    urls.add(episode.overriddenBackdrop);
   }
 
   if (episode.masterPlaylistUrl) {
@@ -79,6 +135,14 @@ function collectCandidateUrls(movie: Movie) {
 
   if (movie.poster) {
     urls.add(movie.poster);
+  }
+
+  if (movie.overriddenBackdrop) {
+    urls.add(movie.overriddenBackdrop);
+  }
+
+  if (movie.overriddenPlayerBackdrop) {
+    urls.add(movie.overriddenPlayerBackdrop);
   }
 
   if (movie.masterPlaylistUrl) {
@@ -376,7 +440,18 @@ export async function PATCH(
       title?: string;
       description?: string;
       poster?: string;
+      overriddenBackdrop?: string;
+      overriddenPlayerBackdrop?: string;
+      tmdb_id?: number | null;
       vj?: string;
+      releaseYear?: number | null;
+      language?: string;
+      genres?: string[];
+      tags?: string[];
+      category?: string[];
+      is_trending_tiktok?: boolean;
+      episode?: Record<string, unknown>;
+      seasonTitle?: string;
       movie?: Record<string, unknown>;
     };
 
@@ -401,10 +476,159 @@ export async function PATCH(
     const nextDescription =
       typeof body.description === 'string' ? body.description.trim() : undefined;
     const nextPoster = typeof body.poster === 'string' ? body.poster.trim() : undefined;
+    const nextOverriddenBackdrop =
+      typeof body.overriddenBackdrop === 'string' ? body.overriddenBackdrop.trim() : undefined;
+    const nextOverriddenPlayerBackdrop =
+      typeof body.overriddenPlayerBackdrop === 'string'
+        ? body.overriddenPlayerBackdrop.trim()
+        : undefined;
     const nextVj = typeof body.vj === 'string' ? body.vj.trim() : undefined;
 
     if (nextTitle !== undefined && !nextTitle) {
       return NextResponse.json({ error: 'Title cannot be empty.' }, { status: 400 });
+    }
+
+    if (body.episode && seasonNumber !== null && episodeNumber !== null) {
+      const incomingEpisode = body.episode;
+      const currentSeasons = Array.isArray(movie.seasons) ? movie.seasons : [];
+      const targetSeason = currentSeasons.find(
+        (season) => Number(season.seasonNumber) === seasonNumber
+      );
+      const targetEpisode = targetSeason?.episodes?.find(
+        (episode) => Number(episode.episodeNumber) === episodeNumber
+      );
+      const timestamp = nextUpdatedAt;
+      const readString = (key: string, fallback = '') => {
+        const value = incomingEpisode[key];
+        return typeof value === 'string' ? value.trim() : fallback;
+      };
+      const readNumber = (key: string, fallback = 0) => {
+        const value = incomingEpisode[key];
+        return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+      };
+      const readArray = <T,>(key: string, fallback: T[] = []) => {
+        const value = incomingEpisode[key];
+        return Array.isArray(value) ? (value as T[]) : fallback;
+      };
+      const nextEpisode = {
+        ...(targetEpisode || {}),
+        episodeNumber: readNumber('episodeNumber', episodeNumber) || episodeNumber,
+        title: readString('title', targetEpisode?.title || `Episode ${episodeNumber}`),
+        description: readString('description', targetEpisode?.description || ''),
+        overview: readString('overview', targetEpisode?.overview || targetEpisode?.description || ''),
+        video_url: readString('video_url', targetEpisode?.video_url || ''),
+        sourceUrl: readString('sourceUrl', targetEpisode?.sourceUrl || targetEpisode?.video_url || ''),
+        sourceFileName: readString('sourceFileName', targetEpisode?.sourceFileName || ''),
+        poster: readString('poster', targetEpisode?.poster || ''),
+        thumbnail: readString('thumbnail', targetEpisode?.thumbnail || ''),
+        overriddenBackdrop: readString('overriddenBackdrop', targetEpisode?.overriddenBackdrop || ''),
+        sourceType:
+          incomingEpisode.sourceType === 'direct_upload' ||
+          incomingEpisode.sourceType === 'direct_url' ||
+          incomingEpisode.sourceType === 'remote_link' ||
+          incomingEpisode.sourceType === 'upload'
+            ? incomingEpisode.sourceType
+            : targetEpisode?.sourceType || 'direct_upload',
+        sourcePipeline:
+          incomingEpisode.sourcePipeline === 'direct_upload' ||
+          incomingEpisode.sourcePipeline === 'direct_url_import' ||
+          incomingEpisode.sourcePipeline === 'remote_mp4_ingest' ||
+          incomingEpisode.sourcePipeline === 'remote_mkv_to_mp4' ||
+          incomingEpisode.sourcePipeline === 'request_vps_import' ||
+          incomingEpisode.sourcePipeline === 'hls_pipeline'
+            ? incomingEpisode.sourcePipeline
+            : targetEpisode?.sourcePipeline || 'direct_upload',
+        jobStatus:
+          typeof incomingEpisode.jobStatus === 'string'
+            ? incomingEpisode.jobStatus
+            : targetEpisode?.jobStatus || 'ready',
+        processingProgress: readNumber(
+          'processingProgress',
+          targetEpisode?.processingProgress || 100
+        ),
+        errorMessage: readString('errorMessage', targetEpisode?.errorMessage || ''),
+        playbackType: incomingEpisode.playbackType === 'hls' ? 'hls' : targetEpisode?.playbackType || 'mp4',
+        masterPlaylistUrl: readString('masterPlaylistUrl', targetEpisode?.masterPlaylistUrl || ''),
+        availableRenditions: readArray('availableRenditions', targetEpisode?.availableRenditions || []),
+        durationSeconds: readNumber('durationSeconds', targetEpisode?.durationSeconds || 0),
+        videoResolution: incomingEpisode.videoResolution || targetEpisode?.videoResolution || null,
+        fileSizeBytes: readNumber('fileSizeBytes', targetEpisode?.fileSizeBytes || 0),
+        processedAt: readString('processedAt', targetEpisode?.processedAt || timestamp),
+        createdAt: readString('createdAt', targetEpisode?.createdAt || timestamp),
+        updatedAt: timestamp,
+        accessTier:
+          incomingEpisode.accessTier === 'free' ? 'free' : targetEpisode?.accessTier || movie.accessTier || 'premium',
+        subscriptionRequired:
+          typeof incomingEpisode.subscriptionRequired === 'boolean'
+            ? incomingEpisode.subscriptionRequired
+            : targetEpisode?.subscriptionRequired ?? movie.accessTier !== 'free',
+        isLocked: false,
+      } as Episode;
+      const nextSeasons = currentSeasons.some(
+        (season) => Number(season.seasonNumber) === seasonNumber
+      )
+        ? currentSeasons.map((season) => {
+            if (Number(season.seasonNumber) !== seasonNumber) {
+              return season;
+            }
+
+            const otherEpisodes = (season.episodes || []).filter(
+              (episode) => Number(episode.episodeNumber) !== episodeNumber
+            );
+
+            return {
+              ...season,
+              title: body.seasonTitle || season.title || `Season ${seasonNumber}`,
+              episodes: [...otherEpisodes, nextEpisode].sort(
+                (left, right) => left.episodeNumber - right.episodeNumber
+              ),
+            };
+          })
+        : [
+            ...currentSeasons,
+            {
+              seasonNumber,
+              title: body.seasonTitle || `Season ${seasonNumber}`,
+              overview: '',
+              poster: '',
+              tmdb_id: null,
+              episodes: [nextEpisode],
+            },
+          ];
+      const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(
+        {
+          ...movie,
+          seasons: nextSeasons,
+          updatedAt: nextUpdatedAt,
+        },
+        movieId
+      );
+
+      await movieRef.set(
+        {
+          seasons: preparedMovie.movie.seasons,
+          updatedAt: nextUpdatedAt,
+        },
+        { merge: true }
+      );
+
+      const updatedMovie = {
+        ...movie,
+        seasons: preparedMovie.movie.seasons,
+        updatedAt: nextUpdatedAt,
+      };
+
+      await upsertMovieInCatalogCache(updatedMovie);
+      await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+
+      return NextResponse.json({
+        success: true,
+        queuedNormalizationCount: preparedMovie.queuedJobs.length,
+        movie: {
+          id: movie.id,
+          ...updatedMovie,
+        },
+      });
     }
 
     if (fullMoviePayload) {
@@ -421,16 +645,6 @@ export async function PATCH(
       ) {
         return NextResponse.json(
           { error: 'Movie entries need either one MP4 source or at least one movie part.' },
-          { status: 400 }
-        );
-      }
-
-      if (
-        nextMovie.contentType === 'series' &&
-        (!nextMovie.seasons || nextMovie.seasons.length === 0)
-      ) {
-        return NextResponse.json(
-          { error: 'Series entries need at least one season with one episode.' },
           { status: 400 }
         );
       }
@@ -478,11 +692,16 @@ export async function PATCH(
               return episode;
             }
 
+            const nextOverriddenBackdrop =
+              typeof (body as { overriddenBackdrop?: unknown }).overriddenBackdrop === 'string'
+                ? (body as { overriddenBackdrop: string }).overriddenBackdrop.trim()
+                : undefined;
             const updatedEpisode = {
               ...episode,
               title: nextTitle ?? episode.title,
               description: nextDescription ?? episode.description ?? '',
               poster: nextPoster ?? episode.poster ?? '',
+              overriddenBackdrop: nextOverriddenBackdrop ?? episode.overriddenBackdrop ?? '',
               thumbnail:
                 nextPoster !== undefined &&
                 (!episode.thumbnail || episode.thumbnail === episode.poster)
@@ -540,8 +759,45 @@ export async function PATCH(
       updates.poster = nextPoster;
     }
 
+    if (nextOverriddenBackdrop !== undefined) {
+      updates.overriddenBackdrop = nextOverriddenBackdrop;
+    }
+
+    if (nextOverriddenPlayerBackdrop !== undefined) {
+      updates.overriddenPlayerBackdrop = nextOverriddenPlayerBackdrop;
+    }
+
+    if (typeof body.tmdb_id === 'number' || body.tmdb_id === null) {
+      updates.tmdb_id = body.tmdb_id;
+    }
+
     if (nextVj !== undefined) {
       updates.vj = nextVj || 'Unknown';
+    }
+
+    if (typeof body.releaseYear === 'number' || body.releaseYear === null) {
+      updates.releaseYear = body.releaseYear;
+      updates.release_date = body.releaseYear ? `${body.releaseYear}-01-01` : '';
+    }
+
+    if (typeof body.language === 'string') {
+      updates.language = body.language.trim();
+    }
+
+    if (Array.isArray(body.genres)) {
+      updates.genres = body.genres.filter((entry): entry is string => typeof entry === 'string');
+    }
+
+    if (Array.isArray(body.tags)) {
+      updates.tags = body.tags.filter((entry): entry is string => typeof entry === 'string');
+    }
+
+    if (Array.isArray(body.category)) {
+      updates.category = body.category.filter((entry): entry is string => typeof entry === 'string');
+    }
+
+    if (typeof body.is_trending_tiktok === 'boolean') {
+      updates.is_trending_tiktok = body.is_trending_tiktok;
     }
 
     await movieRef.set(updates, { merge: true });

@@ -40,6 +40,7 @@ export type DraftEpisode = {
   posterFile: File | null;
   thumbnail: string;
   thumbnailFile: File | null;
+  overriddenBackdrop: string;
   source: DraftVideoSource;
 };
 
@@ -78,6 +79,7 @@ export type SeriesDraft = {
   description: string;
   poster: string;
   posterFile: File | null;
+  overriddenBackdrop: string;
   releaseYear: string;
   language: string;
   vj: string;
@@ -181,6 +183,7 @@ export function createEmptyEpisode(index = 0): DraftEpisode {
     posterFile: null,
     thumbnail: '',
     thumbnailFile: null,
+    overriddenBackdrop: '',
     source: createEmptyVideoSource(),
   };
 }
@@ -225,6 +228,7 @@ export function createEmptySeriesDraft(): SeriesDraft {
     description: '',
     poster: '',
     posterFile: null,
+    overriddenBackdrop: '',
     releaseYear: '',
     language: '',
     vj: 'Unknown',
@@ -290,6 +294,7 @@ export function seriesToDraft(movie: Movie): SeriesDraft {
     description: movie.description || movie.overview || '',
     poster: movie.poster || '',
     posterFile: null,
+    overriddenBackdrop: movie.overriddenBackdrop || '',
     releaseYear: movie.releaseYear ? String(movie.releaseYear) : movie.release_date?.slice(0, 4) || '',
     language: movie.language || '',
     vj: movie.vj || 'Unknown',
@@ -319,6 +324,7 @@ export function seriesToDraft(movie: Movie): SeriesDraft {
           posterFile: null,
           thumbnail: episode.thumbnail || '',
           thumbnailFile: null,
+          overriddenBackdrop: episode.overriddenBackdrop || '',
           source: {
             mode: 'url',
             url:

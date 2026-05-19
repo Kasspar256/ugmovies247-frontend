@@ -1,6 +1,7 @@
 import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import { isAppInReview } from '@/lib/appReview';
+import { isIndianCatalogMovie, isIndianSectionName } from '@/lib/regionalCatalog';
 import type { Movie } from '@/types/movie';
 
 export type HomePageCategoryRecord = {
@@ -103,7 +104,7 @@ function hasVj(movie: Movie, ...names: string[]) {
 
 function getMovieMetadataLabels(movie: Movie) {
   return new Set(
-    [...(movie.category || []), ...(movie.genres || [])]
+    [...(movie.category || []), ...(movie.genres || []), ...(movie.tags || [])]
       .map((entry) => normalizeCatalogLabel(entry))
       .filter(Boolean)
   );
@@ -141,10 +142,7 @@ function matchesAutoHomeRow(movie: Movie, rowKey: string) {
     case 'adventure':
       return hasMetadataLabel(movie, 'adventure');
     case 'indian-movies':
-      return (
-        normalizeCatalogLabel(movie.country || '') === 'india' ||
-        hasMetadataLabel(movie, 'indian', 'india', 'indian movies')
-      );
+      return isIndianCatalogMovie(movie);
     default:
       return false;
   }
@@ -156,6 +154,10 @@ function isStrictFallbackMovie(movie: Movie) {
 }
 
 function matchesActiveCategoryFilter(movie: Movie, activeCategory: string) {
+  if (isIndianSectionName(activeCategory)) {
+    return isIndianCatalogMovie(movie);
+  }
+
   switch (normalizeCatalogLabel(activeCategory)) {
     case 'action':
       return hasMetadataLabel(movie, 'action', 'action & thriller');

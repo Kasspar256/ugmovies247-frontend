@@ -849,6 +849,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
             description: episode.description.trim(),
             poster: episodePoster || episodeThumbnail || posterUrl,
             thumbnail: episodeThumbnail || episodePoster || posterUrl,
+            overriddenBackdrop: episode.overriddenBackdrop || '',
             ...episodeSource,
           });
         }
@@ -868,6 +869,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         title: seriesDraft.title.trim(),
         description: seriesDraft.description.trim(),
         poster: posterUrl,
+        overriddenBackdrop: seriesDraft.overriddenBackdrop || '',
         tmdb_id: seriesDraft.tmdbId,
         releaseYear: parseYear(seriesDraft.releaseYear),
         language: seriesDraft.language.trim(),
@@ -996,6 +998,42 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Failed to repair missing movie genres.'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRepairRegionalMetadata = async () => {
+    setActionBusy(true);
+    setErrorMessage('');
+    setStatusMessage('');
+
+    try {
+      const response = await fetch('/api/admin/movies/repair-regional-metadata', {
+        method: 'POST',
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to repair movie regions.');
+      }
+
+      await loadControlCenter(false, true);
+
+      const updatedMovies = Number(result.payload.updatedMovies || 0);
+      const taggedIndianMovies = Number(result.payload.taggedIndianMovies || 0);
+      const candidateMovies = Number(result.payload.candidateMovies || 0);
+      const unresolvedMovies = Number(result.payload.unresolvedMovies || 0);
+
+      setStatusMessage(
+        candidateMovies
+          ? `Repaired regional metadata for ${updatedMovies} movie${updatedMovies === 1 ? '' : 's'}. Tagged ${taggedIndianMovies} Indian movie${taggedIndianMovies === 1 ? '' : 's'}${unresolvedMovies ? `. ${unresolvedMovies} still need review.` : '.'}`
+          : 'No movies needed regional metadata repair.'
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Failed to repair movie regions.'
       );
     } finally {
       setActionBusy(false);
@@ -1616,6 +1654,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                 actionBusy={actionBusy}
                 onSearchChange={setMovieSearch}
                 onRepairMissingGenres={handleRepairMissingGenres}
+                onRepairRegionalMetadata={handleRepairRegionalMetadata}
                 onDeleteMovie={handleDeleteMovie}
               />
             )}
