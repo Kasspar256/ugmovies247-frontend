@@ -47,7 +47,7 @@ export default function RequestPage() {
   const requireVerifiedEmail = async () => {
     const status = authStatus?.authenticated
       ? authStatus
-      : await fetchAuthStatus({ force: true }).catch(() => ({
+      : await fetchAuthStatus({ force: true }).catch((): ClientAuthStatus => ({
           authenticated: false,
           reason: 'session_missing' as const,
         }));
