@@ -21,10 +21,10 @@ export default function GoogleAuthButton({
       onClick={() => void onClick()}
       disabled={disabled || loading}
       aria-busy={loading}
-      className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white px-4 py-4 text-sm font-black uppercase tracking-[0.2em] text-[#11141C] shadow-[0_18px_35px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#F4F6F8] disabled:cursor-wait disabled:bg-white/70"
+      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white px-3 py-3.5 text-center text-[12px] font-black uppercase leading-5 tracking-[0.13em] text-[#11141C] shadow-[0_18px_35px_rgba(0,0,0,0.18)] transition-colors hover:bg-[#F4F6F8] disabled:cursor-wait disabled:bg-white/70 min-[390px]:gap-3 min-[390px]:px-4 min-[390px]:py-4 min-[390px]:text-sm min-[390px]:tracking-[0.2em]"
     >
       <GoogleMark />
-      <span>{loading ? loadingLabel : idleLabel}</span>
+      <span className="min-w-0">{loading ? loadingLabel : idleLabel}</span>
       {loading ? <GoogleAuthSpinner /> : null}
     </button>
   );
@@ -41,7 +41,7 @@ function GoogleAuthSpinner() {
 
 function GoogleMark() {
   return (
-    <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+    <svg className="h-4 w-4 shrink-0 min-[390px]:h-5 min-[390px]:w-5" viewBox="0 0 24 24" aria-hidden="true">
       <path
         fill="#EA4335"
         d="M12.24 10.285v3.821h5.445c-.239 1.226-.958 2.265-2.041 2.964l3.3 2.562c1.922-1.771 3.026-4.377 3.026-7.491 0-.719-.064-1.411-.183-2.074H12.24z"

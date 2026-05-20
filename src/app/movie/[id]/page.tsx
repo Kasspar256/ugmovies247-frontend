@@ -21,8 +21,13 @@ import { normalizeMovie, type Episode, type Movie } from '@/types/movie';
 import { getUserWatchlistMovie, removeMovieFromWatchlist, saveMovieToWatchlist } from '@/lib/watchlist';
 import { getUserLikedMovie, removeMovieLike, saveMovieLike } from '@/lib/likes';
 import { dedupeSeriesMovies, getMovieListingKey, isSeriesMovie, mergeSeriesMovies } from '@/lib/moviePresentation';
-import { Bookmark, Cast, Heart, Lock, Share2 } from 'lucide-react';
-import { fetchPublicMovieById, fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { Bookmark, Cast, Film, Heart, Lock, Share2 } from 'lucide-react';
+import {
+  clearPublicMovieCache,
+  fetchPublicMovieById,
+  fetchPublicMovies,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { startCasting } from '@/lib/cast';
 import {
   PersistentPlaybackHost,
@@ -76,6 +81,7 @@ function mergeEpisodePlaybackCandidate(
     sourceUrl: incoming.sourceUrl || existing?.sourceUrl || '',
     masterPlaylistUrl: '',
     overriddenBackdrop: incoming.overriddenBackdrop || existing?.overriddenBackdrop || '',
+    episodeTrailerUrl: incoming.episodeTrailerUrl || existing?.episodeTrailerUrl || '',
     poster: incoming.poster || existing?.poster || '',
     thumbnail: incoming.thumbnail || existing?.thumbnail || '',
     playbackType: 'mp4',
@@ -185,6 +191,7 @@ useEffect(() => {
 let active = true;
 const fetchMovie = async () => {
 let renderedMovie = false;
+let freshLookupFailed = false;
 
 const applyResolvedMovie = (nextMovie: Movie, catalogMovies: Movie[] = []) => {
   if (!active) {
@@ -214,6 +221,7 @@ const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
     throw error;
   }
 
+  freshLookupFailed = true;
   console.warn('[movie-page] fresh movie lookup failed after cached render', error);
   return null;
 });
@@ -228,7 +236,15 @@ void fetchPublicMovies({ force: shouldBypassCatalogCache })
 return;
 }
 
-const allMovies = await fetchPublicMovies({ force: shouldBypassCatalogCache });
+if (renderedMovie && !freshLookupFailed) {
+  clearPublicMovieCache();
+  setSeriesSourceEntries([]);
+  setMovie(null);
+  setLoading(false);
+  renderedMovie = false;
+}
+
+const allMovies = await fetchPublicMovies({ force: shouldBypassCatalogCache || !freshLookupFailed });
 const matchedMovie = allMovies.find((candidate) => candidate.id === params.id);
 
 if (matchedMovie) {
@@ -416,6 +432,11 @@ seriesSourceEntries.forEach((entry) => {
           sourceUrl: episode.sourceUrl,
           masterPlaylistUrl: episode.masterPlaylistUrl,
           overriddenBackdrop: episode.overriddenBackdrop || entry.overriddenBackdrop,
+          episodeTrailerUrl:
+            episode.episodeTrailerUrl ||
+            entry.mainSeriesTrailerUrl ||
+            entry.trailerUrl ||
+            '',
           poster: episode.poster || season.poster || entry.poster,
           thumbnail: episode.thumbnail || episode.poster || season.poster || entry.poster,
           playbackType: episode.playbackType,
@@ -444,6 +465,7 @@ seriesSourceEntries.forEach((entry) => {
       sourceUrl: entry.sourceUrl || '',
       masterPlaylistUrl: entry.masterPlaylistUrl || '',
       overriddenBackdrop: entry.overriddenBackdrop || '',
+      episodeTrailerUrl: entry.mainSeriesTrailerUrl || entry.trailerUrl || '',
       poster: entry.poster || '',
       thumbnail: entry.poster || '',
       playbackType: entry.playbackType,
@@ -473,6 +495,10 @@ const activeEpisode = selectedEpisode
         selectedEpisode.overriddenBackdrop ||
         selectedEpisodePlaybackCandidate?.overriddenBackdrop ||
         movie?.overriddenBackdrop ||
+        '',
+      episodeTrailerUrl:
+        selectedEpisode.episodeTrailerUrl ||
+        selectedEpisodePlaybackCandidate?.episodeTrailerUrl ||
         '',
       poster: selectedEpisodePlaybackCandidate?.poster || selectedEpisode.poster || '',
       thumbnail: selectedEpisodePlaybackCandidate?.thumbnail || selectedEpisode.thumbnail || '',
@@ -522,6 +548,14 @@ const castPlaybackUrl =
   movie?.contentType === 'series'
     ? activeEpisode?.masterPlaylistUrl || seriesPlaybackVideoUrl
     : selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || moviePlaybackVideoUrl;
+const uploadedTrailerUrl =
+  movie?.contentType === 'series'
+    ? activeEpisode?.episodeTrailerUrl ||
+      movie?.mainSeriesTrailerUrl ||
+      movie?.trailerUrl ||
+      movie?.trailer_url ||
+      ''
+    : movie?.trailerUrl || movie?.trailer_url || '';
 const seriesPlaybackPoster =
   activeEpisode?.overriddenBackdrop ||
   movie?.overriddenBackdrop ||
@@ -583,6 +617,7 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 };
 const syncPartSelection = (partIndex: number) => {
   setSelectedPartIndex(partIndex);
+  setIsTrailerPlaying(false);
   setIsSavedToDownloads(false);
   setActionMessage('');
 
@@ -596,6 +631,7 @@ const syncPartSelection = (partIndex: number) => {
 const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
   setSelectedSeasonNumber(seasonNumber);
   setSelectedEpisodeNumber(episodeNumber);
+  setIsTrailerPlaying(false);
   setIsSavedToDownloads(false);
   setActionMessage('');
 
@@ -734,9 +770,32 @@ const currentMovieHref = movie
       ? `/movie/${movie.id}?part=${selectedPartIndex + 1}`
       : `/movie/${movie.id}`
   : '/';
+const reviewTrailerUrl = movie && isAppInReview ? getReviewTrailerUrl(movie) : '';
+const availableTrailerUrl = isAppInReview ? reviewTrailerUrl : uploadedTrailerUrl;
+const isMp4TrailerPlaying = !isAppInReview && isTrailerPlaying && Boolean(uploadedTrailerUrl);
+const activePlaybackSessionKey = isMp4TrailerPlaying
+  ? `trailer-${movie?.id || 'movie'}-${selectedSeason?.seasonNumber || 0}-${activeEpisode?.episodeNumber || selectedPartIndex + 1}-${uploadedTrailerUrl}`
+  : playbackSessionKey;
 
 useLayoutEffect(() => {
   if (!movie) {
+    return;
+  }
+
+  if (isMp4TrailerPlaying) {
+    setPlaybackSource({
+      sessionKey: activePlaybackSessionKey,
+      movieId: movie.movieId || movie.id,
+      sourceUrl: uploadedTrailerUrl,
+      fallbackUrl: '',
+      castUrl: uploadedTrailerUrl,
+      playbackType: 'mp4',
+      autoplay: true,
+      poster: playbackPoster,
+      title: `${playbackTitle || movie.title || movie.name || 'UGMOVIES247'} trailer`,
+      description: playbackDescription,
+      watchHref: currentMovieHref,
+    });
     return;
   }
 
@@ -746,7 +805,7 @@ useLayoutEffect(() => {
   }
 
   setPlaybackSource({
-    sessionKey: playbackSessionKey,
+    sessionKey: activePlaybackSessionKey,
     movieId: movie.movieId || movie.id,
     sourceUrl: playbackVideoUrl,
     fallbackUrl: playbackFallbackUrl || '',
@@ -759,19 +818,21 @@ useLayoutEffect(() => {
     watchHref: currentMovieHref,
   });
   }, [
+    activePlaybackSessionKey,
     castPlaybackUrl,
     currentMovieHref,
     isPlaybackLocked,
+    isMp4TrailerPlaying,
     movie,
     playbackDescription,
     playbackFallbackUrl,
     playbackPoster,
-    playbackSessionKey,
     playbackTitle,
     playbackType,
     playbackVideoUrl,
     shouldAutoplay,
     setPlaybackSource,
+    uploadedTrailerUrl,
   ]);
 
 const handleDownload = async () => {
@@ -974,7 +1035,7 @@ const handleWatchTrailer = () => {
     return;
   }
 
-  const trailerUrl = getReviewTrailerUrl(movie);
+  const trailerUrl = availableTrailerUrl;
 
   if (!trailerUrl) {
     setActionMessage('No trailer is available right now.');
@@ -982,6 +1043,11 @@ const handleWatchTrailer = () => {
   }
 
   setActionMessage('');
+  if (isMp4TrailerPlaying) {
+    setIsTrailerPlaying(false);
+    return;
+  }
+
   setIsTrailerPlaying(true);
 };
 
@@ -991,12 +1057,14 @@ const handleCast = async () => {
     return;
   }
 
-  if (isPlaybackLocked) {
+  if (isPlaybackLocked && !isMp4TrailerPlaying) {
     setActionMessage('Unlock this movie first before casting it.');
     return;
   }
 
-  if (!(castPlaybackUrl || playbackVideoUrl)) {
+  const castingUrl = isMp4TrailerPlaying ? uploadedTrailerUrl : castPlaybackUrl || playbackVideoUrl;
+
+  if (!castingUrl) {
     setActionMessage('This movie is not ready for casting yet.');
     return;
   }
@@ -1006,10 +1074,10 @@ const handleCast = async () => {
   try {
     const message = await startCasting({
       videoElement,
-      playbackUrl: castPlaybackUrl || playbackVideoUrl,
+      playbackUrl: castingUrl,
       title: playbackTitle || movie?.title || movie?.name || 'UGMOVIES247',
       poster: playbackPoster,
-      playbackType,
+      playbackType: isMp4TrailerPlaying ? 'mp4' : playbackType,
     });
     setActionMessage(message);
   } catch (err) {
@@ -1026,14 +1094,14 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 );
 
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
-const hasPlaybackSource = !isAppInReview && Boolean(playbackVideoUrl);
-const showPlayerPreviewBackdrop = Boolean(playerBackdrop) && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
-const reviewTrailerUrl = isAppInReview ? getReviewTrailerUrl(movie) : '';
+const hasPlaybackSource = !isAppInReview && (Boolean(playbackVideoUrl) || isMp4TrailerPlaying);
+const showPlayerPreviewBackdrop =
+  Boolean(playerBackdrop) && !isMp4TrailerPlaying && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
 
-return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 lg:px-10">
+return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 md:pt-[88px] lg:px-10">
 
   {/* Video Player */}
-  <div className="relative isolate mt-0 h-[40vh] min-h-[220px] w-full overflow-hidden bg-black md:mx-auto md:mt-6 md:h-[72vh] md:max-w-[1380px] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
+  <div className="relative isolate mt-0 aspect-video w-full overflow-hidden bg-black md:mx-auto md:mt-6 md:w-[min(100%,1380px,calc((100svh-13rem)*16/9))] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
     {showPlayerPreviewBackdrop && (
       <div className="absolute inset-0">
         <img
@@ -1070,7 +1138,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           Watch Trailer
         </div>
       </button>
-    ) : isPlaybackLocked ? (
+    ) : isPlaybackLocked && !isMp4TrailerPlaying ? (
       <button
         type="button"
         onClick={() => router.push(subscribeHref)}
@@ -1082,7 +1150,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             <img
               src={playbackPoster}
               alt={`Watch ${playbackTitle || movie.title || movie.name || 'this movie'} on UGMOVIES247`}
-              className="absolute inset-0 h-full w-full object-contain object-top"
+              className="absolute inset-0 h-full w-full object-cover object-center"
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/18 to-black/36" />
           </>
@@ -1209,6 +1277,17 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         )}
 
         <div className="flex flex-wrap justify-center gap-3">
+          {availableTrailerUrl ? (
+            <button
+              type="button"
+              onClick={handleWatchTrailer}
+              className="rounded-xl border border-white/10 bg-[#131B28] px-4 py-2.5 text-sm font-bold text-gray-200 inline-flex items-center gap-2 transition-colors hover:border-[#7AA2D6] hover:text-white"
+            >
+              <Film size={16} strokeWidth={2.25} />
+              {isMp4TrailerPlaying ? 'Watch Movie' : 'Watch Trailer'}
+            </button>
+          ) : null}
+
           <button
             onClick={handleWatchlist}
             disabled={isSavingToList}
@@ -1217,13 +1296,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             <Bookmark size={16} />
             {isSavingToList ? 'Working...' : isSavedToWatchlist ? 'Remove from My List' : 'Add to My List'}
           </button>
-
-          <Link
-            href="/watchlist"
-            className="border border-gray-600 hover:border-white text-gray-300 px-4 py-2 rounded-lg text-sm font-bold bg-white/5"
-          >
-            My List
-          </Link>
 
           <button
             onClick={handleLike}

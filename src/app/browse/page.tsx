@@ -15,6 +15,7 @@ import {
 } from '@/lib/homePageClient';
 import { Bell, Cast, ChevronLeft, ChevronRight, Clapperboard, Download, Lock } from 'lucide-react';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   fetchPlaybackProgressRecords,
   readCachedContinueWatching,
@@ -117,6 +118,21 @@ function formatRuntimeLabel(movie: Movie | null) {
   }
 
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function getSeriesBackdropCardImage(movie: Movie) {
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    movie.overriddenBackdrop ||
+    firstEpisode?.overriddenBackdrop ||
+    movie.poster ||
+    firstSeason?.poster ||
+    firstEpisode?.thumbnail ||
+    firstEpisode?.poster ||
+    ''
+  );
 }
 
 function buildPriorityArtworkMovies(options: {
@@ -276,6 +292,10 @@ export default function Home() {
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(dedupeSeriesMovies(catalog));
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -1297,7 +1317,7 @@ const MovieRow = memo(function MovieRow({
     >
         <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">
           <HomeCardImage
-            src={m.poster}
+            src={getSeriesBackdropCardImage(m)}
             alt={m.title}
             imageClassName="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
             logoClassName="h-14 w-14 scale-[1.95] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20"

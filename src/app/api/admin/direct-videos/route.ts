@@ -20,6 +20,9 @@ type AdminMovieMetadata = {
   originalTitle?: string;
   description?: string;
   poster?: string;
+  trailerUrl?: string;
+  mainSeriesTrailerUrl?: string;
+  overriddenPlayerBackdrop?: string;
   genres?: string[];
   category?: string[];
   vj?: string;
@@ -39,6 +42,7 @@ type SeriesEpisodeInput = {
   video_url: string;
   poster?: string;
   thumbnail?: string;
+  episodeTrailerUrl?: string;
 };
 
 type SeriesSeasonInput = {
@@ -72,6 +76,9 @@ function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
     original_title: input?.originalTitle || input?.title || 'Untitled movie',
     description: input?.description || '',
     poster: input?.poster || '',
+    trailerUrl: input?.trailerUrl || '',
+    mainSeriesTrailerUrl: input?.mainSeriesTrailerUrl || '',
+    overriddenPlayerBackdrop: input?.overriddenPlayerBackdrop || '',
     genres: input?.genres || [],
     category: categories,
     vj: input?.vj || 'Unknown',
@@ -159,6 +166,7 @@ async function createDirectSeriesDocument(options: {
       description: episode.description || '',
       poster: episode.poster || '',
       thumbnail: episode.thumbnail || '',
+      episodeTrailerUrl: episode.episodeTrailerUrl || '',
       video_url: episode.video_url,
       sourceType: 'direct_upload',
       sourcePipeline: 'direct_upload',

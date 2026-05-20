@@ -12,6 +12,10 @@ import {
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
 import type { SubscriptionEntitlement } from '@/types/subscriptions';
+import {
+  isPublicMovieReady,
+  isPublicPlaybackAssetReady,
+} from '@/lib/publicReadiness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -105,11 +109,6 @@ function isPremiumAccessTier(accessTier: unknown) {
   return accessTier !== 'free';
 }
 
-function isPlaybackAssetReady(asset: Record<string, unknown>) {
-  const jobStatus = typeof asset.jobStatus === 'string' ? asset.jobStatus : '';
-  return !jobStatus || jobStatus === 'ready';
-}
-
 function sanitizeEpisodeForViewer(
   episode: Record<string, unknown>,
   entitlement: SubscriptionEntitlement
@@ -123,7 +122,7 @@ function sanitizeEpisodeForViewer(
     playbackType: 'mp4',
   };
 
-  if (!isLocked && isPlaybackAssetReady(episode)) {
+  if (!isLocked && isPublicPlaybackAssetReady(episode)) {
     return {
       ...sanitizedEpisode,
       subscriptionRequired,
@@ -165,7 +164,7 @@ function sanitizeMoviePartForViewer(
     playbackType: 'mp4',
   };
 
-  if (!isLocked && isPlaybackAssetReady(part)) {
+  if (!isLocked && isPublicPlaybackAssetReady(part)) {
     return {
       ...sanitizedPart,
       subscriptionRequired,
@@ -222,7 +221,7 @@ function sanitizeMovieForViewerLocally(
     : [];
 
   if (!isLocked) {
-    const shouldExposePrimaryMovieSource = parts.length === 0 && isPlaybackAssetReady(movie);
+    const shouldExposePrimaryMovieSource = parts.length === 0 && isPublicPlaybackAssetReady(movie);
 
     return {
       ...movie,
@@ -294,54 +293,12 @@ function sanitizeMovieForReviewMode(movie: Record<string, unknown>) {
   };
 }
 
-function hasPlayableAsset(asset: Record<string, unknown>) {
-  if (!isPlaybackAssetReady(asset)) {
-    return false;
-  }
-
-  if (
-    String(asset.video_url || '').trim() ||
-    String(asset.sourceUrl || '').trim() ||
-    String(asset.masterPlaylistUrl || '').trim()
-  ) {
-    return true;
-  }
-
-  const renditions = Array.isArray(asset.availableRenditions) ? asset.availableRenditions : [];
-  return renditions.some((rendition) =>
-    Boolean(String((rendition as Record<string, unknown>).playlistUrl || '').trim())
-  );
-}
-
-function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
-  if (hasPlayableAsset(movieDoc)) {
-    return true;
-  }
-
-  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
-
-  if (parts.some((part) => hasPlayableAsset(part as Record<string, unknown>))) {
-    return true;
-  }
-
-  const seasons = Array.isArray(movieDoc.seasons) ? movieDoc.seasons : [];
-
-  return seasons.some((season) => {
-    const rawSeason = season as Record<string, unknown>;
-    const episodes = Array.isArray(rawSeason.episodes) ? rawSeason.episodes : [];
-
-    return episodes.some((episode) => {
-      return hasPlayableAsset(episode as Record<string, unknown>);
-    });
-  });
-}
-
 function hasVisibleCatalogAsset(movieDoc: Record<string, unknown>, collectionName: string) {
   if (collectionName === TRAILER_MEDIA_COLLECTION && String(movieDoc.trailer_url || '').trim()) {
     return true;
   }
 
-  return hasPublicPlaybackAsset(movieDoc);
+  return isPublicMovieReady(movieDoc);
 }
 
 function withReviewTrailerFallback(movieDoc: Record<string, unknown>): Record<string, unknown> {

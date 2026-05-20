@@ -26,6 +26,7 @@ import {
   readCachedAccountProfile,
   type AccountProfile,
 } from '@/lib/accountProfile';
+import { readCachedAuthStatus } from '@/lib/auth/status-client';
 import { logoutCurrentUser } from '@/lib/auth/client';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 import { isAppInReview } from '@/lib/appReview';
@@ -314,17 +315,68 @@ function NavigationGroup({
   );
 }
 
+function readCachedProfileFallback() {
+  const cachedProfile = readCachedAccountProfile();
+
+  if (cachedProfile) {
+    return cachedProfile;
+  }
+
+  const cachedStatus = readCachedAuthStatus();
+  const user = cachedStatus?.authenticated ? cachedStatus.user : null;
+
+  if (!user?.id && !user?.email) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  return {
+    id: user.id || user.email,
+    name: user.name || 'User',
+    email: user.email || '',
+    emailVerified: user.emailVerified === true,
+    emailVerifiedAt: '',
+    emailVerificationSentAt: '',
+    role: user.role === 'admin' ? 'admin' : 'user',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    lastLoginAt: nowIso,
+    avatarUrl: '',
+    notificationPreferences: {
+      marketing: false,
+      productUpdates: true,
+    },
+    subscription: {
+      planType: null,
+      planName: '',
+      status: 'inactive',
+      isActive: false,
+      startsAt: '',
+      expiresAt: '',
+      paymentProvider: '',
+      updatedAt: '',
+    },
+  } satisfies AccountProfile;
+}
+
 export default function ProfileHub() {
   const router = useRouter();
-  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedAccountProfile());
-  const [loading, setLoading] = useState(() => !readCachedAccountProfile());
+  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedProfileFallback());
+  const [loading, setLoading] = useState(() => !readCachedProfileFallback());
   const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
-    const hasCachedProfile = Boolean(readCachedAccountProfile());
+    const fallbackProfile = readCachedProfileFallback();
+    const hasCachedProfile = Boolean(fallbackProfile);
+
+    if (fallbackProfile) {
+      setProfile(fallbackProfile);
+      setLoading(false);
+    }
 
     const loadProfile = async () => {
       try {

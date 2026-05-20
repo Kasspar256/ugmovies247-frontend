@@ -649,6 +649,34 @@ export async function uploadMultipartFileToAdmin(options: {
   }
 }
 
+export function isMp4TrailerFile(file: File | null | undefined) {
+  if (!file) {
+    return false;
+  }
+
+  return file.type === 'video/mp4' || /\.mp4$/i.test(file.name);
+}
+
+export async function uploadTrailerVideoToAdmin(
+  file: File,
+  options?: {
+    onStats?: (stats: MultipartUploadStats) => void;
+    onDiagnostic?: (message: string) => void;
+  }
+) {
+  if (!isMp4TrailerFile(file)) {
+    throw new Error('Trailer uploads must be MP4 video files.');
+  }
+
+  return uploadMultipartFileToAdmin({
+    file,
+    stage: 'library',
+    onProgress: () => undefined,
+    onStats: options?.onStats,
+    onDiagnostic: options?.onDiagnostic,
+  });
+}
+
 export async function uploadPosterToAdmin(file: File) {
   const response = await fetch('/api/admin/upload', {
     method: 'POST',

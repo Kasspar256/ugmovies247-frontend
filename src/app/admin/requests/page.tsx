@@ -1,7 +1,7 @@
-import { requireAdminPage } from '@/lib/auth/server';
-import AdminControlCenter from '@/components/admin/AdminControlCenter';
+'use client';
 
-export default async function AdminRequestsPage() {
-  await requireAdminPage('/admin/requests');
-  return <AdminControlCenter section="requests" />;
+import { AdminRequestsHubView } from '@/components/admin/requests/RequestFulfillmentWorkflow';
+
+export default function AdminRequestsPage() {
+  return <AdminRequestsHubView />;
 }

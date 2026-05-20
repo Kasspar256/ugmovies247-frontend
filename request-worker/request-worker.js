@@ -839,6 +839,22 @@ async function updateTelegramStatusMessage(
   return sendTelegramClientMessage(client, chatRef, text, originalMessageId);
 }
 
+function buildTelegramReadyLinkText(title, publicVideoUrl, outputMode) {
+  return [
+    `READY LINK: ${title}`,
+    '',
+    publicVideoUrl,
+    '',
+    `Auto-delete: ${
+      outputMode === 'local'
+        ? isPublicLinkAutoDeletePaused()
+          ? 'paused'
+          : `${getPublicLinkRetentionHours()} hours`
+        : 'handled by storage policy'
+    }`,
+  ].join('\n');
+}
+
 async function downloadTelegramClientMedia(client, message, destination, onProgress) {
   let lastEmitAt = 0;
   const progressCallback = (downloadedRaw, totalRaw) => {
@@ -873,6 +889,96 @@ async function downloadTelegramClientMedia(client, message, destination, onProgr
   if (!stats || stats.size <= 0) {
     throw new Error('Telegram MTProto download completed without creating a source file.');
   }
+}
+
+function getTelegramDownloadAttempts() {
+  const value = Number(process.env.REQUEST_TELEGRAM_DOWNLOAD_ATTEMPTS || 3);
+
+  if (!Number.isFinite(value) || value <= 1) {
+    return 1;
+  }
+
+  return Math.min(6, Math.floor(value));
+}
+
+function getTelegramDownloadRetryDelayMs(error, attempt) {
+  const text = String(error?.message || error || '');
+  const floodWait = text.match(/FLOOD_WAIT_?(\d+)/i);
+
+  if (floodWait) {
+    return Math.min(5 * 60 * 1000, (Number(floodWait[1]) + 3) * 1000);
+  }
+
+  const configured = Number(process.env.REQUEST_TELEGRAM_DOWNLOAD_RETRY_DELAY_MS || 15000);
+  const baseDelay = Number.isFinite(configured) && configured > 0 ? configured : 15000;
+
+  return Math.min(2 * 60 * 1000, baseDelay * attempt);
+}
+
+function isRetryableTelegramDownloadError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+
+  if (message.includes('cancelled by operator')) {
+    return false;
+  }
+
+  return (
+    message.includes('request was unsuccessful') ||
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('connection') ||
+    message.includes('socket') ||
+    message.includes('transport') ||
+    message.includes('disconnect') ||
+    message.includes('flood_wait')
+  );
+}
+
+async function ensureTelegramClientConnected(client) {
+  if (!client) {
+    return;
+  }
+
+  try {
+    if (typeof client.connected === 'boolean' && client.connected) {
+      return;
+    }
+
+    if (typeof client.isConnected === 'function' && await client.isConnected()) {
+      return;
+    }
+
+    await client.connect();
+  } catch (error) {
+    console.warn('[request-worker] telegram reconnect check failed:', error.message || error);
+  }
+}
+
+async function downloadTelegramClientMediaWithRetries(client, message, destination, onProgress, onRetry) {
+  const attempts = getTelegramDownloadAttempts();
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await fs.rm(destination, { force: true }).catch(() => undefined);
+
+    try {
+      await ensureTelegramClientConnected(client);
+      await downloadTelegramClientMedia(client, message, destination, onProgress);
+      return;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt >= attempts || !isRetryableTelegramDownloadError(error)) {
+        throw error;
+      }
+
+      const delayMs = getTelegramDownloadRetryDelayMs(error, attempt);
+      await onRetry?.(attempt + 1, attempts, delayMs, error);
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError || new Error('Telegram download failed.');
 }
 
 async function createTelegramJob(db, message, media, title, pendingAction = null) {
@@ -1684,7 +1790,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
         'Stage: Downloading from Telegram...',
       ].join('\n')
     );
-    await downloadTelegramClientMedia(client, message, sourcePath, (downloadedBytes, totalBytes) => {
+    await downloadTelegramClientMediaWithRetries(client, message, sourcePath, (downloadedBytes, totalBytes) => {
       if (control.cancelRequested) {
         throw new Error('Cancelled by operator.');
       }
@@ -1695,6 +1801,31 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
         progress: 5 + percent,
         currentStage: 'Downloading forwarded Telegram file via MTProto',
       });
+    }, async (nextAttempt, totalAttempts, delayMs, retryError) => {
+      const retryMessage = String(retryError?.message || retryError || 'Telegram download failed');
+
+      console.warn(
+        `[request-worker] telegram download retry ${nextAttempt}/${totalAttempts} for ${job.id}: ${retryMessage}`
+      );
+      await progress.report({
+        status: 'downloading',
+        progress: 5,
+        currentStage: `Telegram download retry ${nextAttempt}/${totalAttempts}`,
+        errorMessage: retryMessage,
+      });
+      statusMessage = await updateTelegramStatusMessage(
+        client,
+        chatRef,
+        statusMessage,
+        message.id,
+        [
+          `Job ${job.id}`,
+          `Source: ${title}`,
+          `Stage: Telegram download retry ${nextAttempt}/${totalAttempts} in ${Math.round(delayMs / 1000)}s...`,
+          retryMessage,
+        ].join('\n'),
+        { fallback: false }
+      );
     });
     await progress.flush();
 
@@ -1832,6 +1963,7 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       expiresAt,
       completedAt: nowIso(),
     });
+    await progress.flush();
 
     await updateTelegramStatusMessage(
       client,
@@ -1840,19 +1972,30 @@ async function processTelegramClientMedia(db, s3, client, message, allowedSender
       message.id,
       [
         `Request worker finished "${title}".`,
-        '',
-        outputMode === 'local' ? 'Temporary VPS source link:' : 'Final MP4 link:',
-        publicVideoUrl,
-        '',
-        `Auto-delete: ${
-          outputMode === 'local'
-            ? isPublicLinkAutoDeletePaused()
-              ? 'paused'
-              : `${getPublicLinkRetentionHours()} hours`
-            : 'handled by storage policy'
-        }`,
-      ].join('\n')
+        'Link posted as the newest message below.',
+      ].join('\n'),
+      { fallback: false }
     );
+    const readyLinkMessage = await sendTelegramClientMessage(
+      client,
+      chatRef,
+      buildTelegramReadyLinkText(title, publicVideoUrl, outputMode)
+    );
+
+    if (readyLinkMessage?.id) {
+      await progress.report({
+        telegramReadyMessageId: normalizeTelegramId(readyLinkMessage.id),
+      });
+      await progress.flush();
+    } else {
+      await updateTelegramStatusMessage(
+        client,
+        chatRef,
+        statusMessage,
+        message.id,
+        buildTelegramReadyLinkText(title, publicVideoUrl, outputMode)
+      );
+    }
     console.log(`[request-worker] telegram upload ready ${title}: ${publicVideoUrl}`);
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error || 'Unknown Telegram worker error');
@@ -2056,12 +2199,20 @@ async function writeSeriesEpisodeReady(db, job, publicVideoUrl, timestamp) {
   let episode = season.episodes.find((entry) => Number(entry.episodeNumber) === episodeNumber);
 
   if (!episode) {
+    const shellSeason = Array.isArray(shell.seasons)
+      ? shell.seasons.find((entry) => Number(entry.seasonNumber) === seasonNumber)
+      : null;
+    const shellEpisode = Array.isArray(shellSeason?.episodes)
+      ? shellSeason.episodes.find((entry) => Number(entry.episodeNumber) === episodeNumber)
+      : null;
     episode = {
       episodeNumber,
       title: String(job.episodeTitle || `${job.title} Episode ${episodeNumber}`),
-      description: data.description || shell.description || '',
-      overview: data.overview || shell.overview || '',
-      poster: data.poster || shell.poster || '',
+      description: String(job.episodeDescription || shellEpisode?.description || ''),
+      overview: String(job.episodeDescription || shellEpisode?.overview || shellEpisode?.description || ''),
+      poster: shellEpisode?.poster || data.poster || shell.poster || '',
+      thumbnail: shellEpisode?.thumbnail || shellEpisode?.poster || data.poster || shell.poster || '',
+      overriddenBackdrop: shellEpisode?.overriddenBackdrop || data.overriddenBackdrop || shell.overriddenBackdrop || '',
       video_url: '',
     };
     season.episodes.push(episode);
@@ -2070,6 +2221,8 @@ async function writeSeriesEpisodeReady(db, job, publicVideoUrl, timestamp) {
   Object.assign(episode, getMoviePatchForReady(job, publicVideoUrl, timestamp), {
     episodeNumber,
     title: episode.title || String(job.episodeTitle || `${job.title} Episode ${episodeNumber}`),
+    description: String(job.episodeDescription || episode.description || ''),
+    overview: String(job.episodeDescription || episode.overview || episode.description || ''),
   });
 
   await ref.set(
@@ -2197,11 +2350,16 @@ async function processJob(db, s3, job) {
     await progress.flush();
 
     await progress.report({
+      status: 'inspecting',
+      progress: 25,
+      currentStage: 'Inspecting source media',
+    });
+    const durationSeconds = await runProbeDuration(sourcePath);
+    await progress.report({
       status: 'processing',
       progress: 30,
       currentStage: 'Processing via FFmpeg',
     });
-    const durationSeconds = await runProbeDuration(sourcePath);
     await runFfmpeg(sourcePath, outputPath, durationSeconds, (percent) => {
       void progress.report({
         status: 'processing',

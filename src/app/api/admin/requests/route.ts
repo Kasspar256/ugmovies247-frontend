@@ -63,10 +63,13 @@ export async function PATCH(request: Request) {
       title?: string;
       originalTitle?: string;
       description?: string;
+      episodeDescription?: string;
       overview?: string;
       poster?: string;
       backdrop?: string;
       banner?: string;
+      overriddenBackdrop?: string;
+      episodeOverriddenBackdrop?: string;
       genres?: string[] | string;
       category?: string[] | string;
       vj?: string;
@@ -86,8 +89,10 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Missing request ID.' }, { status: 400 });
     }
 
+    let resultPayload: Record<string, unknown> = {};
+
     if (body.action === 'fulfill') {
-      await queueAdvancedMovieRequestFulfillment(requestId, {
+      resultPayload = await queueAdvancedMovieRequestFulfillment(requestId, {
         sourceUrl: String(body.sourceUrl || ''),
         sourceFileName: String(body.sourceFileName || ''),
         sourceFileSizeBytes: body.sourceFileSizeBytes,
@@ -95,10 +100,13 @@ export async function PATCH(request: Request) {
         title: String(body.title || ''),
         originalTitle: String(body.originalTitle || ''),
         description: String(body.description || ''),
+        episodeDescription: String(body.episodeDescription || ''),
         overview: String(body.overview || ''),
         poster: String(body.poster || ''),
         backdrop: String(body.backdrop || ''),
         banner: String(body.banner || ''),
+        overriddenBackdrop: String(body.overriddenBackdrop || ''),
+        episodeOverriddenBackdrop: String(body.episodeOverriddenBackdrop || ''),
         genres: body.genres,
         category: body.category,
         vj: String(body.vj || ''),
@@ -123,7 +131,7 @@ export async function PATCH(request: Request) {
       });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...resultPayload });
   } catch (error) {
     console.error('[admin-requests] failed to update request', error);
     return NextResponse.json(

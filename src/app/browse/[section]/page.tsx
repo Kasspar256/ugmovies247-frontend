@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   getHomeCollectionByKey,
@@ -23,6 +24,10 @@ export default function BrowseSectionPage() {
   const [movies, setMovies] = useState<Movie[]>(() => dedupeSeriesMovies(readCachedPublicMovies()));
   const [categories, setCategories] = useState<HomePageCategoryRecord[]>(DEFAULT_HOME_PAGE_CATEGORIES);
   const [loading, setLoading] = useState(() => movies.length === 0);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(dedupeSeriesMovies(catalog));
+  });
 
   useEffect(() => {
     let mounted = true;

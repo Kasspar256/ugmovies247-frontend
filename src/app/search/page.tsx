@@ -11,6 +11,7 @@ import {
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
 
@@ -377,6 +378,10 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setAllMovies(dedupeSeriesMovies(catalog));
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

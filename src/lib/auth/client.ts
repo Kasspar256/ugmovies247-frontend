@@ -272,8 +272,8 @@ async function warmPostLoginAppData(role: 'user' | 'admin') {
 
   try {
     const [movies, homePageCategories] = await Promise.all([
-      fetchPublicMovies({ force: true, refreshEntitlement: true }),
-      fetchHomePageCategories({ force: true }),
+      fetchPublicMovies({ refreshEntitlement: true }),
+      fetchHomePageCategories(),
     ]);
     const normalizedMovies = dedupeSeriesMovies(movies);
     const { homeRows } = buildHomeCollections({

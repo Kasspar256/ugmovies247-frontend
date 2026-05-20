@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
-import { CheckCircle2, Clapperboard, MailCheck, Mic2, Send, X } from 'lucide-react';
+import { CheckCircle2, Clapperboard, Film, MailCheck, Mic2, Send, Tv, X } from 'lucide-react';
 import { VJ_DIRECTORY } from '@/config/constants';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { fetchAuthStatus, type ClientAuthStatus } from '@/lib/auth/status-client';
@@ -17,7 +17,12 @@ export default function RequestPage() {
   const [verificationMessage, setVerificationMessage] = useState('');
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [authStatus, setAuthStatus] = useState<ClientAuthStatus | null>(null);
-  const [formData, setFormData] = useState({ title: '', vj: '', notes: '' });
+  const [formData, setFormData] = useState<{
+    requestType: '' | 'movie' | 'series';
+    title: string;
+    vj: string;
+    notes: string;
+  }>({ requestType: '', title: '', vj: '', notes: '' });
 
   useEffect(() => {
     let cancelled = false;
@@ -42,17 +47,15 @@ export default function RequestPage() {
   const requireVerifiedEmail = async () => {
     const status = authStatus?.authenticated
       ? authStatus
-      : await fetchAuthStatus({ force: true }).catch(
-          (): ClientAuthStatus => ({
-            authenticated: false,
-            reason: 'session_missing',
-          })
-        );
+      : await fetchAuthStatus({ force: true }).catch(() => ({
+          authenticated: false,
+          reason: 'session_missing' as const,
+        }));
 
     setAuthStatus(status);
 
     if (!status.authenticated) {
-      setErrorMessage('Please sign in before requesting a movie.');
+      setErrorMessage('Please sign in before submitting a request.');
       return false;
     }
 
@@ -86,6 +89,11 @@ export default function RequestPage() {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!formData.requestType) {
+      setErrorMessage('Choose whether this request is for a movie or a series.');
+      return;
+    }
+
     if (!formData.title) return;
     if (!(await requireVerifiedEmail())) return;
 
@@ -100,6 +108,8 @@ export default function RequestPage() {
         },
         body: JSON.stringify({
           movieTitle: formData.title,
+          requestType: formData.requestType,
+          contentType: formData.requestType,
           preferredVj: formData.vj,
           notes: formData.notes,
           fcmToken: readStoredFcmToken(),
@@ -112,21 +122,21 @@ export default function RequestPage() {
           setShowVerificationModal(true);
         }
 
-        throw new Error(payload.error || 'Failed to submit movie request.');
+        throw new Error(payload.error || 'Failed to submit request.');
       }
 
       setIsSubmitting(false);
       setRequestSucceeded(true);
-      setFormData({ title: '', vj: '', notes: '' });
+      setFormData({ requestType: '', title: '', vj: '', notes: '' });
     } catch (error) {
       setIsSubmitting(false);
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit movie request.');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to submit request.');
     }
   };
 
   return (
     <div className="min-h-screen bg-[#0B0C10] pb-[calc(4rem+env(safe-area-inset-bottom))] font-sans md:px-8 md:pb-14 lg:px-10">
-      <MobilePageHeader title="Request a Movie" fallbackHref="/browse" />
+      <MobilePageHeader title="Request a Title" fallbackHref="/browse" />
 
       <div className="px-4 pt-24 md:mx-auto md:max-w-3xl md:px-0 md:pt-[138px]">
         <div className="mb-8 text-center">
@@ -134,7 +144,7 @@ export default function RequestPage() {
             <Clapperboard className="text-[#D90429]" size={32} />
           </div>
           <h1 className="mb-3 text-3xl font-black uppercase tracking-widest text-white md:text-4xl">
-            Request A Movie
+            Request A Title
           </h1>
           <div className="mx-auto mt-5 max-w-2xl rounded-[22px] border border-white/10 bg-amber-500/[0.05] px-5 py-4 text-left shadow-[0_18px_42px_rgba(0,0,0,0.22)] backdrop-blur-md">
             <p className="text-sm leading-7 text-amber-50/88 md:text-base">
@@ -152,7 +162,7 @@ export default function RequestPage() {
               Request Received!
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-base leading-8 text-white/72 md:text-lg">
-              We're on it. Your movie will be uploaded in under 5 hours, and you'll receive a confirmation as soon as it's ready for you to watch.
+              We&apos;re on it. Your request will be reviewed and you&apos;ll receive a confirmation as soon as it&apos;s ready for you to watch.
             </p>
           </section>
         ) : (
@@ -168,14 +178,45 @@ export default function RequestPage() {
 
             <div>
               <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-[#888888]">
-                Movie Title / Year *
+                Request Type *
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: 'movie' as const, label: 'Movie', icon: Film },
+                  { id: 'series' as const, label: 'Series', icon: Tv },
+                ].map((option) => {
+                  const Icon = option.icon;
+                  const active = formData.requestType === option.id;
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, requestType: option.id })}
+                      className={`flex items-center justify-center gap-2 rounded-2xl border px-4 py-4 text-sm font-black uppercase tracking-[0.18em] transition-all ${
+                        active
+                          ? 'border-[#D90429] bg-[#D90429] text-white shadow-[0_12px_30px_rgba(217,4,41,0.24)]'
+                          : 'border-white/10 bg-[#1F2833]/70 text-white/68'
+                      }`}
+                    >
+                      <Icon size={18} />
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-bold uppercase tracking-widest text-[#888888]">
+                Title / Year *
               </label>
               <input
                 type="text"
                 required
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="e.g. Spider-Man: Brand New Day (2026)"
+                placeholder={formData.requestType === 'series' ? 'e.g. Legend of Fei (2020)' : 'e.g. Spider-Man: Brand New Day (2026)'}
                 className="w-full rounded-lg border border-white/5 bg-[#1F2833]/80 p-4 text-white placeholder-[#888888]/50 transition-all focus:border-[#D90429] focus:outline-none focus:ring-1 focus:ring-[#D90429]"
               />
             </div>
@@ -264,7 +305,7 @@ export default function RequestPage() {
               </button>
             </div>
             <p className="mt-5 text-sm leading-7 text-white/70">
-              We need your email verified before you request a movie so we can send upload alerts and ready notifications to the correct account.
+              We need your email verified before you submit a request so we can send upload alerts and ready notifications to the correct account.
             </p>
             {verificationMessage && (
               <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-sm leading-6 text-emerald-50">

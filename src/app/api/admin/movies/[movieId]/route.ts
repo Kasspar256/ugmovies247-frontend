@@ -93,6 +93,10 @@ function collectCandidateUrlsFromEpisode(episode: Partial<Episode>) {
     urls.add(episode.overriddenBackdrop);
   }
 
+  if (episode.episodeTrailerUrl) {
+    urls.add(episode.episodeTrailerUrl);
+  }
+
   if (episode.masterPlaylistUrl) {
     urls.add(episode.masterPlaylistUrl);
   }
@@ -131,6 +135,18 @@ function collectCandidateUrls(movie: Movie) {
 
   if (movie.sourceUrl) {
     urls.add(movie.sourceUrl);
+  }
+
+  if (movie.trailerUrl) {
+    urls.add(movie.trailerUrl);
+  }
+
+  if (movie.mainSeriesTrailerUrl) {
+    urls.add(movie.mainSeriesTrailerUrl);
+  }
+
+  if (movie.trailer_url) {
+    urls.add(movie.trailer_url);
   }
 
   if (movie.poster) {
@@ -440,6 +456,9 @@ export async function PATCH(
       title?: string;
       description?: string;
       poster?: string;
+      trailerUrl?: string;
+      mainSeriesTrailerUrl?: string;
+      trailer_url?: string;
       overriddenBackdrop?: string;
       overriddenPlayerBackdrop?: string;
       tmdb_id?: number | null;
@@ -476,6 +495,11 @@ export async function PATCH(
     const nextDescription =
       typeof body.description === 'string' ? body.description.trim() : undefined;
     const nextPoster = typeof body.poster === 'string' ? body.poster.trim() : undefined;
+    const nextTrailerUrl = typeof body.trailerUrl === 'string' ? body.trailerUrl.trim() : undefined;
+    const nextMainSeriesTrailerUrl =
+      typeof body.mainSeriesTrailerUrl === 'string' ? body.mainSeriesTrailerUrl.trim() : undefined;
+    const nextLegacyTrailerUrl =
+      typeof body.trailer_url === 'string' ? body.trailer_url.trim() : undefined;
     const nextOverriddenBackdrop =
       typeof body.overriddenBackdrop === 'string' ? body.overriddenBackdrop.trim() : undefined;
     const nextOverriddenPlayerBackdrop =
@@ -522,6 +546,7 @@ export async function PATCH(
         poster: readString('poster', targetEpisode?.poster || ''),
         thumbnail: readString('thumbnail', targetEpisode?.thumbnail || ''),
         overriddenBackdrop: readString('overriddenBackdrop', targetEpisode?.overriddenBackdrop || ''),
+        episodeTrailerUrl: readString('episodeTrailerUrl', targetEpisode?.episodeTrailerUrl || ''),
         sourceType:
           incomingEpisode.sourceType === 'direct_upload' ||
           incomingEpisode.sourceType === 'direct_url' ||
@@ -696,12 +721,17 @@ export async function PATCH(
               typeof (body as { overriddenBackdrop?: unknown }).overriddenBackdrop === 'string'
                 ? (body as { overriddenBackdrop: string }).overriddenBackdrop.trim()
                 : undefined;
+            const nextEpisodeTrailerUrl =
+              typeof (body as { episodeTrailerUrl?: unknown }).episodeTrailerUrl === 'string'
+                ? (body as { episodeTrailerUrl: string }).episodeTrailerUrl.trim()
+                : undefined;
             const updatedEpisode = {
               ...episode,
               title: nextTitle ?? episode.title,
               description: nextDescription ?? episode.description ?? '',
               poster: nextPoster ?? episode.poster ?? '',
               overriddenBackdrop: nextOverriddenBackdrop ?? episode.overriddenBackdrop ?? '',
+              episodeTrailerUrl: nextEpisodeTrailerUrl ?? episode.episodeTrailerUrl ?? '',
               thumbnail:
                 nextPoster !== undefined &&
                 (!episode.thumbnail || episode.thumbnail === episode.poster)
@@ -757,6 +787,18 @@ export async function PATCH(
 
     if (nextPoster !== undefined) {
       updates.poster = nextPoster;
+    }
+
+    if (nextTrailerUrl !== undefined) {
+      updates.trailerUrl = nextTrailerUrl;
+    }
+
+    if (nextMainSeriesTrailerUrl !== undefined) {
+      updates.mainSeriesTrailerUrl = nextMainSeriesTrailerUrl;
+    }
+
+    if (nextLegacyTrailerUrl !== undefined) {
+      updates.trailer_url = nextLegacyTrailerUrl;
     }
 
     if (nextOverriddenBackdrop !== undefined) {

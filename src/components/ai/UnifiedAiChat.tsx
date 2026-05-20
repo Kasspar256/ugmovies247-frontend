@@ -25,6 +25,65 @@ const starterPrompts = [
   'What should I watch with VJ Junior?',
   'How do I change my password?',
 ];
+const AI_HISTORY_CACHE_KEY = 'ugmovies247.ai-history.v1';
+const AI_HISTORY_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
+
+type CachedAiHistory = {
+  messages: AiChatMessage[];
+  profileName: string;
+  cachedAt: number;
+};
+
+function readCachedAiHistory() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AI_HISTORY_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<CachedAiHistory>;
+
+    if (
+      typeof parsed.cachedAt !== 'number' ||
+      Date.now() - parsed.cachedAt > AI_HISTORY_CACHE_TTL_MS ||
+      !Array.isArray(parsed.messages)
+    ) {
+      return null;
+    }
+
+    return {
+      messages: parsed.messages.filter((message) => message.content?.trim()),
+      profileName: typeof parsed.profileName === 'string' ? parsed.profileName : '',
+      cachedAt: parsed.cachedAt,
+    } satisfies CachedAiHistory;
+  } catch {
+    return null;
+  }
+}
+
+function persistAiHistory(messages: AiChatMessage[], profileName: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      AI_HISTORY_CACHE_KEY,
+      JSON.stringify({
+        messages: messages.slice(-40),
+        profileName,
+        cachedAt: Date.now(),
+      } satisfies CachedAiHistory)
+    );
+  } catch {
+    // AI history cache is only a speed hint.
+  }
+}
 
 function getDisplayName(value: string) {
   return value
@@ -159,16 +218,21 @@ function renderFormattedMessage(content: string) {
 
 export default function UnifiedAiChat() {
   const router = useRouter();
+  const cachedHistory = readCachedAiHistory();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const composerRef = useRef<HTMLFormElement | null>(null);
   const scrollAreaRef = useRef<HTMLElement | null>(null);
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
   const scrollTailRef = useRef<HTMLDivElement | null>(null);
-  const [messages, setMessages] = useState<AiChatMessage[]>([createWelcomeMessage()]);
+  const [messages, setMessages] = useState<AiChatMessage[]>(
+    () => cachedHistory?.messages?.length
+      ? cachedHistory.messages
+      : [createWelcomeMessage(cachedHistory?.profileName)]
+  );
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(true);
-  const [profileName, setProfileName] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(() => !cachedHistory);
+  const [profileName, setProfileName] = useState(() => cachedHistory?.profileName || '');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
   const [composerFocused, setComposerFocused] = useState(false);
@@ -208,9 +272,11 @@ export default function UnifiedAiChat() {
         }
 
         if (active && !localInteractionRef.current) {
-          setMessages(
-            historyMessages.length ? historyMessages : [createWelcomeMessage(loadedProfileName)]
-          );
+          const nextMessages = historyMessages.length
+            ? historyMessages
+            : [createWelcomeMessage(loadedProfileName)];
+          setMessages(nextMessages);
+          persistAiHistory(nextMessages, loadedProfileName);
         }
       } catch (error) {
         console.warn('[ai-chat] history load failed', error);
@@ -227,6 +293,10 @@ export default function UnifiedAiChat() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    persistAiHistory(messages, profileName);
+  }, [messages, profileName]);
 
   useEffect(() => {
     const updateViewportSize = () => {
@@ -520,6 +590,11 @@ export default function UnifiedAiChat() {
     } catch (error) {
       console.warn('[ai-chat] clear chat failed', error);
     } finally {
+      try {
+        window.localStorage.removeItem(AI_HISTORY_CACHE_KEY);
+      } catch {
+        // Ignore local cache cleanup failures.
+      }
       setMessages([createWelcomeMessage(profileName)]);
       setInput('');
       setActionFeedback({});
@@ -654,7 +729,7 @@ export default function UnifiedAiChat() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.28em] text-[#FFB3C1]">
                 <Sparkles size={14} />
-                UG Movies AI
+                UGMOVIES247 AI
               </div>
               <h1 className="mt-1 truncate text-2xl font-black tracking-[-0.04em] text-white md:text-3xl">
                 Ask anything

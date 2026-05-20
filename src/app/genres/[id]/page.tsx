@@ -5,6 +5,7 @@ import { Play } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
@@ -43,6 +44,16 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
   const genreId = decodeURIComponent(params.id);
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(
+      ensureReviewMinimumMovies(
+        `genre:${genreId}`,
+        getGenreMovies(genreId, catalog),
+        catalog
+      )
+    );
+  });
 
   useEffect(() => {
     const cachedCatalog = readCachedPublicMovies();
@@ -144,3 +155,4 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
     </div>
   );
 }
+

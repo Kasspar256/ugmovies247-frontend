@@ -41,12 +41,15 @@ export type AdminRequest = {
   title: string;
   movieTitle?: string;
   contentType?: 'movie' | 'series';
+  requestType?: 'movie' | 'series';
   originalTitle?: string;
   overview?: string;
   description?: string;
   poster?: string;
   backdrop?: string;
   banner?: string;
+  overriddenBackdrop?: string;
+  overriddenPlayerBackdrop?: string;
   releaseDate?: string;
   releaseYear?: number | null;
   genres?: string[];
@@ -90,8 +93,10 @@ export type RequestProcessingJobStatus =
   | 'queued'
   | 'claimed'
   | 'downloading'
+  | 'inspecting'
   | 'processing'
   | 'uploading'
+  | 'ready'
   | 'uploaded'
   | 'failed';
 

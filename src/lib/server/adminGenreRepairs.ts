@@ -2,7 +2,13 @@ import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
-import { isIndianCatalogMovie, mergeUniqueRegionalValues } from '@/lib/regionalCatalog';
+import {
+  hasExplicitIndianMetadata,
+  isIndianCountryValue,
+  isIndianOriginalLanguageValue,
+  mergeUniqueRegionalValues,
+  normalizeRegionalCatalogValue,
+} from '@/lib/regionalCatalog';
 
 type TmdbMovieSearchResult = {
   id: number;
@@ -51,6 +57,7 @@ export type RegionalMetadataRepairSummary = {
   candidateMovies: number;
   updatedMovies: number;
   taggedIndianMovies: number;
+  cleanedIndianMovies: number;
   updatedCountries: number;
   updatedLanguages: number;
   unresolvedMovies: number;
@@ -152,6 +159,23 @@ function getTmdbLanguageLabel(details: TmdbMovieDetails) {
     LANGUAGE_CODE_LABELS[languageCode] ||
     languageCode
   );
+}
+
+function tmdbDetailsConfirmIndian(details: TmdbMovieDetails) {
+  return (
+    isIndianCountryValue(getTmdbCountryLabel(details)) ||
+    isIndianOriginalLanguageValue(details.original_language)
+  );
+}
+
+function isIndianAutoTag(value: string) {
+  const normalized = normalizeRegionalCatalogValue(value);
+
+  return normalized === 'indian' || normalized === 'indian movies';
+}
+
+function removeIndianAutoTags(values: string[]) {
+  return values.filter((value) => !isIndianAutoTag(value));
 }
 
 async function fetchTmdbJson(path: string, params?: URLSearchParams) {
@@ -355,12 +379,23 @@ export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRep
       contentType !== 'series' &&
       typeof movie.tmdb_id === 'number' &&
       Number.isFinite(movie.tmdb_id) &&
-      (isBlankRegionalValue(movie.country) || isBlankRegionalValue(movie.language))
+      (isBlankRegionalValue(movie.country) ||
+        isBlankRegionalValue(movie.language) ||
+        isIndianCountryValue(movie.country) ||
+        hasExplicitIndianMetadata({
+          category: Array.isArray(movie.category)
+            ? movie.category.filter((entry): entry is string => typeof entry === 'string')
+            : [],
+          genres: Array.isArray(movie.genres)
+            ? movie.genres.filter((entry): entry is string => typeof entry === 'string')
+            : [],
+        }))
     );
   });
 
   let updatedMovies = 0;
   let taggedIndianMovies = 0;
+  let cleanedIndianMovies = 0;
   let updatedCountries = 0;
   let updatedLanguages = 0;
   const unresolvedTitles: string[] = [];
@@ -381,7 +416,11 @@ export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRep
         : [];
       const nextPayload: Record<string, unknown> = {};
 
-      if (tmdbCountry && isBlankRegionalValue(movie.country)) {
+      if (
+        tmdbCountry &&
+        (isBlankRegionalValue(movie.country) ||
+          (!tmdbDetailsConfirmIndian(details) && isIndianCountryValue(movie.country)))
+      ) {
         nextPayload.country = tmdbCountry;
         updatedCountries += 1;
       }
@@ -396,17 +435,20 @@ export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRep
       }
 
       const nextGenres = (nextPayload.genres as string[] | undefined) || existingGenres;
-      const isIndianTitle = isIndianCatalogMovie({
-        category: existingCategories,
-        country: String(nextPayload.country || movie.country || ''),
-        genres: nextGenres,
-        language: String(nextPayload.language || movie.language || ''),
-        original_language: details.original_language,
-      });
+      const confirmedIndianTitle = tmdbDetailsConfirmIndian(details);
+      const currentlyTaggedIndian =
+        isIndianCountryValue(movie.country) ||
+        hasExplicitIndianMetadata({
+          category: existingCategories,
+          genres: existingGenres,
+        });
 
-      if (isIndianTitle) {
+      if (confirmedIndianTitle) {
         nextPayload.category = mergeUniqueRegionalValues(existingCategories, ['Indian movies']);
         nextPayload.genres = mergeUniqueRegionalValues(nextGenres, ['Indian']);
+      } else if (currentlyTaggedIndian) {
+        nextPayload.category = removeIndianAutoTags(existingCategories);
+        nextPayload.genres = removeIndianAutoTags(nextGenres);
       }
 
       if (!Object.keys(nextPayload).length) {
@@ -423,8 +465,10 @@ export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRep
 
       updatedMovies += 1;
 
-      if (isIndianTitle) {
+      if (confirmedIndianTitle) {
         taggedIndianMovies += 1;
+      } else if (currentlyTaggedIndian) {
+        cleanedIndianMovies += 1;
       }
     } catch {
       unresolvedTitles.push(getMovieTitle(movie));
@@ -436,6 +480,7 @@ export async function repairMovieRegionalMetadata(): Promise<RegionalMetadataRep
     candidateMovies: candidateMovies.length,
     updatedMovies,
     taggedIndianMovies,
+    cleanedIndianMovies,
     updatedCountries,
     updatedLanguages,
     unresolvedMovies: unresolvedTitles.length,

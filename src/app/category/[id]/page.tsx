@@ -5,6 +5,7 @@ import { Play, ArrowLeft, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { isAppInReview } from '@/lib/appReview';
 import { isIndianCatalogMovie, isIndianSectionName, normalizeRegionalCatalogValue } from '@/lib/regionalCatalog';
@@ -71,6 +72,10 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
   const displayTitle = categorySlug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(dedupeSeriesMovies(getCategoryMovies(categorySlug, catalog)));
+  });
 
   useEffect(() => {
     const cachedMovies = dedupeSeriesMovies(getCategoryMovies(categorySlug, readCachedPublicMovies()));

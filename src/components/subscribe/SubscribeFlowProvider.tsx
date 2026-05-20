@@ -18,10 +18,9 @@ import {
   useRouter,
   useSearchParams,
 } from 'next/navigation';
-import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovies } from '@/lib/publicMovies';
 import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
-import { getShowMobileMoneyFlag } from '@/lib/mobile/mobileMoneyFeatureFlag';
 import type {
   CardPaymentGateway,
   PaymentMethodProvider,
@@ -75,7 +74,6 @@ type SubscribeFlowContextValue = {
   loading: boolean;
   loadError: string;
   submitting: boolean;
-  mobileMoneyEnabled: boolean;
   plans: SubscriptionPlanDefinition[];
   entitlement: SubscriptionEntitlement;
   recurringAgreement: RecurringAgreementSummary;
@@ -105,12 +103,13 @@ type SubscribeFlowContextValue = {
   message: string;
   emailVerified: boolean;
   clearFeedback: () => void;
-  cancelActivePayment: () => void;
   startMobileMoneyCheckout: () => Promise<boolean>;
   startCardCheckout: () => Promise<boolean>;
 };
 
 const STORAGE_KEY = 'ugmovies247.subscribe-flow.v2';
+const SUBSCRIPTION_DATA_CACHE_KEY = 'ugmovies247.subscribe-data.v1';
+const SUBSCRIPTION_DATA_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   hasPremiumAccess: false,
@@ -154,8 +153,6 @@ const EMPTY_RECURRING_AGREEMENT: RecurringAgreementSummary = {
   tokenAvailable: false,
   pendingPaymentId: '',
   failureReason: '',
-  failedChargeAttempts: 0,
-  firstFailedChargeAt: '',
 };
 
 const SubscribeFlowContext = createContext<SubscribeFlowContextValue | null>(null);
@@ -192,12 +189,59 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 async function refreshUnlockedCatalog() {
-  clearPublicMovieCache();
-
   try {
     await fetchPublicMovies({ force: true, refreshEntitlement: true });
   } catch (error) {
     console.warn('[subscribe] failed to refresh public movie catalog after subscription change', error);
+  }
+}
+
+function readCachedSubscriptionData() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SUBSCRIPTION_DATA_CACHE_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as {
+      value?: SubscriptionResponse;
+      cachedAt?: number;
+    };
+
+    if (!parsed.value || typeof parsed.cachedAt !== 'number') {
+      return null;
+    }
+
+    if (Date.now() - parsed.cachedAt > SUBSCRIPTION_DATA_CACHE_TTL_MS) {
+      return null;
+    }
+
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function persistSubscriptionData(value: SubscriptionResponse) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      SUBSCRIPTION_DATA_CACHE_KEY,
+      JSON.stringify({
+        value,
+        cachedAt: Date.now(),
+      })
+    );
+  } catch {
+    // Checkout can continue without persistent plan data.
   }
 }
 
@@ -228,47 +272,6 @@ function submitHostedPaymentForm(redirect: NonNullable<CheckoutResponse['redirec
   form.submit();
 }
 
-
-function SkeletonBlock({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse rounded-2xl bg-white/[0.07] ${className}`} />;
-}
-
-function SubscribePlansSkeleton() {
-  return (
-    <div className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <section className="rounded-[32px] border border-white/10 bg-white/[0.03] p-5 shadow-2xl shadow-black/30">
-          <SkeletonBlock className="mb-5 h-4 w-36" />
-          <SkeletonBlock className="mb-3 h-12 w-3/4 max-w-[420px]" />
-          <SkeletonBlock className="h-5 w-2/3 max-w-[520px]" />
-        </section>
-
-        <section className="rounded-[32px] border border-white/10 bg-white/[0.04] p-5">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div className="space-y-3">
-              <SkeletonBlock className="h-4 w-28" />
-              <SkeletonBlock className="h-8 w-44" />
-            </div>
-            <SkeletonBlock className="h-10 w-28 rounded-full" />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[0, 1, 2, 3].map((item) => (
-              <div key={item} className="rounded-[26px] border border-white/10 bg-[#111318] p-5">
-                <SkeletonBlock className="mb-4 h-5 w-24" />
-                <SkeletonBlock className="mb-3 h-10 w-32" />
-                <SkeletonBlock className="mb-2 h-4 w-full" />
-                <SkeletonBlock className="mb-5 h-4 w-4/5" />
-                <SkeletonBlock className="h-12 w-full rounded-2xl" />
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
 export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -282,7 +285,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [mobileMoneyEnabled, setMobileMoneyEnabled] = useState(false);
   const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>([]);
   const [entitlement, setEntitlement] = useState<SubscriptionEntitlement>(DEFAULT_ENTITLEMENT);
   const [recurringAgreement, setRecurringAgreement] = useState<RecurringAgreementSummary>(
@@ -324,35 +326,20 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     selectedPlanHasCardPricing &&
     cardAvailable;
   const canPayWithMobileMoney =
-    mobileMoneyEnabled &&
-    paymentMethod === 'mobile_money' &&
-    Boolean(selectedProviderOption) &&
-    Boolean(phoneNumber.trim());
+    paymentMethod === 'mobile_money' && Boolean(selectedProviderOption) && Boolean(phoneNumber.trim());
 
   const clearFeedback = useCallback(() => {
     setError('');
     setMessage('');
   }, []);
 
-  const cancelActivePayment = useCallback(() => {
-    setActivePayment(null);
-    setSubmitting(false);
-    setMessage('');
-    setError('Payment request cancelled. You can choose a payment method again.');
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    getShowMobileMoneyFlag().then((enabled) => {
-      if (mounted) {
-        setMobileMoneyEnabled(enabled);
-      }
-    });
-
-    return () => {
-      mounted = false;
-    };
+  const applySubscriptionData = useCallback((payload: SubscriptionResponse) => {
+    setPlans(payload.plans || []);
+    setProviders(payload.providers || []);
+    setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
+    setCardGateway(payload.cardGateway || EMPTY_CARD_GATEWAY);
+    setRecurringAgreement(payload.recurringAgreement || EMPTY_RECURRING_AGREEMENT);
+    setEmailVerified(payload.emailVerified === true);
   }, []);
 
   const loadSubscriptionData = useCallback(async () => {
@@ -363,22 +350,29 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     const payload = await readJsonResponse<SubscriptionResponse & { error?: string }>(response);
 
     if (!response.ok) {
-      throw new Error(payload.error || 'Failed to load subscription plans.');
+      const cachedSubscriptionData = readCachedSubscriptionData();
+
+      if (cachedSubscriptionData) {
+        applySubscriptionData(cachedSubscriptionData);
+        return cachedSubscriptionData;
+      }
+
+      throw new Error(
+        response.status === 401
+          ? 'We are reconnecting your account. Please try opening premium plans again in a moment.'
+          : payload.error || 'Failed to load subscription plans.'
+      );
     }
 
-    setPlans(payload.plans || []);
-    setProviders(payload.providers || []);
-    setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
-    setCardGateway(payload.cardGateway || EMPTY_CARD_GATEWAY);
-    setRecurringAgreement(payload.recurringAgreement || EMPTY_RECURRING_AGREEMENT);
-    setEmailVerified(payload.emailVerified === true);
+    applySubscriptionData(payload);
+    persistSubscriptionData(payload);
 
     if (payload.entitlement) {
       void refreshUnlockedCatalog();
     }
 
     return payload;
-  }, []);
+  }, [applySubscriptionData]);
 
   const syncCompletedPayment = useCallback(async () => {
     const subscriptionPayload = await loadSubscriptionData();
@@ -412,30 +406,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
         providerMessage: payment.providerMessage || '',
         paymentProvider: payment.paymentProvider || 'payfast',
       };
-
-      const normalizedProviderStatus = nextPayment.providerStatus.toLowerCase();
-      const normalizedProviderMessage = nextPayment.providerMessage.toLowerCase();
-      const providerCancelled =
-        nextPayment.paymentProvider === 'pawapay' &&
-        (
-          normalizedProviderStatus.includes('cancel') ||
-          normalizedProviderStatus.includes('reject') ||
-          normalizedProviderStatus.includes('declin') ||
-          normalizedProviderStatus.includes('fail') ||
-          normalizedProviderStatus.includes('expire') ||
-          normalizedProviderMessage.includes('cancel') ||
-          normalizedProviderMessage.includes('reject') ||
-          normalizedProviderMessage.includes('declin') ||
-          normalizedProviderMessage.includes('fail') ||
-          normalizedProviderMessage.includes('expire')
-        );
-
-      if (providerCancelled) {
-        setActivePayment({ ...nextPayment, status: 'cancelled' });
-        setError(nextPayment.providerMessage || 'Mobile Money payment was cancelled. You can try again.');
-        setMessage('');
-        return;
-      }
 
       setActivePayment(nextPayment);
 
@@ -536,11 +506,18 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const load = async () => {
+      const cachedSubscriptionData = readCachedSubscriptionData();
+
+      if (cachedSubscriptionData) {
+        applySubscriptionData(cachedSubscriptionData);
+        setLoading(false);
+      }
+
       try {
         setLoadError('');
         await loadSubscriptionData();
       } catch (loadSubscriptionError) {
-        if (mounted) {
+        if (mounted && !cachedSubscriptionData) {
           setLoadError(
             loadSubscriptionError instanceof Error
               ? loadSubscriptionError.message
@@ -559,7 +536,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [draftReady, loadSubscriptionData]);
+  }, [applySubscriptionData, draftReady, loadSubscriptionData]);
 
   useEffect(() => {
     if (!plans.length) {
@@ -581,7 +558,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const methods: FlowPaymentMethod[] = [];
 
-    if (mobileMoneyEnabled && sortedProviders.length) {
+    if (sortedProviders.length) {
       methods.push('mobile_money');
     }
 
@@ -594,7 +571,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (requestedMethod === 'mobile_money' && mobileMoneyEnabled && sortedProviders.length) {
+    if (requestedMethod === 'mobile_money' && sortedProviders.length) {
       setPaymentMethod('mobile_money');
       return;
     }
@@ -602,7 +579,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     if (paymentMethod && !methods.includes(paymentMethod)) {
       setPaymentMethod('');
     }
-  }, [cardAvailable, mobileMoneyEnabled, paymentMethod, requestedMethod, selectedPlanHasCardPricing, sortedProviders.length]);
+  }, [cardAvailable, paymentMethod, requestedMethod, selectedPlanHasCardPricing, sortedProviders.length]);
 
   useEffect(() => {
     if (!sortedProviders.length) {
@@ -710,11 +687,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
-    if (!mobileMoneyEnabled) {
-      setError('Mobile Money is not available right now.');
-      return false;
-    }
-
     setSubmitting(true);
     setError('');
     setMessage('');
@@ -722,6 +694,30 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setRedirectCountdown(null);
 
     try {
+      if (isNativeAndroidApp()) {
+        const response = await fetch('/api/subscriptions/external-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            planType: selectedPlanDefinition.type,
+            paymentMethod: 'mobile_money',
+            provider,
+            phoneNumber,
+            returnTo: safeReturnTo,
+          }),
+        });
+        const payload = await readJsonResponse<CheckoutResponse>(response);
+
+        if (!response.ok || !payload.checkoutUrl) {
+          throw new Error(payload.detail || payload.error || 'Failed to open payment checkout.');
+        }
+
+        setMessage('Opening secure payment checkout...');
+        await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
+        return true;
+      }
+
       const response = await fetch('/api/subscriptions/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -749,7 +745,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       };
 
       setActivePayment(nextPayment);
-      setMessage('Waiting for PIN prompt. Approve the Mobile Money request on your phone.');
+      setMessage('Payment request sent. Approve it on your phone.');
       return true;
     } catch (checkoutError) {
       setError(checkoutError instanceof Error ? checkoutError.message : 'Failed to start payment.');
@@ -758,7 +754,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       setSubmitting(false);
     }
   }, [
-    mobileMoneyEnabled,
     phoneNumber,
     provider,
     refreshNativeCheckoutState,
@@ -798,7 +793,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
         setMessage('Opening secure card checkout...');
         await openExternalCheckout(payload.checkoutUrl, refreshNativeCheckoutState);
-        setMessage('Checkout closed. If you cancelled, no charge was made. If you paid, your subscription will refresh shortly.');
         return true;
       }
 
@@ -847,7 +841,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       loading: loading || !draftReady,
       loadError,
       submitting,
-      mobileMoneyEnabled,
       plans,
       entitlement,
       recurringAgreement,
@@ -877,7 +870,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       message,
       emailVerified,
       clearFeedback,
-      cancelActivePayment,
       startMobileMoneyCheckout,
       startCardCheckout,
     }),
@@ -885,7 +877,6 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       activePayment,
       canPayWithCard,
       canPayWithMobileMoney,
-      cancelActivePayment,
       cardAvailable,
       cardGateway,
       clearFeedback,
@@ -956,7 +947,16 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
         </div>
       ) : null}
 
-      {loading || !draftReady ? <SubscribePlansSkeleton /> : children}
+      {loading || !draftReady ? (
+        <div className="flex min-h-screen items-center justify-center bg-[#0B0C10]">
+          <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-4 text-sm font-bold text-white">
+            <Loader2 size={18} className="animate-spin" />
+            Loading premium plans...
+          </div>
+        </div>
+      ) : (
+        children
+      )}
     </SubscribeFlowContext.Provider>
   );
 }

@@ -73,6 +73,8 @@ const INDIAN_METADATA_SIGNALS = new Set([
   'tollywood',
 ]);
 
+const UNKNOWN_REGIONAL_VALUES = new Set(['', 'n a', 'na', 'n/a', 'none', 'unknown']);
+
 export function normalizeRegionalCatalogValue(value: unknown) {
   return String(value || '')
     .toLowerCase()
@@ -109,36 +111,48 @@ function toStringList(value: unknown) {
 }
 
 export function isIndianSectionName(value: unknown) {
-  return (
-    includesSignal(value, INDIAN_METADATA_SIGNALS) ||
-    includesSignal(value, INDIAN_LANGUAGE_SIGNALS)
-  );
+  return includesSignal(value, INDIAN_METADATA_SIGNALS);
 }
 
-export function isIndianCatalogMovie(movie: RegionalCatalogRecord) {
-  if (includesSignal(movie.country, INDIAN_COUNTRY_SIGNALS)) {
-    return true;
-  }
+export function isIndianCountryValue(value: unknown) {
+  return includesSignal(value, INDIAN_COUNTRY_SIGNALS);
+}
 
-  if (
-    includesSignal(movie.language, INDIAN_LANGUAGE_SIGNALS) ||
-    includesSignal(movie.original_language, INDIAN_LANGUAGE_SIGNALS) ||
-    includesSignal(movie.originalLanguage, INDIAN_LANGUAGE_SIGNALS)
-  ) {
-    return true;
-  }
+export function isUnknownRegionalValue(value: unknown) {
+  return UNKNOWN_REGIONAL_VALUES.has(normalizeRegionalCatalogValue(value));
+}
 
+export function isIndianOriginalLanguageValue(value: unknown) {
+  return includesSignal(value, INDIAN_LANGUAGE_SIGNALS);
+}
+
+export function hasExplicitIndianMetadata(movie: RegionalCatalogRecord) {
   const metadataValues = [
     ...toStringList(movie.category),
     ...toStringList(movie.genres),
     ...toStringList(movie.tags),
   ];
 
-  return metadataValues.some(
-    (value) =>
-      includesSignal(value, INDIAN_METADATA_SIGNALS) ||
-      includesSignal(value, INDIAN_LANGUAGE_SIGNALS)
-  );
+  return metadataValues.some((value) => includesSignal(value, INDIAN_METADATA_SIGNALS));
+}
+
+export function isIndianCatalogMovie(movie: RegionalCatalogRecord) {
+  if (isIndianCountryValue(movie.country)) {
+    return true;
+  }
+
+  if (!isUnknownRegionalValue(movie.country)) {
+    return false;
+  }
+
+  if (
+    isIndianOriginalLanguageValue(movie.original_language) ||
+    isIndianOriginalLanguageValue(movie.originalLanguage)
+  ) {
+    return true;
+  }
+
+  return hasExplicitIndianMetadata(movie);
 }
 
 export function mergeUniqueRegionalValues(...lists: Array<readonly string[] | null | undefined>) {

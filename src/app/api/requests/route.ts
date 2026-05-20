@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
     if (!session) {
       return NextResponse.json(
-        { error: 'Please sign in before requesting a movie.', code: 'auth_required' },
+        { error: 'Please sign in before submitting a request.', code: 'auth_required' },
         { status: 401 }
       );
     }
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     if (session.userRecord.emailVerified !== true) {
       return NextResponse.json(
         {
-          error: 'Please verify your email before requesting a movie so we can alert you when it is ready.',
+          error: 'Please verify your email before submitting a request so we can alert you when it is ready.',
           code: 'email_not_verified',
         },
         { status: 403 }
@@ -29,6 +29,8 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
       movieTitle?: string;
+      requestType?: 'movie' | 'series';
+      contentType?: 'movie' | 'series';
       preferredVj?: string;
       notes?: string;
       fcmToken?: string;
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
 
     const createdRequest = await createMovieRequest({
       movieTitle: String(body.movieTitle || body.title || ''),
+      requestType: body.requestType === 'series' || body.contentType === 'series' ? 'series' : 'movie',
       preferredVj: String(body.preferredVj || ''),
       notes: String(body.notes || ''),
       userId: session.uid,

@@ -6,6 +6,7 @@ import { ArrowLeft, Play } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 import { isAppInReview } from '@/lib/appReview';
 import MobilePageHeader from '@/components/MobilePageHeader';
@@ -25,10 +26,10 @@ function getMoviesForVj(vjName: string, allMovies: Movie[]) {
 
 function getVjIntro(vjName: string, count: number) {
   if (isAppInReview) {
-    return `Discover ${count} ${vjName} trailer picks on UG Movies 247, including Luganda translated titles, VJ catalog entries, series details, and movie discovery picks.`;
+    return `Discover ${count} ${vjName} trailer picks on UGMOVIES247, including Luganda translated titles, VJ catalog entries, series details, and movie discovery picks.`;
   }
 
-  return `Watch ${count} ${vjName} movies on UG Movies 247, including Luganda translated movies, Uganda translated movies, VJ translated action movies, series, and Hollywood entertainment for Uganda.`;
+  return `Watch ${count} ${vjName} movies on UGMOVIES247, including Luganda translated movies, Uganda translated movies, VJ translated action movies, series, and Hollywood entertainment for Uganda.`;
 }
 
 export default function VJDetail({ params }: { params: { id: string } }) {
@@ -36,6 +37,16 @@ export default function VJDetail({ params }: { params: { id: string } }) {
   const vjInfo = VJ_DIRECTORY.find(v => v.id === vjId) || { name: 'Unknown VJ' };
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(
+      ensureReviewMinimumMovies(
+        `vj:${vjInfo.name}`,
+        getMoviesForVj(vjInfo.name, catalog),
+        catalog
+      )
+    );
+  });
 
   useEffect(() => {
     const cachedCatalog = readCachedPublicMovies();
@@ -111,7 +122,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
         {movies.map(movie => (
           <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group">
             <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2">
-              <img src={movie.poster} alt={`${movie.title} ${vjInfo.name} translated movie on UG Movies 247`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+              <img src={movie.poster} alt={`${movie.title} ${vjInfo.name} translated movie on UGMOVIES247`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
               {isSeriesMovie(movie) && (
                 <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
                   EPS

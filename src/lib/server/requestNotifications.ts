@@ -189,15 +189,17 @@ export async function sendAdminMovieRequestAlert(request: AdminRequest) {
   const adminLink = `${getBaseUrl()}/admin/requests`;
   const title = request.title || request.movieTitle || 'Untitled request';
   const requester = request.requesterEmail || request.userEmail || request.requesterName || 'Unknown user';
-  const body = `New movie request: ${title}`;
+  const requestType = request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie';
+  const body = `New ${requestType} request: ${title}`;
 
   await Promise.allSettled([
     sendFcmNotification({
       token: process.env.ADMIN_FCM_TOKEN || '',
-      title: 'New movie request',
+      title: `New ${requestType} request`,
       body,
       data: {
         type: 'movie_request_admin',
+        requestType,
         requestId: request.id,
         route: '/admin/requests',
       },
@@ -205,7 +207,7 @@ export async function sendAdminMovieRequestAlert(request: AdminRequest) {
     }),
     sendTelegramAdminMessage(
       [
-        '<b>New UGMOVIES247 movie request</b>',
+        `<b>New UGMOVIES247 ${escapeHtml(requestType)} request</b>`,
         `Title: ${escapeHtml(title)}`,
         `User: ${escapeHtml(requester)}`,
         request.preferredVj ? `Preferred VJ: ${escapeHtml(request.preferredVj)}` : '',
@@ -230,6 +232,10 @@ export async function sendMovieRequestUserUpdate(options: {
   const email = String(options.request.userEmail || options.request.requesterEmail || '').trim();
   const userId = String(options.request.userId || options.request.requesterId || '').trim();
   const movieId = String(options.movieId || options.request.movieId || '').trim();
+  const requestType =
+    options.request.requestType === 'series' || options.request.contentType === 'series'
+      ? 'series'
+      : 'movie';
   let fcmToken = String(options.request.fcmToken || '').trim();
 
   if (!fcmToken && userId) {
@@ -238,8 +244,12 @@ export async function sendMovieRequestUserUpdate(options: {
     fcmToken = userData?.fcmToken?.trim() || '';
   }
 
+  // The fresh/fromRequest flags force the player page to fetch the exact movie doc
+  // instead of waiting for the normal two-hour public catalog cache to expire.
   const movieLink = movieId
-    ? `${getBaseUrl()}/movie/${encodeURIComponent(movieId)}?fresh=1&fromRequest=1`
+    ? `${getBaseUrl()}/movie/${encodeURIComponent(movieId)}?fresh=1&fromRequest=1&requestId=${encodeURIComponent(
+        options.request.id
+      )}`
     : `${getBaseUrl()}/browse`;
 
   await Promise.allSettled([
@@ -272,10 +282,13 @@ export async function sendMovieRequestUserUpdate(options: {
       link: movieLink,
       data: {
         type: 'movie_request_update',
+        requestType,
         status: options.status,
         requestId: options.request.id,
         movieId,
-        route: movieId ? `/movie/${movieId}?fresh=1&fromRequest=1` : '/browse',
+        route: movieId
+          ? `/movie/${movieId}?fresh=1&fromRequest=1&requestId=${options.request.id}`
+          : '/browse',
       },
     }),
   ]);

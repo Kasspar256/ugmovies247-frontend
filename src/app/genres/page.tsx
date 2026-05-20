@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
@@ -30,6 +31,10 @@ const getGenreImage = (genreName: string, movies: Movie[]) => {
 export default function GenresDirectory() {
   const [movies, setMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(catalog);
+  });
 
   useEffect(() => {
     const cachedMovies = readCachedPublicMovies();

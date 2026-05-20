@@ -15,6 +15,7 @@ export type Episode = {
   poster?: string;
   thumbnail?: string;
   overriddenBackdrop?: string;
+  episodeTrailerUrl?: string;
   sourceType?: SourceType;
   sourcePipeline?: SourcePipeline;
   sourceFileName?: string;
@@ -124,6 +125,8 @@ export type Movie = {
   category?: string[];
   vj?: string;
   video_url?: string;
+  trailerUrl?: string;
+  mainSeriesTrailerUrl?: string;
   trailer_url?: string;
   release_date?: string;
   date_added?: string;
@@ -272,6 +275,10 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                   typeof rawEpisode.overriddenBackdrop === 'string'
                     ? rawEpisode.overriddenBackdrop
                     : '',
+                episodeTrailerUrl:
+                  typeof rawEpisode.episodeTrailerUrl === 'string'
+                    ? rawEpisode.episodeTrailerUrl
+                    : '',
                 sourceType: normalizeSourceType(rawEpisode.sourceType),
                 sourcePipeline: normalizeSourcePipeline(rawEpisode.sourcePipeline),
                 sourceFileName: typeof rawEpisode.sourceFileName === 'string' ? rawEpisode.sourceFileName : '',
@@ -381,6 +388,9 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
       : [],
     vj: typeof data.vj === 'string' ? data.vj : '',
     video_url: typeof data.video_url === 'string' ? data.video_url : '',
+    trailerUrl: typeof data.trailerUrl === 'string' ? data.trailerUrl : '',
+    mainSeriesTrailerUrl:
+      typeof data.mainSeriesTrailerUrl === 'string' ? data.mainSeriesTrailerUrl : '',
     trailer_url: typeof data.trailer_url === 'string' ? data.trailer_url : '',
     release_date: typeof data.release_date === 'string' ? data.release_date : '',
     date_added: typeof data.date_added === 'string' ? data.date_added : '',

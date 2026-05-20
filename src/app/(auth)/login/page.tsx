@@ -229,7 +229,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B0C10] relative overflow-hidden">
+    <div className="relative min-h-svh overflow-hidden bg-[#0B0C10]">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-[0.14] blur-sm scale-105"
         style={{ backgroundImage: 'url(https://image.tmdb.org/t/p/original/1E5baAaEse26fej7uHcjOgEE2t2.jpg)' }}
@@ -237,13 +237,13 @@ export default function LoginPage() {
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(11,12,16,0.9),rgba(11,12,16,0.82)_28%,rgba(11,12,16,0.88)_58%,rgba(11,12,16,0.95))]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(11,12,16,0.2)_58%,rgba(11,12,16,0.38)_100%)]" />
 
-      <div className="relative z-10 min-h-screen flex flex-col px-4 py-6 md:px-8">
+      <div className="relative z-10 flex min-h-svh flex-col px-3 py-4 min-[390px]:px-4 min-[390px]:py-6 md:px-8">
         <div className="flex items-center justify-between">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-4 py-2 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:text-[#D90429]"
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white transition-colors hover:text-[#D90429] min-[390px]:px-4 min-[390px]:text-sm min-[390px]:tracking-wider"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
             Back
           </Link>
           <div className="hidden md:block text-xs uppercase tracking-[0.3em] text-white/50">
@@ -251,25 +251,25 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 items-center justify-center py-8">
-          <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#11141C]/86 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl md:p-8">
-            <div className="mb-5 text-center">
-              <div className="m-0 flex h-[120px] items-center justify-center overflow-hidden py-1 sm:h-[138px]">
+        <div className="flex flex-1 items-center justify-center py-4 min-[390px]:py-8">
+          <div className="w-full max-w-md rounded-[24px] border border-white/10 bg-[#11141C]/86 p-4 shadow-[0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl min-[390px]:rounded-3xl min-[390px]:p-6 md:p-8">
+            <div className="mb-4 text-center min-[390px]:mb-5">
+              <div className="m-0 flex h-[86px] items-center justify-center overflow-hidden py-1 min-[390px]:h-[120px] sm:h-[138px]">
                 <img
                   src="/logow.png"
                   alt="UGMOVIES247"
-                  className="h-[116px] w-auto max-w-none scale-[2.1] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.42)] sm:h-[136px] sm:scale-[2.25]"
+                  className="h-[84px] w-auto max-w-none scale-[1.9] object-contain drop-shadow-[0_0_42px_rgba(217,4,41,0.42)] min-[390px]:h-[116px] min-[390px]:scale-[2.1] sm:h-[136px] sm:scale-[2.25]"
                 />
               </div>
-              <h1 className="mt-2 text-3xl font-black uppercase tracking-tight text-white">
+              <h1 className="mt-1 text-[clamp(1.55rem,7vw,1.9rem)] font-black uppercase leading-tight tracking-[-0.02em] text-white min-[390px]:mt-2 min-[390px]:text-3xl min-[390px]:tracking-tight">
                 Welcome Back
               </h1>
-              <p className="mt-2 text-sm text-[#9AA4B2]">
+              <p className="mt-1.5 text-xs leading-5 text-[#9AA4B2] min-[390px]:mt-2 min-[390px]:text-sm">
                 Sign in to keep browsing movies, series, watchlists, and your account.
               </p>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3 min-[390px]:space-y-4">
               <GoogleAuthButton
                 onClick={handleGoogleLogin}
                 disabled={loading}
@@ -278,26 +278,26 @@ export default function LoginPage() {
                 loadingLabel="Connecting with Google..."
               />
 
-              <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.26em] text-white/35">
+              <div className="flex items-center gap-2 text-center text-[8px] font-black uppercase tracking-[0.16em] text-white/35 min-[390px]:gap-3 min-[390px]:text-[10px] min-[390px]:tracking-[0.26em]">
                 <div className="h-px flex-1 bg-white/10" />
                 <span>Or continue with email</span>
                 <div className="h-px flex-1 bg-white/10" />
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} className="mt-3 space-y-3 min-[390px]:mt-4 min-[390px]:space-y-4">
               {sessionNotice && (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs leading-5 text-amber-100 min-[390px]:px-4 min-[390px]:py-3 min-[390px]:text-sm">
                   {sessionNotice}
                 </div>
               )}
 
               <label className="block">
-                <span className="mb-2 block text-xs font-bold uppercase tracking-[0.25em] text-white/60">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-white/60 min-[390px]:mb-2 min-[390px]:text-xs min-[390px]:tracking-[0.25em]">
                   Email
                 </span>
-                <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 focus-within:border-[#D90429]">
-                  <Mail size={18} className="text-white/45" />
+                <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-3 focus-within:border-[#D90429] min-[390px]:px-4">
+                  <Mail size={17} className="text-white/45" />
                   <input
                     type="email"
                     value={email}
@@ -305,7 +305,7 @@ export default function LoginPage() {
                       clearFeedback();
                       setEmail(event.target.value);
                     }}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                    className="w-full bg-transparent px-2.5 py-3 text-sm text-white outline-none placeholder:text-white/30 min-[390px]:px-3 min-[390px]:py-4 min-[390px]:text-base"
                     placeholder="name@example.com"
                     autoComplete="email"
                   />
@@ -313,11 +313,11 @@ export default function LoginPage() {
               </label>
 
               <label className="block">
-                <span className="mb-2 block text-xs font-bold uppercase tracking-[0.25em] text-white/60">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-white/60 min-[390px]:mb-2 min-[390px]:text-xs min-[390px]:tracking-[0.25em]">
                   Password
                 </span>
-                <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 focus-within:border-[#D90429]">
-                  <Lock size={18} className="text-white/45" />
+                <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-3 focus-within:border-[#D90429] min-[390px]:px-4">
+                  <Lock size={17} className="text-white/45" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
@@ -325,7 +325,7 @@ export default function LoginPage() {
                       clearFeedback();
                       setPassword(event.target.value);
                     }}
-                    className="w-full bg-transparent px-3 py-4 text-white outline-none placeholder:text-white/30"
+                    className="w-full bg-transparent px-2.5 py-3 text-sm text-white outline-none placeholder:text-white/30 min-[390px]:px-3 min-[390px]:py-4 min-[390px]:text-base"
                     placeholder="Enter your password"
                     autoComplete="current-password"
                   />
@@ -340,26 +340,26 @@ export default function LoginPage() {
                 </div>
               </label>
 
-              <div className="flex items-center justify-between gap-4 pt-1">
-                <label className="flex items-center gap-3 text-sm text-white/80">
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <label className="flex items-center gap-2 text-xs text-white/80 min-[390px]:gap-3 min-[390px]:text-sm">
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(event) => setRememberMe(event.target.checked)}
-                    className="h-5 w-5 rounded border-white/15 bg-white/5 accent-[#D90429]"
+                    className="h-4 w-4 rounded border-white/15 bg-white/5 accent-[#D90429] min-[390px]:h-5 min-[390px]:w-5"
                   />
                   <span>Remember me</span>
                 </label>
                 <Link
                   href={`/forgot-password?redirect=${encodeURIComponent(redirectTarget)}`}
-                  className="text-sm font-semibold text-[#D90429] hover:text-white"
+                  className="text-right text-xs font-semibold text-[#D90429] hover:text-white min-[390px]:text-sm"
                 >
                   Forgot password?
                 </Link>
               </div>
 
               {error && (
-                <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100 shadow-[0_10px_24px_rgba(120,72,10,0.18)]">
+                <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-100 shadow-[0_10px_24px_rgba(120,72,10,0.18)] min-[390px]:px-4 min-[390px]:py-3 min-[390px]:text-sm">
                   {error}
                 </div>
               )}
@@ -369,13 +369,13 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading || googleLoading}
-                className="w-full rounded-2xl bg-[#D90429] px-4 py-4 text-sm font-black uppercase tracking-[0.3em] text-white transition-colors hover:bg-[#b00320] disabled:cursor-not-allowed disabled:bg-[#5E1623]"
+                className="w-full rounded-2xl bg-[#D90429] px-4 py-3.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-[#b00320] disabled:cursor-not-allowed disabled:bg-[#5E1623] min-[390px]:py-4 min-[390px]:text-sm min-[390px]:tracking-[0.3em]"
               >
                 {loading ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-white/55">
+            <p className="mt-4 text-center text-xs leading-5 text-white/55 min-[390px]:mt-6 min-[390px]:text-sm">
               New here?{' '}
               <Link
                 href={`/signup?redirect=${encodeURIComponent(redirectTarget)}`}

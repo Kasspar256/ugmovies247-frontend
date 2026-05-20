@@ -18,6 +18,7 @@ const AUTH_FREE_PREFIXES = [
   '/signup',
   '/forgot-password',
   '/admin',
+  '/movie',
   '/mobile-checkout',
 ];
 

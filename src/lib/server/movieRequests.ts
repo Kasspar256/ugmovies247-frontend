@@ -97,18 +97,22 @@ function mapMovieRequestDoc(
   const seasonNumber = normalizeNumber(data.seasonNumber);
   const episodeNumber = normalizeNumber(data.episodeNumber);
   const progress = normalizeNumber(data.progress) ?? normalizeNumber(data.processingProgress);
+  const requestType = data.requestType === 'series' || data.contentType === 'series' ? 'series' : 'movie';
 
   return {
     id: doc.id,
     title: movieTitle,
     movieTitle,
-    contentType: data.contentType === 'series' ? 'series' : 'movie',
+    contentType: requestType,
+    requestType,
     originalTitle: normalizeString(data.originalTitle) || normalizeString(data.original_title),
     overview: normalizeString(data.overview),
     description: normalizeString(data.description),
     poster: normalizeString(data.poster),
     backdrop: normalizeString(data.backdrop),
     banner: normalizeString(data.banner),
+    overriddenBackdrop: normalizeString(data.overriddenBackdrop),
+    overriddenPlayerBackdrop: normalizeString(data.overriddenPlayerBackdrop),
     releaseDate: normalizeString(data.releaseDate) || normalizeString(data.release_date),
     releaseYear,
     genres: normalizeStringList(data.genres),
@@ -169,6 +173,8 @@ export async function listMovieRequestsForAdmin(limit = 200) {
 
 export async function createMovieRequest(input: {
   movieTitle: string;
+  requestType?: 'movie' | 'series';
+  contentType?: 'movie' | 'series';
   preferredVj?: string;
   notes?: string;
   userId: string;
@@ -179,16 +185,17 @@ export async function createMovieRequest(input: {
   const movieTitle = input.movieTitle.trim();
 
   if (!movieTitle) {
-    throw new Error('Movie title is required.');
+    throw new Error('Title is required.');
   }
 
   if (!input.userId.trim()) {
-    throw new Error('You need to sign in before requesting a movie.');
+    throw new Error('You need to sign in before submitting a request.');
   }
 
   const timestamp = nowIso();
   const ref = adminDb.collection(MOVIE_REQUESTS_COLLECTION).doc();
   let fcmToken = input.fcmToken?.trim() || '';
+  const requestType = input.requestType === 'series' || input.contentType === 'series' ? 'series' : 'movie';
 
   if (!fcmToken) {
     const userSnapshot = await adminDb.collection('users').doc(input.userId.trim()).get().catch(() => null);
@@ -205,6 +212,8 @@ export async function createMovieRequest(input: {
     fcmToken,
     movieTitle,
     title: movieTitle,
+    requestType,
+    contentType: requestType,
     preferredVj: input.preferredVj?.trim() || '',
     notes: input.notes?.trim() || '',
     status: 'pending' satisfies AdminRequestStatus,
@@ -244,10 +253,13 @@ type AdvancedMovieRequestFulfillmentInput = {
   title?: string;
   originalTitle?: string;
   description?: string;
+  episodeDescription?: string;
   overview?: string;
   poster?: string;
   backdrop?: string;
   banner?: string;
+  overriddenBackdrop?: string;
+  episodeOverriddenBackdrop?: string;
   genres?: string[] | string;
   category?: string[] | string;
   vj?: string;
@@ -296,6 +308,7 @@ function buildCommonMovieShell(options: {
     normalizeString(options.request.notes);
   const poster = normalizeString(options.input.poster);
   const backdrop = normalizeString(options.input.backdrop) || normalizeString(options.input.banner);
+  const overriddenBackdrop = normalizeString(options.input.overriddenBackdrop);
   const genres = normalizeStringList(options.input.genres);
   const category = normalizeStringList(options.input.category);
   const tmdbId = normalizeNumber(options.input.tmdbId);
@@ -311,6 +324,7 @@ function buildCommonMovieShell(options: {
     poster,
     backdrop,
     banner: backdrop,
+    overriddenBackdrop,
     genres,
     category: category.length ? category : ['Latest Movies on Ugmovies247'],
     vj: normalizeString(options.input.vj) || options.request.preferredVj || 'Unknown',
@@ -369,6 +383,7 @@ function buildSeriesShell(options: {
     `${options.title} S${seasonNumber}E${episodeNumber}`;
   const seasonTitle =
     normalizeString(options.input.seasonTitle) || `Season ${seasonNumber}`;
+  const episodeDescription = normalizeString(options.input.episodeDescription);
 
   return {
     ...common,
@@ -385,9 +400,12 @@ function buildSeriesShell(options: {
           {
             episodeNumber,
             title: episodeTitle,
-            description: common.description,
-            overview: common.overview,
+            description: episodeDescription,
+            overview: episodeDescription || common.overview,
             poster: common.poster,
+            thumbnail: common.poster,
+            overriddenBackdrop:
+              normalizeString(options.input.episodeOverriddenBackdrop) || common.overriddenBackdrop || '',
             video_url: '',
             sourceUrl: options.sourceUrl,
             sourceFileName: common.sourceFileName,
@@ -406,6 +424,68 @@ function buildSeriesShell(options: {
         ],
       },
     ],
+  };
+}
+
+function mergeSeriesShellWithExisting(
+  existing: Record<string, unknown> | undefined,
+  nextShell: Record<string, unknown>
+) {
+  const seasonsByNumber = new Map<number, Record<string, unknown>>();
+
+  const addSeasons = (seasons: unknown, overwriteEpisodes: boolean) => {
+    if (!Array.isArray(seasons)) return;
+
+    seasons.forEach((season) => {
+      if (!season || typeof season !== 'object') return;
+
+      const seasonRecord = season as Record<string, unknown>;
+      const seasonNumber = Math.max(1, Math.round(normalizeNumber(seasonRecord.seasonNumber) || 1));
+      const existingSeason = seasonsByNumber.get(seasonNumber);
+      const episodesByNumber = new Map<number, Record<string, unknown>>();
+
+      if (existingSeason && Array.isArray(existingSeason.episodes)) {
+        existingSeason.episodes.forEach((episode) => {
+          if (!episode || typeof episode !== 'object') return;
+          const episodeRecord = episode as Record<string, unknown>;
+          const episodeNumber = Math.max(1, Math.round(normalizeNumber(episodeRecord.episodeNumber) || 1));
+          episodesByNumber.set(episodeNumber, episodeRecord);
+        });
+      }
+
+      if (Array.isArray(seasonRecord.episodes)) {
+        seasonRecord.episodes.forEach((episode) => {
+          if (!episode || typeof episode !== 'object') return;
+          const episodeRecord = episode as Record<string, unknown>;
+          const episodeNumber = Math.max(1, Math.round(normalizeNumber(episodeRecord.episodeNumber) || 1));
+          const previousEpisode = episodesByNumber.get(episodeNumber) || {};
+          episodesByNumber.set(
+            episodeNumber,
+            overwriteEpisodes ? { ...previousEpisode, ...episodeRecord } : { ...episodeRecord, ...previousEpisode }
+          );
+        });
+      }
+
+      seasonsByNumber.set(seasonNumber, {
+        ...(existingSeason || {}),
+        ...seasonRecord,
+        seasonNumber,
+        episodes: Array.from(episodesByNumber.values()).sort(
+          (left, right) => Number(left.episodeNumber || 0) - Number(right.episodeNumber || 0)
+        ),
+      });
+    });
+  };
+
+  addSeasons(existing?.seasons, false);
+  addSeasons(nextShell.seasons, true);
+
+  return {
+    ...(existing || {}),
+    ...nextShell,
+    seasons: Array.from(seasonsByNumber.values()).sort(
+      (left, right) => Number(left.seasonNumber || 0) - Number(right.seasonNumber || 0)
+    ),
   };
 }
 
@@ -446,6 +526,7 @@ export async function sendVjVarianceMovieRequest(requestId: string, message: str
 
   const { ref, request } = await getMovieRequest(requestId);
   const timestamp = nowIso();
+  const requestType = request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie';
 
   await ref.set(
     {
@@ -462,8 +543,8 @@ export async function sendVjVarianceMovieRequest(requestId: string, message: str
   await sendMovieRequestUserUpdate({
     request,
     status: 'replied',
-    subject: 'Update on your movie request version',
-    title: 'Movie request version update',
+    subject: `Update on your ${requestType} request version`,
+    title: `${requestType === 'series' ? 'Series' : 'Movie'} request version update`,
     message: reply,
     lines: [`Requested title: ${request.title}`],
   });
@@ -475,9 +556,10 @@ export async function replyToMovieRequest(requestId: string, message: string) {
 
 export async function rejectMovieRequest(requestId: string, message?: string) {
   const { ref, request } = await getMovieRequest(requestId);
+  const requestType = request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie';
   const rejectionMessage =
     message?.trim() ||
-    `Sorry, "${request.title}" is not available right now. We will keep checking and update the catalog if we find a good copy.`;
+    `Sorry, "${request.title}" is not available right now. We will keep checking and update the catalog if we find a good ${requestType} copy.`;
   const timestamp = nowIso();
 
   await ref.set(
@@ -494,8 +576,8 @@ export async function rejectMovieRequest(requestId: string, message?: string) {
   await sendMovieRequestUserUpdate({
     request,
     status: 'rejected',
-    subject: 'Movie request unavailable',
-    title: 'Movie request unavailable',
+    subject: `${requestType === 'series' ? 'Series' : 'Movie'} request unavailable`,
+    title: `${requestType === 'series' ? 'Series' : 'Movie'} request unavailable`,
     message: rejectionMessage,
     lines: [`Requested title: ${request.title}`],
   });
@@ -539,10 +621,22 @@ export async function queueAdvancedMovieRequestFulfillment(
     sourceUrl,
     timestamp,
   };
-  const movieShell =
+  let movieShell: Record<string, unknown> =
     contentType === 'series'
       ? buildSeriesShell(commonShellOptions)
       : buildMovieShell(commonShellOptions);
+
+  if (contentType === 'series') {
+    const existingMovieSnapshot = await adminDb
+      .collection(MOVIES_COLLECTION)
+      .doc(movieId)
+      .get()
+      .catch(() => null);
+
+    if (existingMovieSnapshot?.exists) {
+      movieShell = mergeSeriesShellWithExisting(existingMovieSnapshot.data(), movieShell);
+    }
+  }
 
   await adminDb.collection(MOVIES_COLLECTION).doc(movieId).set(movieShell, { merge: true });
 
@@ -567,6 +661,8 @@ export async function queueAdvancedMovieRequestFulfillment(
     movieShell,
     seasonNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.seasonNumber) || 1)) : null,
     episodeNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.episodeNumber) || 1)) : null,
+    episodeTitle: contentType === 'series' ? normalizeString(input.episodeTitle) : '',
+    episodeDescription: contentType === 'series' ? normalizeString(input.episodeDescription) : '',
     createdAt: timestamp,
     updatedAt: timestamp,
     queuedAt: timestamp,
@@ -584,6 +680,7 @@ export async function queueAdvancedMovieRequestFulfillment(
       movieId,
       processingJobId,
       contentType,
+      requestType: contentType,
       title,
       movieTitle: title,
       originalTitle: normalizeString(input.originalTitle),
@@ -592,6 +689,8 @@ export async function queueAdvancedMovieRequestFulfillment(
       poster: normalizeString(input.poster),
       backdrop: normalizeString(input.backdrop),
       banner: normalizeString(input.banner),
+      overriddenBackdrop: normalizeString(input.overriddenBackdrop),
+      episodeOverriddenBackdrop: normalizeString(input.episodeOverriddenBackdrop),
       genres: normalizeStringList(input.genres),
       category: normalizeStringList(input.category),
       vj: normalizeString(input.vj) || request.preferredVj || '',
@@ -602,6 +701,7 @@ export async function queueAdvancedMovieRequestFulfillment(
       episodeNumber: contentType === 'series' ? Math.max(1, Math.round(normalizeNumber(input.episodeNumber) || 1)) : null,
       seasonTitle: normalizeString(input.seasonTitle),
       episodeTitle: normalizeString(input.episodeTitle),
+      episodeDescription: normalizeString(input.episodeDescription),
       adminNotes: input.adminNotes?.trim() || request.adminNotes || '',
       processorQueue: REQUEST_PROCESSOR_QUEUE,
       queuedAt: timestamp,
@@ -614,6 +714,8 @@ export async function queueAdvancedMovieRequestFulfillment(
     },
     { merge: true }
   );
+
+  return { movieId, processingJobId };
 }
 
 export async function markMovieRequestUploaded(requestId: string, movieId: string) {
@@ -659,8 +761,8 @@ export async function markMovieRequestUploaded(requestId: string, movieId: strin
       status: 'uploaded',
     },
     status: 'uploaded',
-    subject: 'Your movie request is ready',
-    title: 'Your movie request is ready!',
+    subject: `Your ${request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie'} request is ready`,
+    title: `Your ${request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie'} request is ready!`,
     message: `"${request.title}" is now ready to watch.`,
     movieId: cleanMovieId,
   });

@@ -1,4 +1,5 @@
 import {
+  getClientDeviceSession,
   getHydratedClientDeviceHeaders,
   rememberClientDeviceSession,
 } from '@/lib/auth/deviceIdentity';
@@ -162,6 +163,13 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
           return storedCache.value;
         }
 
+        if (response.status >= 500 && getClientDeviceSession()) {
+          return {
+            authenticated: true,
+            code: 'offline_device_session',
+          } satisfies ClientAuthStatus;
+        }
+
         return {
           authenticated: false,
           reason:
@@ -209,6 +217,13 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
       if (storedCache?.value?.authenticated) {
         cachedAuthStatus = storedCache;
         return storedCache.value;
+      }
+
+      if (getClientDeviceSession()) {
+        return {
+          authenticated: true,
+          code: 'offline_device_session',
+        } satisfies ClientAuthStatus;
       }
 
       return {

@@ -1023,12 +1023,13 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
 
       const updatedMovies = Number(result.payload.updatedMovies || 0);
       const taggedIndianMovies = Number(result.payload.taggedIndianMovies || 0);
+      const cleanedIndianMovies = Number(result.payload.cleanedIndianMovies || 0);
       const candidateMovies = Number(result.payload.candidateMovies || 0);
       const unresolvedMovies = Number(result.payload.unresolvedMovies || 0);
 
       setStatusMessage(
         candidateMovies
-          ? `Repaired regional metadata for ${updatedMovies} movie${updatedMovies === 1 ? '' : 's'}. Tagged ${taggedIndianMovies} Indian movie${taggedIndianMovies === 1 ? '' : 's'}${unresolvedMovies ? `. ${unresolvedMovies} still need review.` : '.'}`
+          ? `Repaired regional metadata for ${updatedMovies} movie${updatedMovies === 1 ? '' : 's'}. Tagged ${taggedIndianMovies} Indian movie${taggedIndianMovies === 1 ? '' : 's'} and cleaned ${cleanedIndianMovies} wrong Indian tag${cleanedIndianMovies === 1 ? '' : 's'}${unresolvedMovies ? `. ${unresolvedMovies} still need review.` : '.'}`
           : 'No movies needed regional metadata repair.'
       );
     } catch (error) {

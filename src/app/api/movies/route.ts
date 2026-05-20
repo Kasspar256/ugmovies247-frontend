@@ -20,11 +20,14 @@ import {
 } from '@/lib/server/movieCatalogCache';
 import {
   getMediaCollectionName,
-  resolveMovieCollectionName,
   TRAILER_MEDIA_COLLECTION,
 } from '@/lib/server/movieCollection';
 import { isAppInReview } from '@/lib/appReview';
 import { getMappedTrailerUrlForTitle } from '@/lib/reviewTrailers';
+import {
+  isPublicMovieReady,
+  isPublicPlaybackAssetReady,
+} from '@/lib/publicReadiness';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,11 +41,6 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
 
 function isPremiumAccessTier(accessTier: unknown) {
   return accessTier !== 'free';
-}
-
-function isPlaybackAssetReady(asset: Record<string, unknown>) {
-  const jobStatus = typeof asset.jobStatus === 'string' ? asset.jobStatus : '';
-  return !jobStatus || jobStatus === 'ready';
 }
 
 function sanitizeEpisodeForViewer(
@@ -59,7 +57,7 @@ function sanitizeEpisodeForViewer(
   };
 
   if (!isLocked) {
-    if (!isPlaybackAssetReady(episode)) {
+    if (!isPublicPlaybackAssetReady(episode)) {
       return {
         ...sanitizedEpisode,
         video_url: '',
@@ -101,7 +99,7 @@ function sanitizeMoviePartForViewer(
   };
 
   if (!isLocked) {
-    if (!isPlaybackAssetReady(part)) {
+    if (!isPublicPlaybackAssetReady(part)) {
       return {
         ...sanitizedPart,
         video_url: '',
@@ -157,7 +155,7 @@ function sanitizeMovieForViewerLocally(
     : [];
 
   if (!isLocked) {
-    const shouldExposePrimaryMovieSource = parts.length === 0 && isPlaybackAssetReady(movie);
+    const shouldExposePrimaryMovieSource = parts.length === 0 && isPublicPlaybackAssetReady(movie);
 
     return {
       ...movie,
@@ -229,54 +227,12 @@ function sanitizeMovieForReviewMode(movie: Record<string, unknown>) {
   };
 }
 
-function hasPlayableAsset(asset: Record<string, unknown>) {
-  if (!isPlaybackAssetReady(asset)) {
-    return false;
-  }
-
-  if (
-    String(asset.video_url || '').trim() ||
-    String(asset.sourceUrl || '').trim() ||
-    String(asset.masterPlaylistUrl || '').trim()
-  ) {
-    return true;
-  }
-
-  const renditions = Array.isArray(asset.availableRenditions) ? asset.availableRenditions : [];
-  return renditions.some((rendition) =>
-    Boolean(String((rendition as Record<string, unknown>).playlistUrl || '').trim())
-  );
-}
-
-function hasPublicPlaybackAsset(movieDoc: Record<string, unknown>) {
-  if (hasPlayableAsset(movieDoc)) {
-    return true;
-  }
-
-  const parts = Array.isArray(movieDoc.parts) ? movieDoc.parts : [];
-
-  if (parts.some((part) => hasPlayableAsset(part as Record<string, unknown>))) {
-    return true;
-  }
-
-  const seasons = Array.isArray(movieDoc.seasons) ? movieDoc.seasons : [];
-
-  return seasons.some((season) => {
-    const rawSeason = season as Record<string, unknown>;
-    const episodes = Array.isArray(rawSeason.episodes) ? rawSeason.episodes : [];
-
-    return episodes.some((episode) => {
-      return hasPlayableAsset(episode as Record<string, unknown>);
-    });
-  });
-}
-
 function hasVisibleCatalogAsset(movieDoc: Record<string, unknown>, collectionName: string) {
   if (collectionName === TRAILER_MEDIA_COLLECTION && String(movieDoc.trailer_url || '').trim()) {
     return true;
   }
 
-  return hasPublicPlaybackAsset(movieDoc);
+  return isPublicMovieReady(movieDoc);
 }
 
 async function readMovieSnapshotWithFallback(
@@ -352,13 +308,44 @@ function withReviewTrailerFallback(movieDoc: Record<string, unknown>) {
   };
 }
 
+function readTimestampMs(value: unknown) {
+  if (!value) {
+    return 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === 'string') {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const seconds = typeof record.seconds === 'number' ? record.seconds : null;
+
+    if (seconds !== null) {
+      return seconds * 1000;
+    }
+
+    if (typeof record.toDate === 'function') {
+      const timestamp = (record.toDate as () => Date)().getTime();
+      return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+  }
+
+  return 0;
+}
+
 function getMovieTimestamp(movie: Record<string, unknown>) {
-  const dateAdded = String(movie.date_added || '');
-  const updatedAt = String(movie.updatedAt || '');
-  const createdAt = String(movie.createdAt || '');
-  const candidate = dateAdded || updatedAt || createdAt;
-  const timestamp = candidate ? new Date(candidate).getTime() : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  return Math.max(
+    readTimestampMs(movie.date_added),
+    readTimestampMs(movie.updatedAt),
+    readTimestampMs(movie.createdAt),
+    readTimestampMs(movie.processedAt)
+  );
 }
 
 function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
@@ -432,6 +419,10 @@ async function fetchMovieCatalog(collectionName: string, reviewOnly: boolean) {
 
 export async function GET(request: Request) {
   try {
+    const requestUrl = new URL(request.url);
+    const sinceParam = requestUrl.searchParams.get('since') || '';
+    const sinceTimestamp = sinceParam ? new Date(sinceParam).getTime() : 0;
+    const shouldReturnDelta = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0;
     const session = await getCurrentAuthSession({ hydrateUserRecord: true });
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
@@ -439,9 +430,7 @@ export async function GET(request: Request) {
           role: session.role,
         })
       : DEFAULT_ENTITLEMENT;
-    const requestedCollectionName = await getMediaCollectionName(request, session?.userRecord || session);
-    const reviewOnly = requestedCollectionName === TRAILER_MEDIA_COLLECTION;
-    const collectionName = reviewOnly ? await resolveMovieCollectionName() : requestedCollectionName;
+    const collectionName = await getMediaCollectionName(request, session?.userRecord || session);
 
     const adminSetupError = getFirebaseAdminSetupError();
 
@@ -452,25 +441,27 @@ export async function GET(request: Request) {
       );
     }
 
-    const catalog = await fetchMovieCatalog(collectionName, reviewOnly);
-    const movies = catalog.movies
-      .filter((movieDoc) => {
-        if (reviewOnly) {
-          return movieDoc.is_for_review === true;
-        }
-
-        if (collectionName === TRAILER_MEDIA_COLLECTION) {
-          return hasVisibleCatalogAsset(movieDoc, collectionName);
-        }
-
-        return true;
-      })
+    const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
+    const visibleMovieDocs = catalog.movies
+      .filter((movieDoc) =>
+        isAppInReview ? movieDoc.is_for_review === true : hasVisibleCatalogAsset(movieDoc, collectionName)
+      );
+    const movieDocs = shouldReturnDelta
+      ? visibleMovieDocs.filter((movieDoc) => getMovieTimestamp(movieDoc) > sinceTimestamp)
+      : visibleMovieDocs;
+    const movies = movieDocs
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
-        return reviewOnly ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
+        return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
       });
 
-    return NextResponse.json({ movies, entitlement });
+    return NextResponse.json({
+      movies,
+      entitlement,
+      delta: shouldReturnDelta,
+      since: shouldReturnDelta ? sinceParam : undefined,
+      serverTime: new Date().toISOString(),
+    });
   } catch (error) {
     console.error('[movies-api] failed to load movies', error);
     return NextResponse.json(

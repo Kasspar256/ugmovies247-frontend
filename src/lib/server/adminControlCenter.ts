@@ -733,6 +733,8 @@ export async function listRequestsForAdmin(limit = 200) {
 
 export async function createRequestForAdmin(input: {
   title: string;
+  requestType?: 'movie' | 'series';
+  contentType?: 'movie' | 'series';
   preferredVj?: string;
   notes?: string;
   requesterId?: string;
@@ -747,6 +749,7 @@ export async function createRequestForAdmin(input: {
 
   const payload = await createMovieRequest({
     movieTitle: title,
+    requestType: input.requestType === 'series' || input.contentType === 'series' ? 'series' : 'movie',
     preferredVj: input.preferredVj,
     notes: input.notes,
     userId: input.requesterId?.trim() || '',

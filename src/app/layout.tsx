@@ -5,7 +5,9 @@ import AppChrome from '@/components/AppChrome';
 import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import MovieRequestDeepLinkHandler from '@/components/MovieRequestDeepLinkHandler';
+import NavigationStateRetainer from '@/components/NavigationStateRetainer';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
+import PublicCatalogHydrator from '@/components/PublicCatalogHydrator';
 import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
 
 export const metadata = {
@@ -52,6 +54,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PlaybackProvider>
           <AndroidBackButtonHandler />
           <MovieRequestDeepLinkHandler />
+          <NavigationStateRetainer />
+          <PublicCatalogHydrator />
           <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
             <AuthGate>
               <AppChrome>{children}</AppChrome>

@@ -707,10 +707,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     resizeObserver?.observe(inlineHost);
     window.addEventListener('resize', syncInlineRect);
+    window.addEventListener('scroll', syncInlineRect, { passive: true });
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', syncInlineRect);
+      window.removeEventListener('scroll', syncInlineRect);
     };
   }, [inlineHost, syncInlineRect]);
 

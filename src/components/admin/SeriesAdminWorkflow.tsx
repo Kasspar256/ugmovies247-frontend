@@ -16,8 +16,10 @@ import type { Episode, Movie, Season } from '@/types/movie';
 import {
   parseApiResponse,
   type MultipartUploadStats,
+  isMp4TrailerFile,
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
+  uploadTrailerVideoToAdmin,
 } from '@/lib/admin/directUploadClient';
 import { clearAdminFetchCache, fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { CategoryChecklist, SourceEditor } from '@/components/admin/controlCenterEditors';
@@ -52,6 +54,8 @@ type SeriesFormState = {
   nativeBackdrop: string;
   overriddenBackdrop: string;
   backdropFile: File | null;
+  mainSeriesTrailerUrl: string;
+  trailerFile: File | null;
 };
 
 type EpisodeFormState = {
@@ -61,6 +65,8 @@ type EpisodeFormState = {
   source: DraftVideoSource;
   overriddenBackdrop: string;
   backdropFile: File | null;
+  episodeTrailerUrl: string;
+  trailerFile: File | null;
 };
 
 type TmdbTvResult = {
@@ -225,6 +231,8 @@ function buildSeriesFormState(series?: Movie | null): SeriesFormState {
     nativeBackdrop: series?.poster || '',
     overriddenBackdrop: series?.overriddenBackdrop || '',
     backdropFile: null,
+    mainSeriesTrailerUrl: series?.mainSeriesTrailerUrl || '',
+    trailerFile: null,
   };
 }
 
@@ -424,6 +432,63 @@ function LandscapeBackdropField({
           Pending landscape override: {file.name}
         </div>
       ) : null}
+      {error ? <div className="text-sm font-semibold text-amber-100">{error}</div> : null}
+    </div>
+  );
+}
+
+function TrailerVideoField({
+  label = 'Upload Trailer Video',
+  value,
+  file,
+  onFileChange,
+}: {
+  label?: string;
+  value: string;
+  file: File | null;
+  onFileChange: (file: File | null) => void;
+}) {
+  const [error, setError] = useState('');
+
+  const handleFile = (input: HTMLInputElement, nextFile: File | null) => {
+    setError('');
+
+    if (!nextFile) {
+      onFileChange(null);
+      return;
+    }
+
+    if (!isMp4TrailerFile(nextFile)) {
+      onFileChange(null);
+      input.value = '';
+      setError('Trailer uploads must be MP4 video files.');
+      return;
+    }
+
+    onFileChange(nextFile);
+  };
+
+  return (
+    <div className="space-y-3">
+      <FieldLabel>{label}</FieldLabel>
+      <input
+        type="file"
+        accept="video/mp4,.mp4"
+        onChange={(event) => {
+          const input = event.currentTarget;
+          handleFile(input, input.files?.[0] || null);
+        }}
+        className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+      />
+      <div className="rounded-2xl border border-white/10 bg-[#0C1017] px-4 py-4 text-xs leading-6 text-white/58">
+        {file ? (
+          <span className="font-bold text-white">{file.name}</span>
+        ) : value ? (
+          <span className="break-all">{value}</span>
+        ) : (
+          'No trailer is saved yet. Upload an MP4 from phone storage.'
+        )}
+      </div>
       {error ? <div className="text-sm font-semibold text-amber-100">{error}</div> : null}
     </div>
   );
@@ -913,6 +978,11 @@ function SeriesDetailsFields({
         file={form.backdropFile}
         onFileChange={(file) => setForm((current) => ({ ...current, backdropFile: file }))}
       />
+      <TrailerVideoField
+        value={form.mainSeriesTrailerUrl}
+        file={form.trailerFile}
+        onFileChange={(file) => setForm((current) => ({ ...current, trailerFile: file }))}
+      />
     </div>
   );
 }
@@ -939,6 +1009,9 @@ export function AdminSeriesCreateView() {
 
     try {
       const overriddenBackdrop = await uploadLandscapeBackdrop(form.backdropFile, form.overriddenBackdrop);
+      const uploadedTrailer = form.trailerFile
+        ? await uploadTrailerVideoToAdmin(form.trailerFile)
+        : null;
       const response = await fetch('/api/admin/movies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -950,6 +1023,7 @@ export function AdminSeriesCreateView() {
             overview: form.description.trim(),
             poster: form.nativeBackdrop.trim(),
             overriddenBackdrop,
+            mainSeriesTrailerUrl: uploadedTrailer?.publicUrl || form.mainSeriesTrailerUrl.trim(),
             tmdb_id: parseTmdbId(form.tmdbId),
             releaseYear: parseReleaseYear(form.releaseYear),
             language: form.language.trim(),
@@ -1050,6 +1124,9 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
 
     try {
       const overriddenBackdrop = await uploadLandscapeBackdrop(form.backdropFile, form.overriddenBackdrop);
+      const uploadedTrailer = form.trailerFile
+        ? await uploadTrailerVideoToAdmin(form.trailerFile)
+        : null;
       const response = await fetch(`/api/admin/movies/${series.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1058,6 +1135,7 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
           description: form.description.trim(),
           poster: form.nativeBackdrop.trim(),
           overriddenBackdrop,
+          mainSeriesTrailerUrl: uploadedTrailer?.publicUrl || form.mainSeriesTrailerUrl.trim(),
           tmdb_id: parseTmdbId(form.tmdbId),
           vj: form.vj.trim() || 'Unknown',
           releaseYear: parseReleaseYear(form.releaseYear),
@@ -1348,6 +1426,8 @@ function buildEpisodeFormState(
     },
     overriddenBackdrop: existingEpisode?.overriddenBackdrop || '',
     backdropFile: null,
+    episodeTrailerUrl: existingEpisode?.episodeTrailerUrl || '',
+    trailerFile: null,
   };
 }
 
@@ -1478,6 +1558,9 @@ export function AdminSeriesEpisodeEditorView({
 
     try {
       const overriddenBackdrop = await uploadLandscapeBackdrop(form.backdropFile, form.overriddenBackdrop);
+      const uploadedTrailer = form.trailerFile
+        ? await uploadTrailerVideoToAdmin(form.trailerFile)
+        : null;
       const sourceFields = await resolveEpisodeSource(form, existingEpisode, setUploadStats);
       const nextEpisode: Episode = {
         ...(existingEpisode || {}),
@@ -1488,6 +1571,7 @@ export function AdminSeriesEpisodeEditorView({
         poster: existingEpisode?.poster || '',
         thumbnail: existingEpisode?.thumbnail || '',
         overriddenBackdrop,
+        episodeTrailerUrl: uploadedTrailer?.publicUrl || form.episodeTrailerUrl.trim(),
         accessTier: existingEpisode?.accessTier || series.accessTier || 'premium',
         subscriptionRequired: existingEpisode?.subscriptionRequired ?? series.accessTier !== 'free',
         isLocked: false,
@@ -1576,6 +1660,11 @@ export function AdminSeriesEpisodeEditorView({
                 fallbackPreview={getEffectiveSeriesBackdrop(series)}
                 file={form.backdropFile}
                 onFileChange={(file) => setForm((current) => ({ ...current, backdropFile: file }))}
+              />
+              <TrailerVideoField
+                value={form.episodeTrailerUrl}
+                file={form.trailerFile}
+                onFileChange={(file) => setForm((current) => ({ ...current, trailerFile: file }))}
               />
               <SourceEditor
                 title="Episode Video"

@@ -7,7 +7,12 @@ import { ArrowLeft, Save } from 'lucide-react';
 import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
 import type { AdminCategory } from '@/types/admin';
 import type { Movie } from '@/types/movie';
-import { parseApiResponse, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
+import {
+  isMp4TrailerFile,
+  parseApiResponse,
+  uploadPosterToAdmin,
+  uploadTrailerVideoToAdmin,
+} from '@/lib/admin/directUploadClient';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 
@@ -113,6 +118,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingPlayerBackdrop, setSavingPlayerBackdrop] = useState(false);
+  const [savingTrailer, setSavingTrailer] = useState(false);
   const [movie, setMovie] = useState<Movie | null>(null);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [title, setTitle] = useState('');
@@ -126,6 +132,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
   const [posterPreview, setPosterPreview] = useState('');
   const [playerBackdropFile, setPlayerBackdropFile] = useState<File | null>(null);
   const [playerBackdropPreview, setPlayerBackdropPreview] = useState('');
+  const [trailerFile, setTrailerFile] = useState<File | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -311,6 +318,69 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save player backdrop.');
     } finally {
       setSavingPlayerBackdrop(false);
+    }
+  };
+
+  const handleTrailerFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] || null;
+
+    setStatusMessage('');
+    setErrorMessage('');
+
+    if (!file) {
+      setTrailerFile(null);
+      return;
+    }
+
+    if (!isMp4TrailerFile(file)) {
+      input.value = '';
+      setTrailerFile(null);
+      setErrorMessage('Trailer uploads must be MP4 video files.');
+      return;
+    }
+
+    setTrailerFile(file);
+  };
+
+  const handleSaveTrailer = async () => {
+    if (!movie) {
+      return;
+    }
+
+    if (!trailerFile) {
+      setErrorMessage('Choose an MP4 trailer before saving.');
+      return;
+    }
+
+    setSavingTrailer(true);
+    setStatusMessage('');
+    setErrorMessage('');
+
+    try {
+      const uploadedTrailer = await uploadTrailerVideoToAdmin(trailerFile);
+      const response = await fetch(`/api/admin/movies/${movie.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trailerUrl: uploadedTrailer.publicUrl,
+        }),
+      });
+      const result = await parseApiResponse(response);
+
+      if (!result.ok) {
+        throw new Error(result.payload.error || 'Failed to save trailer.');
+      }
+
+      const nextMovie = result.payload.movie as Movie;
+      setMovie(nextMovie);
+      setTrailerFile(null);
+      setStatusMessage('Trailer saved. Movie metadata, poster, and stream links were preserved.');
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save trailer.');
+    } finally {
+      setSavingTrailer(false);
     }
   };
 
@@ -572,6 +642,48 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                   >
                     <Save size={14} />
                     {savingPlayerBackdrop ? 'Saving Backdrop...' : 'Save Player Backdrop'}
+                  </button>
+                </div>
+              </div>
+            </Card>
+
+            <Card
+              title="Trailer"
+              description="Upload an MP4 trailer preview. This is public marketing playback and does not replace the premium movie stream."
+            >
+              <div className="space-y-4">
+                <div>
+                  <FieldLabel>Upload Trailer Video</FieldLabel>
+                  <input
+                    type="file"
+                    accept="video/mp4,.mp4"
+                    onChange={handleTrailerFileChange}
+                    className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                  />
+                  <div className="mt-2 text-xs leading-6 text-white/45">
+                    MP4 files only. Existing movie details and stream links are preserved.
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-white/60">
+                  {trailerFile ? (
+                    <span className="font-bold text-white">{trailerFile.name}</span>
+                  ) : movie?.trailerUrl || movie?.trailer_url ? (
+                    <span className="break-all">{movie.trailerUrl || movie.trailer_url}</span>
+                  ) : (
+                    'No trailer is currently saved for this movie.'
+                  )}
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={savingTrailer || !trailerFile}
+                    onClick={handleSaveTrailer}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#D90429] px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-60"
+                  >
+                    <Save size={14} />
+                    {savingTrailer ? 'Saving Trailer...' : 'Save Trailer'}
                   </button>
                 </div>
               </div>

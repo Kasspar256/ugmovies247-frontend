@@ -186,6 +186,7 @@ export function warmHomePageArtwork(movies: Movie[], limit = 14) {
       movies
         .flatMap((movie) => [
           getOptimizedArtworkUrl(movie.poster, 'card'),
+          getOptimizedArtworkUrl(movie.overriddenBackdrop, 'backdrop'),
           getOptimizedArtworkUrl(movie.poster, 'backdrop'),
           getOptimizedArtworkUrl(movie.parts?.[0]?.thumbnail, 'card'),
           getOptimizedArtworkUrl(movie.parts?.[0]?.poster, 'card'),

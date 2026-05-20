@@ -8,6 +8,7 @@ import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   CATALOG_FILTER_ALL,
   buildCatalogEmptyMessage,
@@ -167,6 +168,10 @@ export default function MoviesPage() {
   const [selectedVj, setSelectedVj] = useState(CATALOG_FILTER_ALL);
   const [selectedGenre, setSelectedGenre] = useState(CATALOG_FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<CatalogFilterKind | null>(null);
+
+  usePublicMovieCatalogUpdates((catalog) => {
+    setMovies(getStandaloneMovies(catalog));
+  });
 
   useEffect(() => {
     const cachedMovies = getStandaloneMovies(readCachedPublicMovies());

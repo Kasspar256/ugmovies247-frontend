@@ -10,8 +10,10 @@ import {
   MIN_DIRECT_MULTIPART_PART_SIZE_BYTES,
   type MultipartUploadStats,
   parseApiResponse,
+  isMp4TrailerFile,
   uploadMultipartFileToAdmin,
   uploadPosterToAdmin,
+  uploadTrailerVideoToAdmin,
 } from '@/lib/admin/directUploadClient';
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
@@ -30,6 +32,7 @@ type TmdbResult = {
   original_title?: string;
   overview?: string;
   poster_path?: string | null;
+  backdrop_path?: string | null;
   release_date?: string;
   original_language?: string;
 };
@@ -40,6 +43,7 @@ type TmdbMovieDetails = {
   original_title?: string;
   overview?: string;
   poster_path?: string | null;
+  backdrop_path?: string | null;
   release_date?: string;
   original_language?: string;
   genres?: Array<{
@@ -72,6 +76,39 @@ const MANUAL_CATEGORY_ORDER = [
 
 function buildTmdbPosterUrl(path?: string | null) {
   return path ? `https://image.tmdb.org/t/p/w780${path}` : '';
+}
+
+function buildTmdbBackdropUrl(path?: string | null) {
+  return path ? `https://image.tmdb.org/t/p/w1280${path}` : '';
+}
+
+function getImageDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('That image could not be read. Try another landscape backdrop.'));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function assertLandscapeBackdrop(file: File) {
+  const dimensions = await getImageDimensions(file);
+
+  if (dimensions.width <= dimensions.height) {
+    throw new Error('Player backdrops must be landscape. Please choose a wider horizontal image.');
+  }
+
+  if (dimensions.width / dimensions.height < 1.55) {
+    throw new Error('Player backdrops should be close to 16:9. Please choose a wider backdrop.');
+  }
 }
 
 const LANGUAGE_CODE_LABELS: Record<string, string> = {
@@ -162,6 +199,8 @@ export function AdminMovieCreateView() {
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const [movieFileInputKey, setMovieFileInputKey] = useState(0);
   const [posterFileInputKey, setPosterFileInputKey] = useState(0);
+  const [playerBackdropFileInputKey, setPlayerBackdropFileInputKey] = useState(0);
+  const [trailerFileInputKey, setTrailerFileInputKey] = useState(0);
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -182,6 +221,9 @@ export function AdminMovieCreateView() {
   const [showTmdbResults, setShowTmdbResults] = useState(false);
   const [posterOverrideFile, setPosterOverrideFile] = useState<File | null>(null);
   const [posterOverridePreview, setPosterOverridePreview] = useState('');
+  const [playerBackdropFile, setPlayerBackdropFile] = useState<File | null>(null);
+  const [playerBackdropPreview, setPlayerBackdropPreview] = useState('');
+  const [trailerFile, setTrailerFile] = useState<File | null>(null);
   const [uploadStats, setUploadStats] = useState<MultipartUploadStats | null>(null);
   const [logLines, setLogLines] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState('');
@@ -241,6 +283,20 @@ export function AdminMovieCreateView() {
   }, [posterOverrideFile]);
 
   useEffect(() => {
+    if (!playerBackdropFile) {
+      setPlayerBackdropPreview('');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(playerBackdropFile);
+    setPlayerBackdropPreview(previewUrl);
+
+    return () => {
+      URL.revokeObjectURL(previewUrl);
+    };
+  }, [playerBackdropFile]);
+
+  useEffect(() => {
     if (!logContainerRef.current) {
       return;
     }
@@ -251,6 +307,12 @@ export function AdminMovieCreateView() {
   const currentPoster = useMemo(
     () => posterOverridePreview || buildTmdbPosterUrl(selectedTmdb?.poster_path),
     [posterOverridePreview, selectedTmdb]
+  );
+  const currentPlayerBackdrop = useMemo(
+    () =>
+      playerBackdropPreview ||
+      buildTmdbBackdropUrl(selectedTmdbDetails?.backdrop_path || selectedTmdb?.backdrop_path),
+    [playerBackdropPreview, selectedTmdb, selectedTmdbDetails]
   );
   const manualCategories = useMemo(() => {
     const categoryMap = new Map(categories.map((category) => [category.name, category]));
@@ -286,6 +348,9 @@ export function AdminMovieCreateView() {
     setShowTmdbResults(false);
     setPosterOverrideFile(null);
     setPosterOverridePreview('');
+    setPlayerBackdropFile(null);
+    setPlayerBackdropPreview('');
+    setTrailerFile(null);
     setUploadStats(null);
     setLogLines([]);
     setStatusMessage('');
@@ -298,6 +363,8 @@ export function AdminMovieCreateView() {
     setLatestJobStatus('');
     setMovieFileInputKey((current) => current + 1);
     setPosterFileInputKey((current) => current + 1);
+    setPlayerBackdropFileInputKey((current) => current + 1);
+    setTrailerFileInputKey((current) => current + 1);
   };
 
   const applyDetectedMovieData = (rawValue: string) => {
@@ -310,6 +377,25 @@ export function AdminMovieCreateView() {
 
     if (!vj.trim() && detected.vj) {
       setVj(detected.vj);
+    }
+  };
+
+  const handlePlayerBackdropFile = async (file: File | null) => {
+    if (!file) {
+      setPlayerBackdropFile(null);
+      return;
+    }
+
+    try {
+      await assertLandscapeBackdrop(file);
+      setPlayerBackdropFile(file);
+      setErrorMessage('');
+    } catch (error) {
+      setPlayerBackdropFile(null);
+      setPlayerBackdropFileInputKey((current) => current + 1);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Please choose a landscape player backdrop.'
+      );
     }
   };
 
@@ -448,6 +534,14 @@ export function AdminMovieCreateView() {
       const uploadedPoster = posterOverrideFile
         ? await uploadPosterToAdmin(posterOverrideFile)
         : null;
+      const uploadedPlayerBackdrop = playerBackdropFile
+        ? await uploadPosterToAdmin(playerBackdropFile)
+        : null;
+      const uploadedTrailer = trailerFile
+        ? await uploadTrailerVideoToAdmin(trailerFile, {
+            onDiagnostic: appendLogLine,
+          })
+        : null;
       const isTrendingTikTok = selectedCategories.includes(TRENDING_CATEGORY);
       const tmdbCountry = getTmdbCountryLabel(selectedTmdbDetails);
       const fallbackLanguageCode = String(selectedTmdb?.original_language || '').toLowerCase();
@@ -473,6 +567,8 @@ export function AdminMovieCreateView() {
         originalTitle: selectedTmdb?.original_title || title.trim(),
         description: description.trim(),
         poster: uploadedPoster?.publicUrl || currentPoster,
+        trailerUrl: uploadedTrailer?.publicUrl || '',
+        overriddenPlayerBackdrop: uploadedPlayerBackdrop?.publicUrl || '',
         genres: finalGenres,
         category: finalCategories,
         vj: vj.trim() || 'Unknown',
@@ -962,28 +1058,92 @@ export function AdminMovieCreateView() {
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <FieldLabel>Poster Override</FieldLabel>
-                <input
-                  key={posterFileInputKey}
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => setPosterOverrideFile(event.target.files?.[0] || null)}
-                  className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
-                />
-                {currentPoster ? (
-                  <div className="max-w-[220px] overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-                    <img
-                      src={currentPoster}
-                      alt={title || 'Poster preview'}
-                      className="h-[320px] w-full object-cover"
-                    />
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-3">
+                  <FieldLabel>Poster Override</FieldLabel>
+                  <input
+                    key={posterFileInputKey}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => setPosterOverrideFile(event.target.files?.[0] || null)}
+                    className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                  />
+                  {currentPoster ? (
+                    <div className="max-w-[220px] overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                      <img
+                        src={currentPoster}
+                        alt={title || 'Poster preview'}
+                        className="h-[320px] w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-sm text-white/45">
+                      Search TMDb or upload a poster to preview artwork here.
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <FieldLabel>Override Player Backdrop</FieldLabel>
+                  <input
+                    key={playerBackdropFileInputKey}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => void handlePlayerBackdropFile(event.target.files?.[0] || null)}
+                    className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                  />
+                  {currentPlayerBackdrop ? (
+                    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+                      <div className="relative aspect-video">
+                        <img
+                          src={currentPlayerBackdrop}
+                          alt={title || 'Player backdrop preview'}
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-sm text-white/45">
+                      Search TMDb or upload a landscape player backdrop here.
+                    </div>
+                  )}
+                  <p className="text-xs leading-5 text-white/45">
+                    Landscape only. This controls the movie player background and does not replace catalog posters.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <FieldLabel>Upload Trailer Video</FieldLabel>
+                  <input
+                    key={trailerFileInputKey}
+                    type="file"
+                    accept="video/mp4,.mp4"
+                    onChange={(event) => {
+                      const nextFile = event.currentTarget.files?.[0] || null;
+
+                      if (nextFile && !isMp4TrailerFile(nextFile)) {
+                        event.currentTarget.value = '';
+                        setTrailerFile(null);
+                        setErrorMessage('Trailer uploads must be MP4 video files.');
+                        return;
+                      }
+
+                      setErrorMessage('');
+                      setTrailerFile(nextFile);
+                    }}
+                    className="block w-full rounded-2xl border border-dashed border-white/15 bg-[#0C1017] px-4 py-3 text-sm text-white file:mr-3 file:rounded-full file:border-0 file:bg-[#D90429] file:px-3 file:py-2 file:text-xs file:font-black file:uppercase file:tracking-[0.18em] file:text-white"
+                  />
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-5 text-sm text-white/55">
+                    {trailerFile ? (
+                      <>
+                        <div className="font-black text-white">{trailerFile.name}</div>
+                        <div className="mt-1 text-xs text-white/45">{formatBytes(trailerFile.size)}</div>
+                      </>
+                    ) : (
+                      'Choose an MP4 trailer from phone storage. Trailers are public previews and do not replace the full movie file.'
+                    )}
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-6 text-sm text-white/45">
-                    Search TMDb or upload a poster to preview artwork here.
-                  </div>
-                )}
+                </div>
               </div>
 
               <div>
