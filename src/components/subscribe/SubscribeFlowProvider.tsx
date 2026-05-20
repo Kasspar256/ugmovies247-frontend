@@ -92,6 +92,7 @@ type SubscribeFlowContextValue = {
   phoneNumber: string;
   setPhoneNumber: (phoneNumber: string) => void;
   cardAvailable: boolean;
+  mobileMoneyEnabled: boolean;
   selectedCardAmount: number;
   selectedPlanHasCardPricing: boolean;
   canPayWithCard: boolean;
@@ -103,6 +104,7 @@ type SubscribeFlowContextValue = {
   message: string;
   emailVerified: boolean;
   clearFeedback: () => void;
+  cancelActivePayment: () => void;
   startMobileMoneyCheckout: () => Promise<boolean>;
   startCardCheckout: () => Promise<boolean>;
 };
@@ -153,6 +155,8 @@ const EMPTY_RECURRING_AGREEMENT: RecurringAgreementSummary = {
   tokenAvailable: false,
   pendingPaymentId: '',
   failureReason: '',
+  failedChargeAttempts: 0,
+  firstFailedChargeAt: '',
 };
 
 const SubscribeFlowContext = createContext<SubscribeFlowContextValue | null>(null);
@@ -314,6 +318,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     [provider, sortedProviders]
   );
   const cardAvailable = cardGateway.enabled && cardGateway.supportsAutoRenew;
+  const mobileMoneyEnabled = sortedProviders.length > 0;
   const selectedCardAmount = selectedPlanDefinition
     ? cardGateway.planPrices[selectedPlanDefinition.type] || 0
     : 0;
@@ -331,6 +336,12 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const clearFeedback = useCallback(() => {
     setError('');
     setMessage('');
+  }, []);
+
+  const cancelActivePayment = useCallback(() => {
+    setActivePayment(null);
+    setMessage('');
+    setError('');
   }, []);
 
   const applySubscriptionData = useCallback((payload: SubscriptionResponse) => {
@@ -859,6 +870,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       phoneNumber,
       setPhoneNumber,
       cardAvailable,
+      mobileMoneyEnabled,
       selectedCardAmount,
       selectedPlanHasCardPricing,
       canPayWithCard,
@@ -870,11 +882,13 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       message,
       emailVerified,
       clearFeedback,
+      cancelActivePayment,
       startMobileMoneyCheckout,
       startCardCheckout,
     }),
     [
       activePayment,
+      cancelActivePayment,
       canPayWithCard,
       canPayWithMobileMoney,
       cardAvailable,
@@ -889,6 +903,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       loadError,
       loading,
       message,
+      mobileMoneyEnabled,
       paymentMethod,
       phoneNumber,
       plans,
