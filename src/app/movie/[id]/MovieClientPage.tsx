@@ -282,6 +282,28 @@ if (initialCatalogForRoute.length && !shouldBypassCatalogCache) {
 
 if (routeInitialMovie) {
   applyResolvedMovie(routeInitialMovie, initialCatalogForRoute);
+
+  if (!shouldBypassCatalogCache) {
+    void fetchPublicMovies()
+      .then((catalogMovies) => {
+        if (!active) {
+          return;
+        }
+
+        const refreshedMovie = catalogMovies.find((candidate) =>
+          candidate.id === params.id || candidate.movieId === params.id
+        );
+
+        if (refreshedMovie) {
+          applyResolvedMovie(refreshedMovie, catalogMovies);
+        }
+      })
+      .catch((error) => {
+        console.warn('[movie-page] silent catalog sync failed after bootstrap render', error);
+      });
+  }
+
+  return;
 }
 
 if (!renderedMovie) {
@@ -379,14 +401,18 @@ active = false;
 ]);
 
 useEffect(() => {
-const fetchRelatedMovies = async () => {
 if (!movie?.id) {
 setRelatedMovies([]);
 return;
 }
 
-try {
-const allMovies = await fetchPublicMovies();
+let active = true;
+
+const applyRelatedMovies = (allMovies: Movie[]) => {
+if (!active || !allMovies.length) {
+return;
+}
+
 const currentListingKey = getMovieListingKey(movie);
 const currentIsSeries = isSeriesMovie(movie);
 
@@ -443,14 +469,29 @@ const fallbackMovies = uniqueScoredMovies
   .map((entry) => entry.candidate);
 
 setRelatedMovies([...strongMatches, ...fallbackMovies]);
-} catch (err) {
-console.error('Failed to fetch related movies:', err);
-setRelatedMovies([]);
-}
 };
 
-fetchRelatedMovies();
-}, [movie]);
+const cachedRelatedSource = [
+  ...routeInitialCatalogMovies,
+  ...readCachedPublicMovies().filter(
+    (candidate) =>
+      !routeInitialCatalogMovies.some(
+        (initialCandidate) =>
+          initialCandidate.id === candidate.id || initialCandidate.movieId === candidate.movieId
+      )
+  ),
+];
+
+if (cachedRelatedSource.length) {
+  applyRelatedMovies(cachedRelatedSource);
+} else {
+  setRelatedMovies([]);
+}
+
+return () => {
+  active = false;
+};
+}, [movie, routeInitialCatalogMovies]);
 
 useEffect(() => {
   if (!movie?.parts?.length) {

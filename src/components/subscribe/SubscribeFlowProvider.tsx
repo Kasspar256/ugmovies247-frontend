@@ -437,8 +437,12 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   }, [applySubscriptionData]);
 
   const syncCompletedPayment = useCallback(async () => {
-    const subscriptionPayload = await loadSubscriptionData();
-    setEntitlement(subscriptionPayload.entitlement || DEFAULT_ENTITLEMENT);
+    try {
+      const subscriptionPayload = await loadSubscriptionData();
+      setEntitlement(subscriptionPayload.entitlement || DEFAULT_ENTITLEMENT);
+    } catch (syncError) {
+      console.warn('[subscribe] background completed payment sync failed', syncError);
+    }
 
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem(STORAGE_KEY);
@@ -449,8 +453,17 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   }, [loadSubscriptionData]);
 
   const refreshNativeCheckoutState = useCallback(async () => {
-    await loadSubscriptionData();
-    await refreshUnlockedCatalog();
+    try {
+      await loadSubscriptionData();
+    } catch (syncError) {
+      console.warn('[subscribe] background native checkout subscription refresh failed', syncError);
+    }
+
+    try {
+      await refreshUnlockedCatalog();
+    } catch (catalogError) {
+      console.warn('[subscribe] background native checkout catalog refresh failed', catalogError);
+    }
   }, [loadSubscriptionData]);
 
   const applyPaymentResult = useCallback(

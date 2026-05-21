@@ -480,7 +480,7 @@ export function refreshPublicMoviesInBackground(options?: { refreshEntitlement?:
   lastBackgroundMovieRefreshAt = now;
   const cache = getAnyAvailableCatalog();
 
-  if (options?.refreshEntitlement || !cache?.movies?.length || cache.partial) {
+  if (options?.refreshEntitlement || !cache?.movies?.length) {
     void fetchPublicMovies({ force: true, refreshEntitlement: options?.refreshEntitlement }).catch(() => undefined);
     return;
   }
@@ -509,20 +509,10 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     const staleCatalog = getAnyAvailableCatalog();
 
     if (staleCatalog?.movies?.length) {
-      if (staleCatalog.partial) {
-        refreshPublicMoviesInBackground({
-          refreshEntitlement: shouldRefreshEntitlement,
-        });
-
-        if (inFlightMovieCatalogRequest) {
-          return inFlightMovieCatalogRequest;
-        }
-      } else {
-        refreshPublicMoviesInBackground({
-          refreshEntitlement: shouldRefreshEntitlement,
-        });
-        return filterPublicReadyMovies(staleCatalog.movies);
-      }
+      refreshPublicMoviesInBackground({
+        refreshEntitlement: shouldRefreshEntitlement,
+      });
+      return filterPublicReadyMovies(staleCatalog.movies);
     }
 
     if (inFlightMovieCatalogRequest) {

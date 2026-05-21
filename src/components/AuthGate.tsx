@@ -19,7 +19,10 @@ const AUTH_FREE_PREFIXES = [
   '/forgot-password',
   '/admin',
   '/movie',
+  '/cardspayments',
   '/mobile-checkout',
+  '/profile',
+  '/subscribe',
 ];
 
 function isAuthFreePath(pathname: string) {
@@ -146,12 +149,23 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const status = await fetchAuthStatus({ force: true }).catch(() => ({
-        authenticated: false,
-        reason: 'session_missing' as const,
-      }));
+      const status = await fetchAuthStatus({ force: true }).catch(async (error) => {
+        console.warn('[auth-gate] background auth status refresh failed', error);
+
+        const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
+
+        if (restoredSession) {
+          return { authenticated: true as const };
+        }
+
+        return null;
+      });
 
       if (!active) {
+        return;
+      }
+
+      if (!status) {
         return;
       }
 
