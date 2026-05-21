@@ -38,6 +38,7 @@ export type Episode = {
   accessTier?: 'free' | 'premium';
   subscriptionRequired?: boolean;
   isLocked?: boolean;
+  catalogReady?: boolean;
 };
 
 export type MoviePart = {
@@ -71,6 +72,7 @@ export type MoviePart = {
   accessTier?: 'free' | 'premium';
   subscriptionRequired?: boolean;
   isLocked?: boolean;
+  catalogReady?: boolean;
 };
 
 export type Season = {
@@ -108,6 +110,7 @@ export type Movie = {
   accessTier?: 'free' | 'premium';
   subscriptionRequired?: boolean;
   isLocked?: boolean;
+  catalogReady?: boolean;
   title: string;
   original_title?: string;
   name?: string;
@@ -248,6 +251,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
             accessTier: rawPart.accessTier === 'free' ? 'free' : 'premium',
             subscriptionRequired: rawPart.subscriptionRequired !== false,
             isLocked: Boolean(rawPart.isLocked),
+            catalogReady: rawPart.catalogReady === true,
           };
         })
         .sort((left, right) => left.order - right.order)
@@ -313,6 +317,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                 accessTier: rawEpisode.accessTier === 'free' ? 'free' : 'premium',
                 subscriptionRequired: rawEpisode.subscriptionRequired !== false,
                 isLocked: Boolean(rawEpisode.isLocked),
+                catalogReady: rawEpisode.catalogReady === true,
               };
             })
           : [];
@@ -360,6 +365,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     accessTier: data.accessTier === 'free' ? 'free' : 'premium',
     subscriptionRequired: data.subscriptionRequired !== false,
     isLocked: Boolean(data.isLocked),
+    catalogReady: data.catalogReady === true,
     title: String(data.title || data.name || 'Untitled movie'),
     original_title: typeof data.original_title === 'string' ? data.original_title : '',
     name: typeof data.name === 'string' ? data.name : '',

@@ -60,6 +60,10 @@ export function isPublicPlaybackAssetReady(asset: PublicAsset, options: PublicRe
     return false;
   }
 
+  if (asset.catalogReady === true) {
+    return true;
+  }
+
   return hasPublicPlayableUrl(asset, options);
 }
 

@@ -1,6 +1,9 @@
 import { normalizeMovie, type Movie } from '@/types/movie';
 import { isAppInReview } from '@/lib/appReview';
-import { isPublicMovieReady } from '@/lib/publicReadiness';
+import {
+  isPublicMovieReady,
+  isPublicPlaybackAssetReady,
+} from '@/lib/publicReadiness';
 
 type CachedPublicMovieCatalog = {
   movies: Movie[];
@@ -10,7 +13,14 @@ type CachedPublicMovieCatalog = {
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
   ? 'ugmovies247.public-movies.review.v1'
-  : 'ugmovies247.public-movies.v2';
+  : 'ugmovies247.public-movies.v3';
+const PUBLIC_MOVIE_CACHE_READ_KEYS = isAppInReview
+  ? ['ugmovies247.public-movies.review.v1']
+  : [
+      PUBLIC_MOVIE_CACHE_KEY,
+      'ugmovies247.public-movies.v2',
+      'ugmovies247.public-movies.v1',
+    ];
 const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 const CLIENT_PUBLIC_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
@@ -49,6 +59,119 @@ function filterPublicReadyMovies(movies: Movie[]) {
     : movies.filter((movie) => isPublicMovieReady(movie, CLIENT_PUBLIC_READINESS_OPTIONS));
 }
 
+function compactPartForPersistentCache(part: NonNullable<Movie['parts']>[number]) {
+  return {
+    id: part.id,
+    label: part.label,
+    order: part.order,
+    title: part.title || '',
+    description: part.description || '',
+    video_url: '',
+    poster: part.poster || '',
+    thumbnail: part.thumbnail || '',
+    jobStatus: part.jobStatus,
+    processedAt: part.processedAt || '',
+    createdAt: part.createdAt || '',
+    updatedAt: part.updatedAt || '',
+    accessTier: part.accessTier,
+    subscriptionRequired: part.subscriptionRequired,
+    isLocked: part.isLocked,
+    catalogReady: isPublicPlaybackAssetReady(
+      part as unknown as Record<string, unknown>,
+      CLIENT_PUBLIC_READINESS_OPTIONS
+    ),
+  };
+}
+
+function compactEpisodeForPersistentCache(episode: NonNullable<Movie['seasons']>[number]['episodes'][number]) {
+  return {
+    episodeNumber: episode.episodeNumber,
+    title: episode.title || '',
+    description: episode.description || '',
+    overview: episode.overview || '',
+    video_url: '',
+    poster: episode.poster || '',
+    thumbnail: episode.thumbnail || '',
+    overriddenBackdrop: episode.overriddenBackdrop || '',
+    episodeTrailerUrl: episode.episodeTrailerUrl || '',
+    jobStatus: episode.jobStatus,
+    processedAt: episode.processedAt || '',
+    createdAt: episode.createdAt || '',
+    updatedAt: episode.updatedAt || '',
+    accessTier: episode.accessTier,
+    subscriptionRequired: episode.subscriptionRequired,
+    isLocked: episode.isLocked,
+    catalogReady: isPublicPlaybackAssetReady(
+      episode as unknown as Record<string, unknown>,
+      CLIENT_PUBLIC_READINESS_OPTIONS
+    ),
+  };
+}
+
+function compactMovieForPersistentCache(movie: Movie): Movie {
+  return {
+    id: movie.id,
+    movieId: movie.movieId || movie.id,
+    contentType: movie.contentType,
+    title: movie.title,
+    original_title: movie.original_title || '',
+    name: movie.name || '',
+    overview: movie.overview || '',
+    description: movie.description || '',
+    language: movie.language || '',
+    releaseYear: movie.releaseYear ?? null,
+    tags: movie.tags || [],
+    cast: [],
+    poster: movie.poster || '',
+    overriddenBackdrop: movie.overriddenBackdrop || '',
+    overriddenPlayerBackdrop: movie.overriddenPlayerBackdrop || '',
+    playerBackdrop: movie.playerBackdrop || '',
+    genres: movie.genres || [],
+    category: movie.category || [],
+    vj: movie.vj || '',
+    trailerUrl: movie.trailerUrl || '',
+    mainSeriesTrailerUrl: movie.mainSeriesTrailerUrl || '',
+    trailer_url: movie.trailer_url || '',
+    release_date: movie.release_date || '',
+    date_added: movie.date_added || '',
+    country: movie.country || '',
+    tmdb_id: movie.tmdb_id ?? null,
+    file_name: movie.file_name || '',
+    status: movie.status || '',
+    jobStatus: movie.jobStatus,
+    processingProgress: movie.processingProgress || 0,
+    processedAt: movie.processedAt || '',
+    createdAt: movie.createdAt || '',
+    updatedAt: movie.updatedAt || '',
+    accessTier: movie.accessTier,
+    subscriptionRequired: movie.subscriptionRequired,
+    isLocked: movie.isLocked,
+    catalogReady: isPublicMovieReady(
+      movie as unknown as Record<string, unknown>,
+      CLIENT_PUBLIC_READINESS_OPTIONS
+    ),
+    is_for_review: movie.is_for_review,
+    is_trending_tiktok: movie.is_trending_tiktok,
+    parts: movie.parts?.map(compactPartForPersistentCache) || [],
+    seasons:
+      movie.seasons?.map((season) => ({
+        seasonNumber: season.seasonNumber,
+        title: season.title || '',
+        overview: season.overview || '',
+        poster: season.poster || '',
+        tmdb_id: season.tmdb_id ?? null,
+        episodes: season.episodes.map(compactEpisodeForPersistentCache),
+      })) || [],
+  };
+}
+
+function compactCatalogForPersistentCache(cache: CachedPublicMovieCatalog): CachedPublicMovieCatalog {
+  return {
+    ...cache,
+    movies: cache.movies.map(compactMovieForPersistentCache),
+  };
+}
+
 function persistCatalog(cache: CachedPublicMovieCatalog) {
   inMemoryMovieCatalog = cache;
 
@@ -57,7 +180,10 @@ function persistCatalog(cache: CachedPublicMovieCatalog) {
   }
 
   try {
-    window.localStorage.setItem(PUBLIC_MOVIE_CACHE_KEY, JSON.stringify(cache));
+    const persistentCache = compactCatalogForPersistentCache(cache);
+    const serializedCache = JSON.stringify(persistentCache);
+    window.localStorage.setItem(PUBLIC_MOVIE_CACHE_KEY, serializedCache);
+    window.sessionStorage?.setItem(PUBLIC_MOVIE_CACHE_KEY, serializedCache);
   } catch {
     // Ignore persistent storage write failures and keep the in-memory cache.
   }
@@ -90,7 +216,9 @@ function readCatalogFromPersistentStorage() {
   }
 
   try {
-    const raw = window.localStorage.getItem(PUBLIC_MOVIE_CACHE_KEY);
+    const raw = PUBLIC_MOVIE_CACHE_READ_KEYS
+      .map((key) => window.localStorage.getItem(key) || window.sessionStorage?.getItem(key) || '')
+      .find(Boolean);
 
     if (!raw) {
       return null;
@@ -249,7 +377,7 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
     return fetchPublicMovies({ force: true });
   }
 
-  inFlightMovieDeltaRequest = fetch(`/api/movies?since=${encodeURIComponent(since)}`, {
+  inFlightMovieDeltaRequest = fetch(`/api/movies?compact=1&since=${encodeURIComponent(since)}`, {
     credentials: 'include',
     cache: 'no-store',
   })
@@ -339,7 +467,9 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     }
   }
 
-  const moviesUrl = shouldRefreshEntitlement ? '/api/movies?refreshEntitlement=1' : '/api/movies';
+  const moviesUrl = shouldRefreshEntitlement
+    ? '/api/movies?compact=1&refreshEntitlement=1'
+    : '/api/movies?compact=1';
 
   inFlightMovieCatalogRequest = fetch(moviesUrl, {
     credentials: 'include',

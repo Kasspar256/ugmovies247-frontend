@@ -38,6 +38,7 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   requiresSubscription: true,
   subscription: getSubscriptionSnapshotFromData(null),
 };
+const CATALOG_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
 function isPremiumAccessTier(accessTier: unknown) {
   return accessTier !== 'free';
@@ -352,6 +353,115 @@ function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
   return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
 }
 
+function compactPartForCatalog(part: Record<string, unknown>) {
+  return {
+    id: String(part.id || ''),
+    label: String(part.label || ''),
+    order: typeof part.order === 'number' ? part.order : 0,
+    title: String(part.title || ''),
+    description: String(part.description || ''),
+    video_url: '',
+    poster: String(part.poster || ''),
+    thumbnail: String(part.thumbnail || ''),
+    jobStatus: part.jobStatus,
+    processedAt: String(part.processedAt || ''),
+    createdAt: String(part.createdAt || ''),
+    updatedAt: String(part.updatedAt || ''),
+    accessTier: part.accessTier,
+    subscriptionRequired: part.subscriptionRequired,
+    isLocked: part.isLocked,
+    catalogReady: isPublicPlaybackAssetReady(part, CATALOG_READINESS_OPTIONS),
+  };
+}
+
+function compactEpisodeForCatalog(episode: Record<string, unknown>) {
+  return {
+    episodeNumber: typeof episode.episodeNumber === 'number' ? episode.episodeNumber : 0,
+    title: String(episode.title || ''),
+    description: String(episode.description || ''),
+    overview: String(episode.overview || ''),
+    video_url: '',
+    poster: String(episode.poster || ''),
+    thumbnail: String(episode.thumbnail || ''),
+    overriddenBackdrop: String(episode.overriddenBackdrop || ''),
+    episodeTrailerUrl: String(episode.episodeTrailerUrl || ''),
+    jobStatus: episode.jobStatus,
+    processedAt: String(episode.processedAt || ''),
+    createdAt: String(episode.createdAt || ''),
+    updatedAt: String(episode.updatedAt || ''),
+    accessTier: episode.accessTier,
+    subscriptionRequired: episode.subscriptionRequired,
+    isLocked: episode.isLocked,
+    catalogReady: isPublicPlaybackAssetReady(episode, CATALOG_READINESS_OPTIONS),
+  };
+}
+
+function compactMovieForCatalog(movie: Record<string, unknown>) {
+  const parts = Array.isArray(movie.parts)
+    ? movie.parts.map((part) => compactPartForCatalog(part as Record<string, unknown>))
+    : [];
+  const seasons = Array.isArray(movie.seasons)
+    ? movie.seasons.map((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        return {
+          seasonNumber: typeof rawSeason.seasonNumber === 'number' ? rawSeason.seasonNumber : 0,
+          title: String(rawSeason.title || ''),
+          overview: String(rawSeason.overview || ''),
+          poster: String(rawSeason.poster || ''),
+          tmdb_id: typeof rawSeason.tmdb_id === 'number' ? rawSeason.tmdb_id : null,
+          episodes: Array.isArray(rawSeason.episodes)
+            ? rawSeason.episodes.map((episode) =>
+                compactEpisodeForCatalog(episode as Record<string, unknown>)
+              )
+            : [],
+        };
+      })
+    : [];
+
+  return {
+    id: String(movie.id || movie.movieId || ''),
+    movieId: String(movie.movieId || movie.id || ''),
+    contentType: movie.contentType === 'series' ? 'series' : 'movie',
+    title: String(movie.title || movie.name || 'Untitled movie'),
+    original_title: String(movie.original_title || ''),
+    name: String(movie.name || ''),
+    overview: String(movie.overview || ''),
+    description: String(movie.description || ''),
+    language: String(movie.language || ''),
+    releaseYear: typeof movie.releaseYear === 'number' ? movie.releaseYear : null,
+    tags: Array.isArray(movie.tags) ? movie.tags : [],
+    poster: String(movie.poster || ''),
+    overriddenBackdrop: String(movie.overriddenBackdrop || ''),
+    overriddenPlayerBackdrop: String(movie.overriddenPlayerBackdrop || ''),
+    playerBackdrop: String(movie.playerBackdrop || ''),
+    genres: Array.isArray(movie.genres) ? movie.genres : [],
+    category: Array.isArray(movie.category) ? movie.category : [],
+    vj: String(movie.vj || ''),
+    trailerUrl: String(movie.trailerUrl || ''),
+    mainSeriesTrailerUrl: String(movie.mainSeriesTrailerUrl || ''),
+    trailer_url: String(movie.trailer_url || ''),
+    release_date: String(movie.release_date || ''),
+    date_added: String(movie.date_added || ''),
+    country: String(movie.country || ''),
+    tmdb_id: typeof movie.tmdb_id === 'number' ? movie.tmdb_id : null,
+    file_name: String(movie.file_name || ''),
+    status: String(movie.status || ''),
+    jobStatus: movie.jobStatus,
+    processingProgress: typeof movie.processingProgress === 'number' ? movie.processingProgress : 0,
+    processedAt: String(movie.processedAt || ''),
+    createdAt: String(movie.createdAt || ''),
+    updatedAt: String(movie.updatedAt || ''),
+    accessTier: movie.accessTier,
+    subscriptionRequired: movie.subscriptionRequired,
+    isLocked: movie.isLocked,
+    catalogReady: isPublicMovieReady(movie, CATALOG_READINESS_OPTIONS),
+    is_for_review: movie.is_for_review === true,
+    is_trending_tiktok: movie.is_trending_tiktok === true,
+    parts,
+    seasons,
+  };
+}
+
 async function fetchMovieCatalog(collectionName: string, reviewOnly: boolean) {
   const inMemoryCacheForMode = matchesCatalogMode(
     inMemoryMovieCache,
@@ -421,6 +531,7 @@ export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const sinceParam = requestUrl.searchParams.get('since') || '';
+    const shouldReturnCompactCatalog = requestUrl.searchParams.get('compact') === '1';
     const sinceTimestamp = sinceParam ? new Date(sinceParam).getTime() : 0;
     const shouldReturnDelta = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0;
     const session = await getCurrentAuthSession({ hydrateUserRecord: true });
@@ -453,7 +564,10 @@ export async function GET(request: Request) {
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
         return isAppInReview ? sanitizeMovieForReviewMode(sanitizedMovie) : sanitizedMovie;
-      });
+      })
+      .map((movieDoc) =>
+        shouldReturnCompactCatalog ? compactMovieForCatalog(movieDoc) : movieDoc
+      );
 
     return NextResponse.json({
       movies,
