@@ -9,6 +9,7 @@ type CachedPublicMovieCatalog = {
   movies: Movie[];
   cachedAt: number;
   lastSyncedAt?: string;
+  partial?: boolean;
 };
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
@@ -37,6 +38,10 @@ function canUsePersistentStorage() {
 
 function isFreshCatalog(cache: CachedPublicMovieCatalog | null) {
   return Boolean(cache && Date.now() - cache.cachedAt < PUBLIC_MOVIE_CACHE_TTL_MS);
+}
+
+function isAuthoritativeCatalog(cache: CachedPublicMovieCatalog | null) {
+  return Boolean(cache && !cache.partial);
 }
 
 function normalizeCatalogMovies(payload: unknown): Movie[] {
@@ -169,6 +174,7 @@ function compactCatalogForPersistentCache(cache: CachedPublicMovieCatalog): Cach
   return {
     ...cache,
     movies: cache.movies.map(compactMovieForPersistentCache),
+    partial: cache.partial,
   };
 }
 
@@ -234,6 +240,7 @@ function readCatalogFromPersistentStorage() {
       movies: normalizeCatalogMovies(parsed.movies),
       cachedAt: parsed.cachedAt,
       lastSyncedAt: typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : undefined,
+      partial: parsed.partial === true,
     } satisfies CachedPublicMovieCatalog;
   } catch {
     return null;
@@ -329,14 +336,22 @@ export function subscribePublicMovieUpdates(listener: () => void) {
   };
 }
 
-function getBestAvailableCatalog() {
-  if (isFreshCatalog(inMemoryMovieCatalog) && (inMemoryMovieCatalog?.movies?.length || 0) > 0) {
+function getBestAvailableCatalog(options?: { allowPartial?: boolean }) {
+  if (
+    isFreshCatalog(inMemoryMovieCatalog) &&
+    (inMemoryMovieCatalog?.movies?.length || 0) > 0 &&
+    (options?.allowPartial || isAuthoritativeCatalog(inMemoryMovieCatalog))
+  ) {
     return inMemoryMovieCatalog;
   }
 
   const diskCache = readCatalogFromPersistentStorage();
 
-  if (isFreshCatalog(diskCache) && (diskCache?.movies?.length || 0) > 0) {
+  if (
+    isFreshCatalog(diskCache) &&
+    (diskCache?.movies?.length || 0) > 0 &&
+    (options?.allowPartial || isAuthoritativeCatalog(diskCache))
+  ) {
     inMemoryMovieCatalog = diskCache;
     return diskCache;
   }
@@ -349,7 +364,45 @@ function getAnyAvailableCatalog() {
 }
 
 export function readCachedPublicMovies(): Movie[] {
-  return filterPublicReadyMovies(getBestAvailableCatalog()?.movies || getAnyAvailableCatalog()?.movies || []);
+  return filterPublicReadyMovies(
+    getBestAvailableCatalog({ allowPartial: true })?.movies ||
+      getAnyAvailableCatalog()?.movies ||
+      []
+  );
+}
+
+export function hasAuthoritativePublicMovieCatalog() {
+  return isAuthoritativeCatalog(getBestAvailableCatalog());
+}
+
+export function hasPartialPublicMovieCatalog() {
+  return getAnyAvailableCatalog()?.partial === true;
+}
+
+export function primePublicMovieCatalog(
+  movies: Movie[],
+  options?: { cachedAt?: string; partial?: boolean }
+) {
+  if (typeof window === 'undefined' || !movies.length) {
+    return;
+  }
+
+  const existingCatalog = getAnyAvailableCatalog();
+
+  if (
+    existingCatalog?.movies?.length &&
+    !existingCatalog.partial &&
+    existingCatalog.movies.length >= movies.length
+  ) {
+    return;
+  }
+
+  inMemoryMovieCatalog = {
+    movies: filterPublicReadyMovies(movies),
+    cachedAt: options?.cachedAt ? new Date(options.cachedAt).getTime() || Date.now() : Date.now(),
+    lastSyncedAt: options?.cachedAt,
+    partial: options?.partial !== false,
+  };
 }
 
 function findCachedPublicMovie(movieId: string) {
@@ -427,7 +480,7 @@ export function refreshPublicMoviesInBackground(options?: { refreshEntitlement?:
   lastBackgroundMovieRefreshAt = now;
   const cache = getAnyAvailableCatalog();
 
-  if (options?.refreshEntitlement || !cache?.movies?.length) {
+  if (options?.refreshEntitlement || !cache?.movies?.length || cache.partial) {
     void fetchPublicMovies({ force: true, refreshEntitlement: options?.refreshEntitlement }).catch(() => undefined);
     return;
   }
@@ -456,10 +509,20 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     const staleCatalog = getAnyAvailableCatalog();
 
     if (staleCatalog?.movies?.length) {
-      refreshPublicMoviesInBackground({
-        refreshEntitlement: shouldRefreshEntitlement,
-      });
-      return filterPublicReadyMovies(staleCatalog.movies);
+      if (staleCatalog.partial) {
+        refreshPublicMoviesInBackground({
+          refreshEntitlement: shouldRefreshEntitlement,
+        });
+
+        if (inFlightMovieCatalogRequest) {
+          return inFlightMovieCatalogRequest;
+        }
+      } else {
+        refreshPublicMoviesInBackground({
+          refreshEntitlement: shouldRefreshEntitlement,
+        });
+        return filterPublicReadyMovies(staleCatalog.movies);
+      }
     }
 
     if (inFlightMovieCatalogRequest) {

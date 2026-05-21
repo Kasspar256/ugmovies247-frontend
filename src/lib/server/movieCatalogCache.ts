@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { FIRESTORE_ENV_NAMESPACE, MOVIES_COLLECTION } from './firestoreNamespaces';
+import {
+  setPublicBootstrapCatalogFromMovieCache,
+  upsertPublicBootstrapMovie,
+} from './publicCatalogBootstrap';
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 export const MOVIE_CACHE_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
@@ -22,6 +26,7 @@ let movieCatalogQuotaBlockedUntil = 0;
 
 export function setInMemoryMovieCache(cache: CachedMovieCatalog | null) {
   inMemoryMovieCache = cache;
+  setPublicBootstrapCatalogFromMovieCache(cache);
 }
 
 function isMovieCatalogQuotaError(error: unknown) {
@@ -89,6 +94,8 @@ export async function readMovieCatalogFromDisk() {
 }
 
 export async function persistMovieCatalog(cache: CachedMovieCatalog) {
+  setInMemoryMovieCache(cache);
+
   try {
     await mkdir(path.dirname(MOVIE_CACHE_PATH), { recursive: true });
     await writeFile(MOVIE_CACHE_PATH, JSON.stringify(cache), 'utf8');
@@ -117,7 +124,7 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
     return;
   }
 
-  const currentCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+  const currentCache = inMemoryMovieCache || (await readMovieCatalogFromDisk());
   const isReviewOnlyCache = currentCache?.reviewOnly === true;
 
   if (isReviewOnlyCache && movie.is_for_review !== true) {
@@ -138,6 +145,7 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
   };
 
   setInMemoryMovieCache(nextCache);
+  upsertPublicBootstrapMovie({ ...movie, id: movieId });
   await persistMovieCatalog(nextCache);
 }
 
@@ -184,7 +192,7 @@ async function updateMovieInCatalogCache(
   movieId: string,
   updater: (movie: Record<string, unknown>) => Record<string, unknown> | null
 ) {
-  const currentCache = (await readMovieCatalogFromDisk()) || inMemoryMovieCache;
+  const currentCache = inMemoryMovieCache || (await readMovieCatalogFromDisk());
 
   if (!currentCache?.movies?.length) {
     return;

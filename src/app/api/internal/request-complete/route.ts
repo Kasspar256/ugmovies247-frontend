@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
+import { adminDb } from '@/lib/firebaseAdmin';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { markMovieRequestUploaded } from '@/lib/server/movieRequests';
+import { upsertMovieInCatalogCache } from '@/lib/server/movieCatalogCache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,6 +35,16 @@ export async function POST(request: Request) {
     }
 
     await markMovieRequestUploaded(requestId, movieId);
+
+    const movieSnapshot = await adminDb.collection(MOVIES_COLLECTION).doc(movieId).get();
+
+    if (movieSnapshot.exists) {
+      await upsertMovieInCatalogCache({
+        id: movieSnapshot.id,
+        ...movieSnapshot.data(),
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('[request-complete] failed to mark request uploaded', error);
