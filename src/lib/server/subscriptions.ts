@@ -669,6 +669,14 @@ export async function upsertRecurringAgreementForUser(
       typeof state.cancelledAt === 'string' ? state.cancelledAt : current?.cancelledAt || '',
     failureReason:
       typeof state.failureReason === 'string' ? state.failureReason : current?.failureReason || '',
+    failedChargeAttempts:
+      typeof state.failedChargeAttempts === 'number'
+        ? state.failedChargeAttempts
+        : current?.failedChargeAttempts || 0,
+    firstFailedChargeAt:
+      typeof state.firstFailedChargeAt === 'string'
+        ? state.firstFailedChargeAt
+        : current?.firstFailedChargeAt || '',
     createdAt: current?.createdAt || timestamp,
     updatedAt: timestamp,
   };

@@ -2,7 +2,6 @@
 
 import {
   CheckCircle2,
-  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -19,6 +18,8 @@ import {
   useSearchParams,
 } from 'next/navigation';
 import { fetchPublicMovies } from '@/lib/publicMovies';
+import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
+import { readCachedAccountProfile } from '@/lib/accountProfile';
 import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
 import type {
@@ -231,6 +232,38 @@ function readCachedSubscriptionData() {
   }
 }
 
+function readCachedEntitlementFallback(): SubscriptionEntitlement {
+  const cachedProfile = readCachedAccountProfile();
+
+  if (cachedProfile?.role === 'admin') {
+    return {
+      hasPremiumAccess: true,
+      requiresSubscription: false,
+      subscription: {
+        planType: null,
+        planName: 'Admin Access',
+        status: 'active',
+        isActive: true,
+        startsAt: cachedProfile.createdAt || '',
+        expiresAt: '',
+        paymentProvider: '',
+        updatedAt: cachedProfile.updatedAt || '',
+        source: 'admin_role',
+      },
+    };
+  }
+
+  if (cachedProfile?.subscription) {
+    return {
+      hasPremiumAccess: cachedProfile.subscription.isActive === true,
+      requiresSubscription: cachedProfile.subscription.isActive !== true,
+      subscription: cachedProfile.subscription,
+    };
+  }
+
+  return DEFAULT_ENTITLEMENT;
+}
+
 function persistSubscriptionData(value: SubscriptionResponse) {
   if (typeof window === 'undefined') {
     return;
@@ -284,25 +317,43 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const requestedPaymentId = searchParams.get('paymentId') || '';
   const cancelledPayment = searchParams.get('cancelled') === '1';
   const requestedReturnTo = getSafeReturnTo(searchParams.get('returnTo'));
+  const cachedInitialSubscriptionData = useMemo(() => readCachedSubscriptionData(), []);
+  const cachedInitialEntitlement = useMemo(
+    () => cachedInitialSubscriptionData?.entitlement || readCachedEntitlementFallback(),
+    [cachedInitialSubscriptionData]
+  );
 
-  const [draftReady, setDraftReady] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [draftReady, setDraftReady] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>([]);
-  const [entitlement, setEntitlement] = useState<SubscriptionEntitlement>(DEFAULT_ENTITLEMENT);
-  const [recurringAgreement, setRecurringAgreement] = useState<RecurringAgreementSummary>(
-    EMPTY_RECURRING_AGREEMENT
+  const [plans, setPlans] = useState<SubscriptionPlanDefinition[]>(
+    () =>
+      cachedInitialSubscriptionData?.plans?.length
+        ? cachedInitialSubscriptionData.plans
+        : SUBSCRIPTION_PLAN_LIST
   );
-  const [providers, setProviders] = useState<PaymentMethodProviderOption[]>([]);
-  const [cardGateway, setCardGateway] = useState<CardPaymentGateway>(EMPTY_CARD_GATEWAY);
+  const [entitlement, setEntitlement] = useState<SubscriptionEntitlement>(
+    () => cachedInitialEntitlement
+  );
+  const [recurringAgreement, setRecurringAgreement] = useState<RecurringAgreementSummary>(
+    () => cachedInitialSubscriptionData?.recurringAgreement || EMPTY_RECURRING_AGREEMENT
+  );
+  const [providers, setProviders] = useState<PaymentMethodProviderOption[]>(
+    () => cachedInitialSubscriptionData?.providers || []
+  );
+  const [cardGateway, setCardGateway] = useState<CardPaymentGateway>(
+    () => cachedInitialSubscriptionData?.cardGateway || EMPTY_CARD_GATEWAY
+  );
   const [safeReturnTo, setSafeReturnTo] = useState('');
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlanType | ''>('');
   const [paymentMethod, setPaymentMethod] = useState<FlowPaymentMethod>('');
   const [provider, setProvider] = useState<PaymentMethodProvider>('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [message, setMessage] = useState('');
-  const [emailVerified, setEmailVerified] = useState(true);
+  const [emailVerified, setEmailVerified] = useState(
+    () => cachedInitialSubscriptionData?.emailVerified !== false
+  );
   const [error, setError] = useState('');
   const [activePayment, setActivePayment] = useState<PaymentState | null>(null);
   const [showUpgradeSuccess, setShowUpgradeSuccess] = useState(false);
@@ -517,23 +568,19 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const load = async () => {
-      const cachedSubscriptionData = readCachedSubscriptionData();
+      const cachedSubscriptionData = cachedInitialSubscriptionData || readCachedSubscriptionData();
 
       if (cachedSubscriptionData) {
         applySubscriptionData(cachedSubscriptionData);
-        setLoading(false);
       }
 
       try {
         setLoadError('');
         await loadSubscriptionData();
       } catch (loadSubscriptionError) {
-        if (mounted && !cachedSubscriptionData) {
-          setLoadError(
-            loadSubscriptionError instanceof Error
-              ? loadSubscriptionError.message
-              : 'Failed to load subscription plans.'
-          );
+        if (mounted) {
+          console.warn('[subscribe] background subscription refresh failed', loadSubscriptionError);
+          setLoadError('');
         }
       } finally {
         if (mounted) {
@@ -547,7 +594,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, [applySubscriptionData, draftReady, loadSubscriptionData]);
+  }, [applySubscriptionData, cachedInitialSubscriptionData, draftReady, loadSubscriptionData]);
 
   useEffect(() => {
     if (!plans.length) {
@@ -849,7 +896,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
   const contextValue = useMemo<SubscribeFlowContextValue>(
     () => ({
-      loading: loading || !draftReady,
+      loading,
       loadError,
       submitting,
       plans,
@@ -962,16 +1009,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
         </div>
       ) : null}
 
-      {loading || !draftReady ? (
-        <div className="flex min-h-screen items-center justify-center bg-[#0B0C10]">
-          <div className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-4 text-sm font-bold text-white">
-            <Loader2 size={18} className="animate-spin" />
-            Loading premium plans...
-          </div>
-        </div>
-      ) : (
-        children
-      )}
+      {children}
     </SubscribeFlowContext.Provider>
   );
 }

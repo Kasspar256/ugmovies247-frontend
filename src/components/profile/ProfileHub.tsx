@@ -363,19 +363,15 @@ function readCachedProfileFallback() {
 export default function ProfileHub() {
   const router = useRouter();
   const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedProfileFallback());
-  const [loading, setLoading] = useState(() => !readCachedProfileFallback());
-  const [error, setError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
   useEffect(() => {
     let mounted = true;
     const fallbackProfile = readCachedProfileFallback();
-    const hasCachedProfile = Boolean(fallbackProfile);
 
     if (fallbackProfile) {
       setProfile(fallbackProfile);
-      setLoading(false);
     }
 
     const loadProfile = async () => {
@@ -388,21 +384,11 @@ export default function ProfileHub() {
 
         setProfile(nextProfile);
       } catch (loadError) {
-        if (mounted && !hasCachedProfile) {
-          setError(loadError instanceof Error ? loadError.message : 'Your profile could not be loaded.');
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        console.warn('[profile] background account refresh failed', loadError);
       }
     };
 
     void loadProfile();
-
-    if (hasCachedProfile) {
-      setLoading(false);
-    }
 
     return () => {
       mounted = false;
@@ -502,16 +488,25 @@ export default function ProfileHub() {
           </h1>
         </div>
 
-        {loading ? (
-          <SummarySkeleton />
-        ) : error || !profile ? (
-          <div className="rounded-[28px] border border-red-500/20 bg-red-500/10 p-5 text-sm text-red-100">
-            {error || 'Your profile could not be loaded right now.'}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <ProfileSummary profile={profile} />
-            <EmailVerificationWarning emailVerified={profile.emailVerified} />
+        <div className="space-y-4">
+            {profile ? (
+              <>
+                <ProfileSummary profile={profile} />
+                <EmailVerificationWarning emailVerified={profile.emailVerified} />
+              </>
+            ) : (
+              <section className="rounded-[28px] border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_22px_50px_rgba(0,0,0,0.35)]">
+                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                  Account
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">
+                  Reconnecting your account
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-white/62">
+                  Your saved app data remains available on this device while we refresh the account session in the background.
+                </p>
+              </section>
+            )}
 
             <NavigationGroup
               title="Account"
@@ -559,8 +554,7 @@ export default function ProfileHub() {
                 </div>
               ) : null}
             </section>
-          </div>
-        )}
+        </div>
       </div>
     </main>
   );

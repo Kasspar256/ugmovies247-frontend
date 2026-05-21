@@ -8,6 +8,7 @@ import {
   inMemoryMovieCache,
   readMovieCatalogFromDisk,
   setInMemoryMovieCache,
+  type CachedMovieCatalog,
 } from '@/lib/server/movieCatalogCache';
 
 let attemptedDiskWarmup = false;
@@ -57,4 +58,14 @@ export async function getPublicCatalogBootstrapPayload(): Promise<PublicCatalogB
   const diskBootstrap = await warmBootstrapFromDiskOnce();
 
   return diskBootstrap?.movies.length ? diskBootstrap : createEmptyPublicBootstrapPayload();
+}
+
+export async function getMovieCatalogCacheForBootstrap(): Promise<CachedMovieCatalog | null> {
+  if (inMemoryMovieCache?.movies?.length) {
+    return inMemoryMovieCache;
+  }
+
+  await warmBootstrapFromDiskOnce();
+
+  return inMemoryMovieCache?.movies?.length ? inMemoryMovieCache : null;
 }
