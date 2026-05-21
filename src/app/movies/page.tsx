@@ -121,24 +121,27 @@ function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean
   return (
     <Link href={`/movie/${movie.id}`} className="group min-w-0">
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
+        <div className="absolute inset-0 flex h-full w-full items-center justify-center bg-[#111827]">
+          <img
+            src="/logow.png"
+            alt=""
+            aria-hidden="true"
+            className="h-14 w-14 scale-[1.8] object-contain opacity-70"
+          />
+        </div>
+
         {movie.poster ? (
           <img
             src={getOptimizedArtworkUrl(movie.poster, 'card')}
             alt={movie.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
+            onError={(event) => {
+              event.currentTarget.style.opacity = '0';
+            }}
           />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[#111827]">
-            <img
-              src="/logow.png"
-              alt=""
-              aria-hidden="true"
-              className="h-14 w-14 scale-[1.8] object-contain opacity-70"
-            />
-          </div>
-        )}
+        ) : null}
 
         <div className="absolute left-0 top-0 z-10 max-w-[76%] rounded-br-lg bg-[#D90429] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white shadow-[2px_2px_10px_rgba(0,0,0,0.5)] md:text-[9px]">
           <span className="block truncate">{getCatalogVjLabel(movie)}</span>
@@ -351,7 +354,7 @@ export default function MoviesPage() {
         ) : (
           <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
             {filteredMovies.map((movie, index) => (
-              <CatalogMovieCard key={movie.id} movie={movie} priority={index < 18} />
+              <CatalogMovieCard key={movie.id} movie={movie} priority={index < 6} />
             ))}
           </div>
         )}

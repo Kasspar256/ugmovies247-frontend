@@ -279,7 +279,7 @@ export default function Home() {
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
     DEFAULT_HOME_PAGE_CATEGORIES
   );
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
@@ -568,14 +568,6 @@ export default function Home() {
       title: `${heroMovie.title || heroMovie.name || 'UGMOVIES247'} trailer`,
     });
   };
-
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-[#0B0C10] flex flex-col items-center justify-center">
-        <div className="w-12 h-12 border-4 border-[#1F2833] border-t-[#D90429] rounded-full animate-spin mb-4"></div>
-      </main>
-    );
-  }
 
   const handleHeaderCast = async () => {
     const videoElement = homeCastVideoRef.current;

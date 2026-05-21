@@ -36,6 +36,35 @@ function isTmdbArtworkUrl(src: string) {
   return /https?:\/\/image\.tmdb\.org\/t\/p\//i.test(src);
 }
 
+function shouldTreatAsTmdbPath(src: string) {
+  return (
+    /^\/[^/].*\.(jpe?g|png|webp)$/i.test(src) &&
+    !/^\/(?:_next|api|uploads?|static|favicon|siteicon|logow?\.|manifest)/i.test(src)
+  );
+}
+
+function normalizeArtworkSource(src: string | undefined, variant: ArtworkVariant = 'card') {
+  const normalizedSrc = String(src || '').trim();
+
+  if (!normalizedSrc) {
+    return '';
+  }
+
+  if (normalizedSrc.startsWith('//')) {
+    return `https:${normalizedSrc}`;
+  }
+
+  if (/^image\.tmdb\.org\//i.test(normalizedSrc)) {
+    return `https://${normalizedSrc}`;
+  }
+
+  if (shouldTreatAsTmdbPath(normalizedSrc)) {
+    return `https://image.tmdb.org/t/p/${TMDB_SIZE_BY_VARIANT[variant]}${normalizedSrc}`;
+  }
+
+  return normalizedSrc;
+}
+
 function replaceTmdbSize(src: string, size: string) {
   return src.replace(/\/t\/p\/[^/]+\//i, `/t/p/${size}/`);
 }
@@ -45,7 +74,7 @@ function getWidthFromTmdbSize(size: string) {
 }
 
 export function getOptimizedArtworkUrl(src: string | undefined, variant: ArtworkVariant = 'card') {
-  const normalizedSrc = String(src || '').trim();
+  const normalizedSrc = normalizeArtworkSource(src, variant);
 
   if (!normalizedSrc) {
     return '';
@@ -63,7 +92,7 @@ export function getArtworkImageProps(
   src: string | undefined,
   variant: ArtworkVariant = 'card'
 ): ArtworkImageProps {
-  const normalizedSrc = String(src || '').trim();
+  const normalizedSrc = normalizeArtworkSource(src, variant);
 
   if (!normalizedSrc) {
     return { src: '' };
