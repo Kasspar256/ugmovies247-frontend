@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
+import { readCachedAccountProfile } from '@/lib/accountProfile';
+import { readCachedAuthStatus } from '@/lib/auth/status-client';
 import {
   cancelOfflineDownload,
   createOfflineDownloadKey,
@@ -118,6 +120,45 @@ function movieHasAnyPlaybackSource(movie: Movie) {
   }
 
   return hasPlaybackSource(movie);
+}
+
+function hasCachedPremiumAccess() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const cachedProfile = readCachedAccountProfile();
+
+  if (cachedProfile?.role === 'admin' || cachedProfile?.subscription?.isActive === true) {
+    return true;
+  }
+
+  const cachedAuthStatus = readCachedAuthStatus();
+
+  if (cachedAuthStatus?.authenticated && cachedAuthStatus.user?.role === 'admin') {
+    return true;
+  }
+
+  try {
+    const rawSubscriptionCache = window.localStorage.getItem('ugmovies247.subscribe-data.v1');
+
+    if (!rawSubscriptionCache) {
+      return false;
+    }
+
+    const parsed = JSON.parse(rawSubscriptionCache) as {
+      value?: {
+        entitlement?: { hasPremiumAccess?: boolean; subscription?: { isActive?: boolean } };
+      };
+    };
+
+    return (
+      parsed.value?.entitlement?.hasPremiumAccess === true ||
+      parsed.value?.entitlement?.subscription?.isActive === true
+    );
+  } catch {
+    return false;
+  }
 }
 
 function formatPlaybackDuration(durationSeconds?: number) {
@@ -258,6 +299,7 @@ const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
 const [showPremiumDownloadModal, setShowPremiumDownloadModal] = useState(false);
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
+const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(() => hasCachedPremiumAccess());
 const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>(
   () => initialResolvedMovieState?.sourceEntries || []
 );
@@ -276,6 +318,7 @@ const shouldBypassCatalogCache =
 
 useEffect(() => {
 setIsTrailerPlaying(false);
+setHasLocalPremiumAccess(hasCachedPremiumAccess());
 }, [params.id]);
 
 useEffect(() => {
@@ -782,7 +825,7 @@ const playbackDescription =
       );
 const isPlaybackLocked = isAppInReview
   ? false
-  : Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
+  : !hasLocalPremiumAccess && Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
 const playbackGenreLabel =
   movie?.genres?.find((genre) => genre.trim()) ||
   'Unknown';

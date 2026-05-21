@@ -330,6 +330,7 @@ function readCachedProfileFallback() {
   }
 
   const nowIso = new Date().toISOString();
+  const isAdmin = user.role === 'admin';
 
   return {
     id: user.id || user.email,
@@ -338,7 +339,7 @@ function readCachedProfileFallback() {
     emailVerified: user.emailVerified === true,
     emailVerifiedAt: '',
     emailVerificationSentAt: '',
-    role: user.role === 'admin' ? 'admin' : 'user',
+    role: isAdmin ? 'admin' : 'user',
     createdAt: nowIso,
     updatedAt: nowIso,
     lastLoginAt: nowIso,
@@ -349,13 +350,15 @@ function readCachedProfileFallback() {
     },
     subscription: {
       planType: null,
-      planName: '',
-      status: 'inactive',
-      isActive: false,
-      startsAt: '',
+      planName: isAdmin ? 'Admin Access' : '',
+      status: isAdmin ? 'active' : 'inactive',
+      isActive: isAdmin,
+      startsAt: isAdmin ? nowIso : '',
       expiresAt: '',
       paymentProvider: '',
-      updatedAt: '',
+      updatedAt: nowIso,
+      source: isAdmin ? 'admin_role' : '',
+      accessType: isAdmin ? 'admin_override' : '',
     },
   } satisfies AccountProfile;
 }

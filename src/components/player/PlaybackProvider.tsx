@@ -522,6 +522,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoBrightness, setVideoBrightness] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [softLandscapeFullscreen, setSoftLandscapeFullscreen] = useState(false);
   const [isPictureInPicture, setIsPictureInPicture] = useState(false);
   const [pictureInPictureSupported, setPictureInPictureSupported] = useState(false);
   const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
@@ -539,6 +540,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   });
   const [miniPlayerPosition, setMiniPlayerPosition] = useState<MiniPlayerPosition | null>(null);
   const [isDraggingMiniPlayer, setIsDraggingMiniPlayer] = useState(false);
+  const effectiveFullscreen = isFullscreen || softLandscapeFullscreen;
 
   useEffect(() => {
     lastPlaybackCacheSyncRef.current = { key: '', at: 0 };
@@ -728,9 +730,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       setIsFullscreen(nextIsFullscreen);
 
-      if (nextIsFullscreen && !isDesktop) {
+      if ((nextIsFullscreen || softLandscapeFullscreen) && !isDesktop) {
         void lockLandscapeOrientation();
-      } else if (!nextIsFullscreen) {
+      } else if (!nextIsFullscreen && !softLandscapeFullscreen) {
         unlockScreenOrientation();
       }
     };
@@ -752,7 +754,25 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         handleFullscreenChange as EventListener
       );
     };
-  }, [isDesktop, videoElementState]);
+  }, [isDesktop, softLandscapeFullscreen, videoElementState]);
+
+  useEffect(() => {
+    if (!softLandscapeFullscreen || typeof document === 'undefined') {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      unlockScreenOrientation();
+    };
+  }, [softLandscapeFullscreen]);
 
   useEffect(() => {
     const videoElement = videoElementState as IOSVideoElement | null;
@@ -913,6 +933,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setHoverPreviewTime(null);
     setHoverPreviewRatio(null);
     setSettingsOpen(false);
+    setSoftLandscapeFullscreen(false);
     setPlaybackPhaseSafe('idle');
 
     const videoElement = videoRef.current;
@@ -923,6 +944,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.load();
     }
   }, [clearClickIntentTimer, clearFatalError, setPlaybackPhaseSafe]);
+
+  useEffect(() => {
+    if (!activeSource && softLandscapeFullscreen) {
+      setSoftLandscapeFullscreen(false);
+    }
+  }, [activeSource, softLandscapeFullscreen]);
 
   const scheduleFatalError = useCallback(
     (message: string) => {
@@ -1157,10 +1184,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const doc = document as WebkitDocument;
 
     if (
+      softLandscapeFullscreen ||
       document.fullscreenElement ||
       doc.webkitFullscreenElement ||
       videoElement.webkitDisplayingFullscreen
     ) {
+      if (softLandscapeFullscreen) {
+        setSoftLandscapeFullscreen(false);
+        unlockScreenOrientation();
+        return;
+      }
+
       if (videoElement.webkitExitFullscreen) {
         videoElement.webkitExitFullscreen();
         return;
@@ -1179,8 +1213,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (isIOSDevice && typeof videoElement.webkitEnterFullscreen === 'function') {
+      setSoftLandscapeFullscreen(true);
       await lockLandscapeOrientation();
-      videoElement.webkitEnterFullscreen();
       window.setTimeout(() => {
         void lockLandscapeOrientation();
       }, 250);
@@ -1207,7 +1241,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         await lockLandscapeOrientation();
       }
     }
-  }, [isDesktop, isIOSDevice, showControls]);
+  }, [isDesktop, isIOSDevice, showControls, softLandscapeFullscreen]);
 
   const tryTogglePictureInPicture = useCallback(async () => {
     const videoElement = videoRef.current as IOSVideoElement | null;
@@ -1523,8 +1557,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const hasInlineHost = Boolean(inlineHost);
   const isInlineMode = Boolean(activeSource && hasInlineHost);
   const isMiniMode = Boolean(activeSource && !hasInlineHost && hasStartedPlayback);
-  const isMobileInlineMode = isInlineMode && (!isDesktop || (isFullscreen && isTouchDevice));
+  const isMobileInlineMode = isInlineMode && (!isDesktop || (effectiveFullscreen && isTouchDevice));
   const isDesktopInlineMode = isInlineMode && !isMobileInlineMode;
+  const shouldRotateSoftLandscapeFullscreen =
+    softLandscapeFullscreen &&
+    typeof window !== 'undefined' &&
+    window.innerHeight >= window.innerWidth;
 
   useEffect(() => {
     if (!isMiniMode || typeof window === 'undefined') {
@@ -1608,15 +1646,40 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [isDesktop, isDraggingMiniPlayer, miniPlayerSize]);
 
   const playerShellStyle: CSSProperties = isInlineMode
-    ? isFullscreen
-      ? {
+    ? softLandscapeFullscreen
+      ? shouldRotateSoftLandscapeFullscreen
+        ? {
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          width: '100svh',
+          height: '100svw',
+          maxWidth: '100svh',
+          maxHeight: '100svw',
+          transform: 'translate(-50%, -50%) rotate(90deg)',
+          transformOrigin: 'center center',
+          touchAction: 'none',
+          zIndex: 10030,
+          borderRadius: 0,
+        }
+        : {
+            position: 'fixed',
+            inset: 0,
+            width: '100vw',
+            height: '100vh',
+            touchAction: 'none',
+            zIndex: 10030,
+            borderRadius: 0,
+          }
+      : effectiveFullscreen
+        ? {
           position: 'fixed',
           inset: 0,
           width: '100vw',
           height: '100vh',
           zIndex: 10030,
         }
-      : inlineRect
+        : inlineRect
       ? {
           position: 'fixed',
           top: isDesktop ? inlineRect.top : 0,
@@ -2464,14 +2527,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         <Settings2 size={isMobileInlineMode ? 15 : 18} />
                       </PlayerShellButton>
                       <PlayerShellButton
-                        ariaLabel={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                        ariaLabel={effectiveFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                         onClick={(event) => {
                           event.stopPropagation();
                           void tryEnterFullscreen();
                         }}
                         className={isMobileInlineMode ? 'h-9 w-9' : ''}
                       >
-                        {isFullscreen ? (
+                        {effectiveFullscreen ? (
                           <Minimize size={isMobileInlineMode ? 15 : 18} />
                         ) : (
                           <Maximize size={isMobileInlineMode ? 15 : 18} />
@@ -2787,9 +2850,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                                 void tryEnterFullscreen();
                               }}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
-                              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                              aria-label={effectiveFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                             >
-                              {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                              {effectiveFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
                             </button>
                           </div>
                         </div>
@@ -2928,13 +2991,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                           </button>
 
                           <PlayerShellButton
-                            ariaLabel={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                            ariaLabel={effectiveFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                             onClick={(event) => {
                               event.stopPropagation();
                               void tryEnterFullscreen();
                             }}
                           >
-                            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                            {effectiveFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
                           </PlayerShellButton>
                         </div>
                       </div>

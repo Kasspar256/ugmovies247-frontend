@@ -20,6 +20,7 @@ import {
 import { fetchPublicMovies } from '@/lib/publicMovies';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import { readCachedAccountProfile } from '@/lib/accountProfile';
+import { readCachedAuthStatus } from '@/lib/auth/status-client';
 import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
 import type {
@@ -162,6 +163,25 @@ const EMPTY_RECURRING_AGREEMENT: RecurringAgreementSummary = {
 
 const SubscribeFlowContext = createContext<SubscribeFlowContextValue | null>(null);
 
+function buildAdminEntitlementFallback(updatedAt = ''): SubscriptionEntitlement {
+  return {
+    hasPremiumAccess: true,
+    requiresSubscription: false,
+    subscription: {
+      planType: null,
+      planName: 'Admin Access',
+      status: 'active',
+      isActive: true,
+      startsAt: '',
+      expiresAt: '',
+      paymentProvider: '',
+      updatedAt,
+      source: 'admin_role',
+      accessType: 'admin_override',
+    },
+  };
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const raw = await response.text();
 
@@ -236,21 +256,13 @@ function readCachedEntitlementFallback(): SubscriptionEntitlement {
   const cachedProfile = readCachedAccountProfile();
 
   if (cachedProfile?.role === 'admin') {
-    return {
-      hasPremiumAccess: true,
-      requiresSubscription: false,
-      subscription: {
-        planType: null,
-        planName: 'Admin Access',
-        status: 'active',
-        isActive: true,
-        startsAt: cachedProfile.createdAt || '',
-        expiresAt: '',
-        paymentProvider: '',
-        updatedAt: cachedProfile.updatedAt || '',
-        source: 'admin_role',
-      },
-    };
+    return buildAdminEntitlementFallback(cachedProfile.updatedAt || cachedProfile.createdAt || '');
+  }
+
+  const cachedAuthStatus = readCachedAuthStatus();
+
+  if (cachedAuthStatus?.authenticated && cachedAuthStatus.user?.role === 'admin') {
+    return buildAdminEntitlementFallback();
   }
 
   if (cachedProfile?.subscription) {
@@ -262,6 +274,42 @@ function readCachedEntitlementFallback(): SubscriptionEntitlement {
   }
 
   return DEFAULT_ENTITLEMENT;
+}
+
+function readCachedAdminEntitlementFallback() {
+  const cachedProfile = readCachedAccountProfile();
+
+  if (cachedProfile?.role === 'admin') {
+    return buildAdminEntitlementFallback(cachedProfile.updatedAt || cachedProfile.createdAt || '');
+  }
+
+  const cachedAuthStatus = readCachedAuthStatus();
+
+  if (cachedAuthStatus?.authenticated && cachedAuthStatus.user?.role === 'admin') {
+    return buildAdminEntitlementFallback();
+  }
+
+  return null;
+}
+
+function resolveInitialEntitlement(cachedSubscriptionData: SubscriptionResponse | null) {
+  const localFallback = readCachedEntitlementFallback();
+
+  if (localFallback.hasPremiumAccess) {
+    return localFallback;
+  }
+
+  return cachedSubscriptionData?.entitlement || localFallback;
+}
+
+function resolveAuthoritativeEntitlement(entitlement?: SubscriptionEntitlement) {
+  const adminFallback = readCachedAdminEntitlementFallback();
+
+  if (adminFallback && entitlement?.hasPremiumAccess !== true) {
+    return adminFallback;
+  }
+
+  return entitlement || adminFallback || DEFAULT_ENTITLEMENT;
 }
 
 function persistSubscriptionData(value: SubscriptionResponse) {
@@ -319,7 +367,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const requestedReturnTo = getSafeReturnTo(searchParams.get('returnTo'));
   const cachedInitialSubscriptionData = useMemo(() => readCachedSubscriptionData(), []);
   const cachedInitialEntitlement = useMemo(
-    () => cachedInitialSubscriptionData?.entitlement || readCachedEntitlementFallback(),
+    () => resolveInitialEntitlement(cachedInitialSubscriptionData),
     [cachedInitialSubscriptionData]
   );
 
@@ -395,10 +443,17 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
     setError('');
   }, []);
 
-  const applySubscriptionData = useCallback((payload: SubscriptionResponse) => {
+  const applySubscriptionData = useCallback((
+    payload: SubscriptionResponse,
+    options?: { preferLocalPremiumFallback?: boolean }
+  ) => {
     setPlans(payload.plans || []);
     setProviders(payload.providers || []);
-    setEntitlement(payload.entitlement || DEFAULT_ENTITLEMENT);
+    setEntitlement(
+      options?.preferLocalPremiumFallback
+        ? resolveInitialEntitlement(payload)
+        : resolveAuthoritativeEntitlement(payload.entitlement)
+    );
     setCardGateway(payload.cardGateway || EMPTY_CARD_GATEWAY);
     setRecurringAgreement(payload.recurringAgreement || EMPTY_RECURRING_AGREEMENT);
     setEmailVerified(payload.emailVerified === true);
@@ -415,7 +470,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       const cachedSubscriptionData = readCachedSubscriptionData();
 
       if (cachedSubscriptionData) {
-        applySubscriptionData(cachedSubscriptionData);
+        applySubscriptionData(cachedSubscriptionData, { preferLocalPremiumFallback: true });
         return cachedSubscriptionData;
       }
 
@@ -439,7 +494,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
   const syncCompletedPayment = useCallback(async () => {
     try {
       const subscriptionPayload = await loadSubscriptionData();
-      setEntitlement(subscriptionPayload.entitlement || DEFAULT_ENTITLEMENT);
+      setEntitlement(resolveAuthoritativeEntitlement(subscriptionPayload.entitlement));
     } catch (syncError) {
       console.warn('[subscribe] background completed payment sync failed', syncError);
     }
@@ -584,7 +639,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
       const cachedSubscriptionData = cachedInitialSubscriptionData || readCachedSubscriptionData();
 
       if (cachedSubscriptionData) {
-        applySubscriptionData(cachedSubscriptionData);
+        applySubscriptionData(cachedSubscriptionData, { preferLocalPremiumFallback: true });
       }
 
       try {
