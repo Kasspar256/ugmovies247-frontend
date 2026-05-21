@@ -6,6 +6,7 @@ import {
   clearAuthStatusCache,
   fetchAuthStatus,
   readCachedAuthStatus,
+  type ClientAuthStatus,
 } from '@/lib/auth/status-client';
 import { logoutCurrentUser, restoreServerSessionFromClientAuth } from '@/lib/auth/client';
 import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
@@ -155,7 +156,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
 
         if (restoredSession) {
-          return { authenticated: true as const };
+          return {
+            authenticated: true,
+            code: 'offline_restored_session',
+          } satisfies ClientAuthStatus;
         }
 
         return null;
