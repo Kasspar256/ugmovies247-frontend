@@ -58,6 +58,36 @@ type ContinueWatchingMovie = Movie & {
   continueTotalDuration?: number;
 };
 
+const PENDING_MOVIE_NAVIGATION_KEY = 'ugmovies247.pending-movie-navigation.v1';
+
+function rememberPendingMovieNavigation(movie: Movie) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      PENDING_MOVIE_NAVIGATION_KEY,
+      JSON.stringify({
+        movie: {
+          id: movie.id,
+          movieId: movie.movieId || movie.id,
+          title: movie.title || movie.name || '',
+          name: movie.name || '',
+          poster: movie.poster || '',
+          backdrop: movie.overriddenBackdrop || movie.overriddenPlayerBackdrop || movie.playerBackdrop || '',
+          contentType: movie.contentType || 'movie',
+          vj: movie.vj || '',
+          genres: movie.genres || [],
+        },
+        cachedAt: Date.now(),
+      })
+    );
+  } catch {
+    // A failed transition hint should never block navigation.
+  }
+}
+
 type BrowseClientPageProps = {
   initialMovies?: Movie[];
   initialHomePageCategories?: HomePageCategoryRecord[];
@@ -1301,6 +1331,7 @@ const MovieRow = memo(function MovieRow({
     <Link
       href={cardHref}
       key={m.id}
+      onClick={() => rememberPendingMovieNavigation(m)}
       className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]"
       style={
         androidMobileLayout
@@ -1369,6 +1400,7 @@ const MovieRow = memo(function MovieRow({
     <Link
       href={`/movie/${m.id}`}
       key={m.id}
+      onClick={() => rememberPendingMovieNavigation(m)}
       className="group/card w-[62vw] min-w-[244px] max-w-[320px] cursor-pointer snap-start shrink-0 sm:w-[48vw] sm:min-w-[270px] md:w-[430px] md:max-w-none lg:w-[480px] xl:w-[520px]"
     >
         <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">

@@ -165,6 +165,10 @@ function normalizeSourcePipeline(value: unknown): Episode['sourcePipeline'] {
     : undefined;
 }
 
+function normalizePlaybackType(value: unknown): PlaybackType {
+  return value === 'hls' ? 'hls' : 'mp4';
+}
+
 export function normalizeMovie(id: string, data: Record<string, unknown>): Movie {
   const normalizeRenditions = (value: unknown) =>
     Array.isArray(value)
@@ -230,7 +234,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
             processingProgress:
               typeof rawPart.processingProgress === 'number' ? rawPart.processingProgress : 0,
             errorMessage: typeof rawPart.errorMessage === 'string' ? rawPart.errorMessage : '',
-            playbackType: 'mp4',
+            playbackType: normalizePlaybackType(rawPart.playbackType),
             masterPlaylistUrl: typeof rawPart.masterPlaylistUrl === 'string' ? rawPart.masterPlaylistUrl : '',
             availableRenditions: normalizeRenditions(rawPart.availableRenditions) as MoviePart['availableRenditions'],
             durationSeconds:
@@ -294,7 +298,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
                 processingProgress:
                   typeof rawEpisode.processingProgress === 'number' ? rawEpisode.processingProgress : 0,
                 errorMessage: typeof rawEpisode.errorMessage === 'string' ? rawEpisode.errorMessage : '',
-                playbackType: 'mp4',
+                playbackType: normalizePlaybackType(rawEpisode.playbackType),
                 masterPlaylistUrl:
                   typeof rawEpisode.masterPlaylistUrl === 'string' ? rawEpisode.masterPlaylistUrl : '',
                 availableRenditions: normalizeRenditions(rawEpisode.availableRenditions) as Episode['availableRenditions'],
@@ -345,7 +349,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
     jobStatus: typeof data.jobStatus === 'string' ? (data.jobStatus as Movie['jobStatus']) : undefined,
     processingProgress: typeof data.processingProgress === 'number' ? data.processingProgress : 0,
     errorMessage: typeof data.errorMessage === 'string' ? data.errorMessage : '',
-    playbackType: 'mp4',
+    playbackType: normalizePlaybackType(data.playbackType),
     masterPlaylistUrl: typeof data.masterPlaylistUrl === 'string' ? data.masterPlaylistUrl : '',
     availableRenditions: normalizeRenditions(data.availableRenditions) as Movie['availableRenditions'],
     durationSeconds: typeof data.durationSeconds === 'number' ? data.durationSeconds : 0,

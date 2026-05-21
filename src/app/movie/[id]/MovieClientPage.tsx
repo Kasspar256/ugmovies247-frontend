@@ -79,15 +79,45 @@ function mergeEpisodePlaybackCandidate(
     overview: incoming.overview || existing?.overview || '',
     video_url: incoming.video_url || existing?.video_url || '',
     sourceUrl: incoming.sourceUrl || existing?.sourceUrl || '',
-    masterPlaylistUrl: '',
+    masterPlaylistUrl: incoming.masterPlaylistUrl || existing?.masterPlaylistUrl || '',
     overriddenBackdrop: incoming.overriddenBackdrop || existing?.overriddenBackdrop || '',
     episodeTrailerUrl: incoming.episodeTrailerUrl || existing?.episodeTrailerUrl || '',
     poster: incoming.poster || existing?.poster || '',
     thumbnail: incoming.thumbnail || existing?.thumbnail || '',
-    playbackType: 'mp4',
+    playbackType: incoming.playbackType || existing?.playbackType || 'mp4',
     durationSeconds: incoming.durationSeconds || existing?.durationSeconds || 0,
     isLocked: incoming.isLocked ?? existing?.isLocked,
   };
+}
+
+function hasPlaybackSource(asset?: {
+  video_url?: string;
+  sourceUrl?: string;
+  masterPlaylistUrl?: string;
+  availableRenditions?: Array<{ playlistUrl?: string }>;
+}) {
+  return Boolean(
+    asset?.video_url ||
+    asset?.sourceUrl ||
+    asset?.masterPlaylistUrl ||
+    asset?.availableRenditions?.some((rendition) => rendition.playlistUrl)
+  );
+}
+
+function movieHasAnyPlaybackSource(movie: Movie) {
+  if (movie.contentType === 'series') {
+    return Boolean(
+      movie.seasons?.some((season) =>
+        season.episodes.some((episode) => hasPlaybackSource(episode))
+      )
+    );
+  }
+
+  if (movie.parts?.length) {
+    return movie.parts.some((part) => hasPlaybackSource(part));
+  }
+
+  return hasPlaybackSource(movie);
 }
 
 function formatPlaybackDuration(durationSeconds?: number) {
@@ -283,7 +313,24 @@ if (initialCatalogForRoute.length && !shouldBypassCatalogCache) {
 if (routeInitialMovie) {
   applyResolvedMovie(routeInitialMovie, initialCatalogForRoute);
 
-  if (!shouldBypassCatalogCache) {
+  if (!movieHasAnyPlaybackSource(routeInitialMovie)) {
+    void fetchPublicMovieById(params.id)
+      .then((freshMovie) => {
+        if (!active) {
+          return;
+        }
+
+        if (freshMovie) {
+          applyResolvedMovie(freshMovie, [
+            freshMovie,
+            ...initialCatalogForRoute.filter((candidate) => candidate.id !== freshMovie.id),
+          ]);
+        }
+      })
+      .catch((error) => {
+        console.warn('[movie-page] silent exact source refresh failed after bootstrap render', error);
+      });
+  } else if (!shouldBypassCatalogCache) {
     void fetchPublicMovies()
       .then((catalogMovies) => {
         if (!active) {
@@ -294,7 +341,7 @@ if (routeInitialMovie) {
           candidate.id === params.id || candidate.movieId === params.id
         );
 
-        if (refreshedMovie) {
+        if (refreshedMovie && movieHasAnyPlaybackSource(refreshedMovie)) {
           applyResolvedMovie(refreshedMovie, catalogMovies);
         }
       })
@@ -652,20 +699,25 @@ const selectedPart =
   movie?.contentType !== 'series' && movie?.parts?.length
     ? movie.parts[selectedPartIndex]
     : undefined;
+const activeEpisodeRenditionUrl = activeEpisode?.availableRenditions?.[0]?.playlistUrl || '';
+const selectedPartRenditionUrl = selectedPart?.availableRenditions?.[0]?.playlistUrl || '';
+const movieRenditionUrl = movie?.availableRenditions?.[0]?.playlistUrl || '';
 const seriesPlaybackType =
-  activeEpisode?.playbackType === 'hls' && activeEpisode?.masterPlaylistUrl ? 'hls' : 'mp4';
+  activeEpisode?.masterPlaylistUrl || activeEpisodeRenditionUrl ? 'hls' : 'mp4';
 const moviePlaybackType =
-  (selectedPart?.playbackType === 'hls' && selectedPart?.masterPlaylistUrl) ||
-  (movie?.playbackType === 'hls' && movie?.masterPlaylistUrl)
-    ? 'hls'
-    : 'mp4';
-const seriesPlaybackVideoUrl = activeEpisode?.video_url || activeEpisode?.sourceUrl || '';
+  selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || selectedPartRenditionUrl || movieRenditionUrl ? 'hls' : 'mp4';
+const seriesPlaybackVideoUrl =
+  seriesPlaybackType === 'hls'
+    ? activeEpisode?.masterPlaylistUrl || activeEpisodeRenditionUrl || activeEpisode?.video_url || activeEpisode?.sourceUrl || ''
+    : activeEpisode?.video_url || activeEpisode?.sourceUrl || activeEpisode?.masterPlaylistUrl || activeEpisodeRenditionUrl || '';
 const seriesPlaybackFallbackUrl =
   activeEpisode?.sourceUrl && activeEpisode.sourceUrl !== seriesPlaybackVideoUrl
     ? activeEpisode.sourceUrl
     : '';
 const moviePlaybackVideoUrl =
-  selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl || '';
+  moviePlaybackType === 'hls'
+    ? selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || selectedPartRenditionUrl || movieRenditionUrl || selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl || ''
+    : selectedPart?.video_url || selectedPart?.sourceUrl || movie?.video_url || movie?.sourceUrl || selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || selectedPartRenditionUrl || movieRenditionUrl || '';
 const moviePlaybackFallbackUrl =
   selectedPart?.sourceUrl && selectedPart.sourceUrl !== moviePlaybackVideoUrl
     ? selectedPart.sourceUrl
@@ -686,8 +738,8 @@ const playbackType =
     : moviePlaybackType;
 const castPlaybackUrl =
   movie?.contentType === 'series'
-    ? activeEpisode?.masterPlaylistUrl || seriesPlaybackVideoUrl
-    : selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || moviePlaybackVideoUrl;
+    ? activeEpisode?.masterPlaylistUrl || activeEpisodeRenditionUrl || seriesPlaybackVideoUrl
+    : selectedPart?.masterPlaylistUrl || movie?.masterPlaylistUrl || selectedPartRenditionUrl || movieRenditionUrl || moviePlaybackVideoUrl;
 const uploadedTrailerUrl =
   movie?.contentType === 'series'
     ? activeEpisode?.episodeTrailerUrl ||

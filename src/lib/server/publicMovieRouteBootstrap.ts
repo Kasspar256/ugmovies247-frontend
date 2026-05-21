@@ -28,7 +28,11 @@ function resolveAfter<T>(value: T, timeoutMs: number) {
   });
 }
 
-function isPremiumAccessTier(accessTier: unknown) {
+function isPremiumAccessTier(accessTier: unknown, subscriptionRequired?: unknown) {
+  if (subscriptionRequired === false) {
+    return false;
+  }
+
   return accessTier !== 'free';
 }
 
@@ -44,19 +48,28 @@ function stripPlaybackFields(entry: RawMovie) {
   };
 }
 
+function keepReadyPlaybackFields(entry: RawMovie) {
+  return {
+    ...entry,
+    video_url: String(entry.video_url || ''),
+    sourceUrl: String(entry.sourceUrl || ''),
+    sourceFileName: String(entry.sourceFileName || ''),
+    masterPlaylistUrl: String(entry.masterPlaylistUrl || ''),
+    availableRenditions: Array.isArray(entry.availableRenditions) ? entry.availableRenditions : [],
+    playbackType: entry.playbackType === 'hls' ? 'hls' : 'mp4',
+  };
+}
+
 function sanitizeEpisodeForInitialPlayer(
   episode: RawMovie,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(episode.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(episode.accessTier, episode.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
-  const baseEpisode = {
+  const baseEpisode = keepReadyPlaybackFields({
     ...episode,
-    masterPlaylistUrl: '',
-    availableRenditions: [],
-    playbackType: 'mp4',
     subscriptionRequired,
-  };
+  });
 
   if (!isLocked && isPublicPlaybackAssetReady(episode)) {
     return {
@@ -75,15 +88,12 @@ function sanitizeMoviePartForInitialPlayer(
   part: RawMovie,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(part.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(part.accessTier, part.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
-  const basePart = {
+  const basePart = keepReadyPlaybackFields({
     ...part,
-    masterPlaylistUrl: '',
-    availableRenditions: [],
-    playbackType: 'mp4',
     subscriptionRequired,
-  };
+  });
 
   if (!isLocked && isPublicPlaybackAssetReady(part)) {
     return {
@@ -102,7 +112,7 @@ function sanitizeMovieForInitialPlayer(
   movie: RawMovie,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(movie.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(movie.accessTier, movie.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
   const parts = Array.isArray(movie.parts)
     ? movie.parts.map((part) =>
@@ -133,11 +143,15 @@ function sanitizeMovieForInitialPlayer(
     video_url: shouldExposePrimaryMovieSource ? String(movie.video_url || '') : '',
     sourceUrl: shouldExposePrimaryMovieSource ? String(movie.sourceUrl || '') : '',
     sourceFileName: shouldExposePrimaryMovieSource ? String(movie.sourceFileName || '') : '',
+    masterPlaylistUrl: shouldExposePrimaryMovieSource ? String(movie.masterPlaylistUrl || '') : '',
+    availableRenditions:
+      shouldExposePrimaryMovieSource && Array.isArray(movie.availableRenditions)
+        ? movie.availableRenditions
+        : [],
+    playbackType:
+      shouldExposePrimaryMovieSource && movie.playbackType === 'hls' ? 'hls' : 'mp4',
     parts,
     seasons,
-    masterPlaylistUrl: '',
-    availableRenditions: [],
-    playbackType: 'mp4',
     accessTier: subscriptionRequired ? 'premium' : 'free',
     subscriptionRequired,
     isLocked,
