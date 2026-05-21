@@ -159,7 +159,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           return {
             authenticated: true,
             code: 'offline_restored_session',
-          } satisfies ClientAuthStatus;
+          } as ClientAuthStatus;
         }
 
         return null;
