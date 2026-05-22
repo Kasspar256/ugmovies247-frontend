@@ -30,7 +30,29 @@ function getAdminCatalogCache(cache: CachedMovieCatalog | null) {
 }
 
 async function readAdminMovieSnapshotWithFallback(hasFallback: boolean) {
-  const queryPromise = adminDb.collection(MOVIES_COLLECTION).orderBy('date_added', 'desc').get();
+  const collection = adminDb.collection(MOVIES_COLLECTION);
+  const queryPromise = (async () => {
+    const orderedSnapshot = await collection.orderBy('date_added', 'desc').get().catch(() => null);
+    const fullSnapshot = await collection.get();
+
+    if (!orderedSnapshot || orderedSnapshot.empty) {
+      return fullSnapshot;
+    }
+
+    if (orderedSnapshot.size >= fullSnapshot.size) {
+      return orderedSnapshot;
+    }
+
+    const docsById = new Map(orderedSnapshot.docs.map((doc) => [doc.id, doc] as const));
+
+    for (const doc of fullSnapshot.docs) {
+      docsById.set(doc.id, doc);
+    }
+
+    return {
+      docs: Array.from(docsById.values()),
+    };
+  })();
 
   if (!hasFallback) {
     return queryPromise;

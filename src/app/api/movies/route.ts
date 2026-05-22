@@ -245,13 +245,28 @@ async function readMovieSnapshotWithFallback(
   const collection = adminDb.collection(collectionName);
   const queryPromise = reviewOnly
     ? collection.where('is_for_review', '==', true).get()
-    : collection.orderBy('date_added', 'desc').get().then(async (snapshot) => {
-        if (!snapshot.empty) {
-          return snapshot;
+    : (async () => {
+        const orderedSnapshot = await collection.orderBy('date_added', 'desc').get().catch(() => null);
+        const fullSnapshot = await collection.get();
+
+        if (!orderedSnapshot || orderedSnapshot.empty) {
+          return fullSnapshot;
         }
 
-        return collection.get();
-      });
+        if (orderedSnapshot.size >= fullSnapshot.size) {
+          return orderedSnapshot;
+        }
+
+        const docsById = new Map(orderedSnapshot.docs.map((doc) => [doc.id, doc] as const));
+
+        for (const doc of fullSnapshot.docs) {
+          docsById.set(doc.id, doc);
+        }
+
+        return {
+          docs: Array.from(docsById.values()),
+        };
+      })();
 
   if (!hasFallback) {
     return queryPromise;

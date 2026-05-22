@@ -73,10 +73,6 @@ function hasExplicitUnreadyStatus(asset: PublicAsset) {
 }
 
 export function isPublicMovieReady(movie: PublicAsset, options: PublicReadinessOptions = {}) {
-  if (hasExplicitUnreadyStatus(movie)) {
-    return false;
-  }
-
   const seasons = Array.isArray(movie.seasons) ? movie.seasons : [];
 
   if (movie.contentType === 'series' || seasons.length > 0) {
@@ -94,6 +90,10 @@ export function isPublicMovieReady(movie: PublicAsset, options: PublicReadinessO
 
   if (parts.length > 0) {
     return parts.some((part) => isPublicPlaybackAssetReady(part as PublicAsset, options));
+  }
+
+  if (hasExplicitUnreadyStatus(movie)) {
+    return false;
   }
 
   return isPublicPlaybackAssetReady(movie, options);
