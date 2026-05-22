@@ -77,7 +77,7 @@ export default function NotificationsPage() {
            <div>
              <span className="text-sm font-bold text-white tracking-widest uppercase">Latest Upload Alerts</span>
              <p className="mt-1 text-xs text-[#888888]">
-               Fresh movie uploads across the app appear here automatically.
+               Fresh movie and series uploads across the app appear here automatically.
              </p>
            </div>
            <button
@@ -96,7 +96,7 @@ export default function NotificationsPage() {
           </div>
         ) : latestMovies.length === 0 ? (
           <div className="rounded-xl border border-dashed border-white/10 bg-[#1F2833]/20 px-4 py-8 text-center text-sm text-[#888888]">
-            No uploaded movies have reached the app yet.
+            No uploaded movies or series have reached the app yet.
           </div>
         ) : (
           <div className="space-y-4">
@@ -137,17 +137,25 @@ export default function NotificationsPage() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-white font-bold text-sm mb-1 uppercase tracking-wider line-clamp-2">
-                      {index === 0 ? 'Newest Upload' : 'Movie Uploaded'}
+                      {index === 0
+                        ? 'Newest Upload'
+                        : movie.contentType === 'series'
+                          ? 'Series Uploaded'
+                          : 'Movie Uploaded'}
                     </h3>
                     <p className="text-white text-sm font-semibold line-clamp-2">
                       {movie.title}
                     </p>
                     <p className="mt-1 text-[#888888] text-xs leading-relaxed line-clamp-2">
                       {movie.vj && movie.vj !== 'Unknown'
-                        ? `VJ ${movie.vj} uploaded this title to the app. Open it now and ${
+                        ? `VJ ${movie.vj} uploaded this ${
+                            movie.contentType === 'series' ? 'series' : 'title'
+                          } to the app. Open it now and ${
                             isAppInReview ? 'watch the trailer.' : 'start watching.'
                           }`
-                        : `A new movie was uploaded to the app. Open it now and ${
+                        : `A new ${
+                            movie.contentType === 'series' ? 'series' : 'movie'
+                          } was uploaded to the app. Open it now and ${
                             isAppInReview ? 'watch the trailer.' : 'start watching.'
                           }`}
                     </p>

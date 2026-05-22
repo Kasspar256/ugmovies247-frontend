@@ -14,14 +14,10 @@ type CachedPublicMovieCatalog = {
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
   ? 'ugmovies247.public-movies.review.v1'
-  : 'ugmovies247.public-movies.v3';
+  : 'ugmovies247.public-movies.v4';
 const PUBLIC_MOVIE_CACHE_READ_KEYS = isAppInReview
   ? ['ugmovies247.public-movies.review.v1']
-  : [
-      PUBLIC_MOVIE_CACHE_KEY,
-      'ugmovies247.public-movies.v2',
-      'ugmovies247.public-movies.v1',
-    ];
+  : [PUBLIC_MOVIE_CACHE_KEY];
 const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 const CLIENT_PUBLIC_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
@@ -207,10 +203,12 @@ export function clearPublicMovieCache() {
     window.localStorage?.removeItem('ugmovies247.public-movies.review.v1');
     window.localStorage?.removeItem('ugmovies247.public-movies.v1');
     window.localStorage?.removeItem('ugmovies247.public-movies.v2');
+    window.localStorage?.removeItem('ugmovies247.public-movies.v3');
     window.sessionStorage?.removeItem(PUBLIC_MOVIE_CACHE_KEY);
     window.sessionStorage?.removeItem('ugmovies247.public-movies.review.v1');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v1');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v2');
+    window.sessionStorage?.removeItem('ugmovies247.public-movies.v3');
   } catch {
     // Ignore persistent storage removal failures and keep the cache cleared in memory.
   }

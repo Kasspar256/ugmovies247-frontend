@@ -439,6 +439,37 @@ function useIsAndroidDevice() {
   return isAndroidDevice;
 }
 
+function useIsNativeAndroidAppShell() {
+  const [isNativeAndroidAppShell, setIsNativeAndroidAppShell] = useState(false);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') {
+      return;
+    }
+
+    const userAgent = navigator.userAgent || '';
+    const windowCapacitor = typeof window !== 'undefined'
+      ? (window as typeof window & {
+          Capacitor?: {
+            getPlatform?: () => string;
+            platform?: string;
+          };
+        }).Capacitor
+      : null;
+    const nativePlatform =
+      typeof windowCapacitor?.getPlatform === 'function'
+        ? windowCapacitor.getPlatform()
+        : windowCapacitor?.platform || '';
+
+    setIsNativeAndroidAppShell(
+      /Android/i.test(userAgent) &&
+        (/Ugmovies247App/i.test(userAgent) || nativePlatform === 'android')
+    );
+  }, []);
+
+  return isNativeAndroidAppShell;
+}
+
 function useIsTouchDevice() {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -494,6 +525,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const isDesktop = useIsDesktopViewport();
   const isIOSDevice = useIsIOSDevice();
   const isAndroidDevice = useIsAndroidDevice();
+  const isNativeAndroidAppShell = useIsNativeAndroidAppShell();
   const isTouchDevice = useIsTouchDevice();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -1288,6 +1320,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (isNativeAndroidAppShell && !isDesktop) {
+      await lockLandscapeOrientation();
+      setSoftLandscapeFullscreen(true);
+      scheduleMobileLandscapeFallback();
+      return;
+    }
+
     if (shellElement && typeof shellElement.requestFullscreen === 'function') {
       try {
         await shellElement.requestFullscreen();
@@ -1328,7 +1367,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       setSoftLandscapeFullscreen(true);
       scheduleMobileLandscapeFallback();
     }
-  }, [isDesktop, isIOSDevice, showControls, softLandscapeFullscreen]);
+  }, [isDesktop, isIOSDevice, isNativeAndroidAppShell, showControls, softLandscapeFullscreen]);
 
   const tryTogglePictureInPicture = useCallback(async () => {
     const videoElement = videoRef.current as IOSVideoElement | null;
@@ -1351,6 +1390,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (!canUseStandardPictureInPicture && !canUseWebkitPictureInPicture) {
+      if (isNativeAndroidAppShell) {
+        showCastFeedback(
+          'Pop-up video needs an Android app update. Opening the landscape player instead.'
+        );
+        void tryEnterFullscreen();
+        return;
+      }
+
       if (isAndroidDevice) {
         showCastFeedback(
           'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
@@ -1381,6 +1428,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       videoElement.webkitSetPresentationMode?.('picture-in-picture');
     } catch (error) {
+      if (isNativeAndroidAppShell) {
+        showCastFeedback(
+          'Pop-up video needs an Android app update. Opening the landscape player instead.'
+        );
+        void tryEnterFullscreen();
+        return;
+      }
+
       if (isAndroidDevice) {
         showCastFeedback(
           'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
@@ -1395,7 +1450,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           : 'Picture-in-picture could not be started right now.'
       );
     }
-  }, [isAndroidDevice, showCastFeedback, showControls, tryEnterFullscreen]);
+  }, [
+    isAndroidDevice,
+    isNativeAndroidAppShell,
+    showCastFeedback,
+    showControls,
+    tryEnterFullscreen,
+  ]);
 
   const openWatchView = useCallback(() => {
     if (!activeSource?.watchHref) {

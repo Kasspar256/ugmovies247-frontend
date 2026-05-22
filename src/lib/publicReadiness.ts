@@ -85,7 +85,7 @@ export function isPublicMovieReady(movie: PublicAsset, options: PublicReadinessO
       return Array.isArray(rawSeason.episodes) ? rawSeason.episodes : [];
     });
 
-    return episodes.length > 0 && episodes.every((episode) =>
+    return episodes.length > 0 && episodes.some((episode) =>
       isPublicPlaybackAssetReady(episode as PublicAsset, options)
     );
   }
@@ -93,7 +93,7 @@ export function isPublicMovieReady(movie: PublicAsset, options: PublicReadinessO
   const parts = Array.isArray(movie.parts) ? movie.parts : [];
 
   if (parts.length > 0) {
-    return parts.every((part) => isPublicPlaybackAssetReady(part as PublicAsset, options));
+    return parts.some((part) => isPublicPlaybackAssetReady(part as PublicAsset, options));
   }
 
   return isPublicPlaybackAssetReady(movie, options);

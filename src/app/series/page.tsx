@@ -184,7 +184,7 @@ export default function SeriesDirectoryPage() {
 
     const loadSeries = async () => {
       try {
-        const catalog = await fetchPublicMovies();
+        const catalog = await fetchPublicMovies({ force: cachedSeries.length === 0 });
         setSeries(getAllSeries(catalog));
         setLoadError('');
       } catch (error) {
