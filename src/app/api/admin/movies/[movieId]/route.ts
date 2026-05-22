@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
-import { deleteR2Object, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
+import {
+  deleteR2Object,
+  deleteR2ObjectsWithPrefix,
+  getR2ObjectKeyFromPublicUrl,
+} from '@/lib/server/r2';
 import {
   removeEpisodeFromCatalogCache,
   removeMovieFromCatalogCache,
@@ -13,7 +17,7 @@ import {
   queuePreparedDirectUploadJobs,
 } from '@/lib/server/adminVideoProcessing';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
-import type { Episode, Movie, MoviePart } from '@/types/movie';
+import type { Episode, Movie, MoviePart, Season } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -110,6 +114,116 @@ function collectCandidateUrlsFromEpisode(episode: Partial<Episode>) {
   return [...urls].filter(Boolean);
 }
 
+function collectCandidateUrlsFromMoviePart(part: Partial<MoviePart>) {
+  const urls = new Set<string>();
+
+  if (part.video_url) {
+    urls.add(part.video_url);
+  }
+
+  if (part.sourceUrl) {
+    urls.add(part.sourceUrl);
+  }
+
+  if (part.poster) {
+    urls.add(part.poster);
+  }
+
+  if (part.thumbnail) {
+    urls.add(part.thumbnail);
+  }
+
+  if (part.masterPlaylistUrl) {
+    urls.add(part.masterPlaylistUrl);
+  }
+
+  for (const rendition of part.availableRenditions || []) {
+    if (rendition?.playlistUrl) {
+      urls.add(rendition.playlistUrl);
+    }
+  }
+
+  return [...urls].filter(Boolean);
+}
+
+function collectCandidateUrlsFromSeason(season: Partial<Season>) {
+  const urls = new Set<string>();
+
+  if (season.poster) {
+    urls.add(season.poster);
+  }
+
+  for (const episode of season.episodes || []) {
+    for (const url of collectCandidateUrlsFromEpisode(episode as Episode)) {
+      urls.add(url);
+    }
+  }
+
+  return [...urls].filter(Boolean);
+}
+
+function getR2PrefixFromPlaylistKey(objectKey: string) {
+  if (!objectKey.toLowerCase().endsWith('.m3u8')) {
+    return '';
+  }
+
+  const slashIndex = objectKey.lastIndexOf('/');
+
+  if (slashIndex < 0) {
+    return '';
+  }
+
+  return objectKey.slice(0, slashIndex + 1);
+}
+
+async function deleteR2ObjectsForUrls(
+  urls: string[],
+  context: Record<string, string | number | undefined>
+) {
+  const objectKeys = Array.from(
+    new Set(urls.map((url) => getR2ObjectKeyFromPublicUrl(url)).filter(Boolean))
+  );
+  const playlistPrefixes = Array.from(
+    new Set(objectKeys.map(getR2PrefixFromPlaylistKey).filter(Boolean))
+  );
+  const deletedObjectKeys = new Set<string>();
+
+  for (const prefix of playlistPrefixes) {
+    try {
+      const deletedKeys = await deleteR2ObjectsWithPrefix(prefix);
+
+      for (const deletedKey of deletedKeys) {
+        deletedObjectKeys.add(deletedKey);
+      }
+    } catch (error) {
+      console.warn('[admin] failed to delete R2 HLS prefix', {
+        ...context,
+        prefix,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
+
+  for (const objectKey of objectKeys) {
+    if (deletedObjectKeys.has(objectKey)) {
+      continue;
+    }
+
+    try {
+      await deleteR2Object(objectKey);
+      deletedObjectKeys.add(objectKey);
+    } catch (error) {
+      console.warn('[admin] failed to delete R2 object', {
+        ...context,
+        objectKey,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
+
+  return [...deletedObjectKeys];
+}
+
 function parseOptionalInteger(requestUrl: URL, name: string) {
   const rawValue = requestUrl.searchParams.get(name);
 
@@ -166,30 +280,8 @@ function collectCandidateUrls(movie: Movie) {
   }
 
   for (const part of movie.parts || []) {
-    if (part.video_url) {
-      urls.add(part.video_url);
-    }
-
-    if (part.sourceUrl) {
-      urls.add(part.sourceUrl);
-    }
-
-    if (part.poster) {
-      urls.add(part.poster);
-    }
-
-    if (part.thumbnail) {
-      urls.add(part.thumbnail);
-    }
-
-    if (part.masterPlaylistUrl) {
-      urls.add(part.masterPlaylistUrl);
-    }
-
-    for (const rendition of part.availableRenditions || []) {
-      if (rendition?.playlistUrl) {
-        urls.add(rendition.playlistUrl);
-      }
+    for (const url of collectCandidateUrlsFromMoviePart(part)) {
+      urls.add(url);
     }
   }
 
@@ -200,10 +292,8 @@ function collectCandidateUrls(movie: Movie) {
   }
 
   for (const season of movie.seasons || []) {
-    for (const episode of season.episodes || []) {
-      for (const url of collectCandidateUrlsFromEpisode(episode as Episode)) {
-        urls.add(url);
-      }
+    for (const url of collectCandidateUrlsFromSeason(season)) {
+      urls.add(url);
     }
   }
 
@@ -281,28 +371,13 @@ export async function DELETE(
         { merge: true }
       );
 
-      const objectKeys = [
-        targetPart.video_url,
-        targetPart.sourceUrl,
-        targetPart.poster,
-        targetPart.thumbnail,
-      ]
-        .map((url) => getR2ObjectKeyFromPublicUrl(String(url || '')))
-        .filter(Boolean);
-
-      for (const objectKey of objectKeys) {
-        try {
-          await deleteR2Object(objectKey);
-          deletedObjectKeys.push(objectKey);
-        } catch (error) {
-          console.warn('[admin] failed to delete R2 object during movie part removal', {
-            movieId,
-            partId,
-            objectKey,
-            error: error instanceof Error ? error.message : error,
-          });
-        }
-      }
+      deletedObjectKeys.push(
+        ...(await deleteR2ObjectsForUrls(collectCandidateUrlsFromMoviePart(targetPart), {
+          movieId,
+          partId,
+          action: 'movie-part-removal',
+        }))
+      );
 
       await upsertMovieInCatalogCache({
         ...movie,
@@ -356,24 +431,14 @@ export async function DELETE(
         { merge: true }
       );
 
-      const objectKeys = collectCandidateUrlsFromEpisode(targetEpisode)
-        .map((url) => getR2ObjectKeyFromPublicUrl(url))
-        .filter(Boolean);
-
-      for (const objectKey of objectKeys) {
-        try {
-          await deleteR2Object(objectKey);
-          deletedObjectKeys.push(objectKey);
-        } catch (error) {
-          console.warn('[admin] failed to delete R2 object during episode removal', {
-            movieId,
-            seasonNumber,
-            episodeNumber,
-            objectKey,
-            error: error instanceof Error ? error.message : error,
-          });
-        }
-      }
+      deletedObjectKeys.push(
+        ...(await deleteR2ObjectsForUrls(collectCandidateUrlsFromEpisode(targetEpisode), {
+          movieId,
+          seasonNumber,
+          episodeNumber,
+          action: 'episode-removal',
+        }))
+      );
 
       await removeEpisodeFromCatalogCache(movieId, seasonNumber, episodeNumber);
 
@@ -386,24 +451,62 @@ export async function DELETE(
       });
     }
 
-    const objectKeys = collectCandidateUrls(movie)
-      .map((url) => getR2ObjectKeyFromPublicUrl(url))
-      .filter(Boolean);
+    if (seasonNumber !== null) {
+      const targetSeason = (movie.seasons || []).find(
+        (season) => Number(season.seasonNumber) === seasonNumber
+      );
+
+      if (!targetSeason) {
+        return NextResponse.json({ error: 'Season not found.' }, { status: 404 });
+      }
+
+      const updatedAt = new Date().toISOString();
+      const nextSeasons = (movie.seasons || []).filter(
+        (season) => Number(season.seasonNumber) !== seasonNumber
+      );
+
+      await movieRef.set(
+        {
+          seasons: nextSeasons,
+          updatedAt,
+        },
+        { merge: true }
+      );
+
+      deletedObjectKeys.push(
+        ...(await deleteR2ObjectsForUrls(collectCandidateUrlsFromSeason(targetSeason), {
+          movieId,
+          seasonNumber,
+          action: 'season-removal',
+        }))
+      );
+
+      if (nextSeasons.length > 0) {
+        await upsertMovieInCatalogCache({
+          ...movie,
+          seasons: nextSeasons,
+          updatedAt,
+        });
+      } else {
+        await removeMovieFromCatalogCache(movieId);
+      }
+
+      return NextResponse.json({
+        success: true,
+        movieId,
+        seasonNumber,
+        deletedObjectKeys,
+      });
+    }
 
     await movieRef.delete();
 
-    for (const objectKey of objectKeys) {
-      try {
-        await deleteR2Object(objectKey);
-        deletedObjectKeys.push(objectKey);
-      } catch (error) {
-        console.warn('[admin] failed to delete R2 object during movie removal', {
-          movieId,
-          objectKey,
-          error: error instanceof Error ? error.message : error,
-        });
-      }
-    }
+    deletedObjectKeys.push(
+      ...(await deleteR2ObjectsForUrls(collectCandidateUrls(movie), {
+        movieId,
+        action: 'movie-removal',
+      }))
+    );
 
     await removeMovieFromCatalogCache(movieId);
 

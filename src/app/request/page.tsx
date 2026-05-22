@@ -44,6 +44,21 @@ export default function RequestPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const requestParams = new URLSearchParams(window.location.search);
+    const requestedTitle = requestParams.get('title') || requestParams.get('q') || '';
+    const normalizedTitle = requestedTitle.replace(/\s+/g, ' ').trim();
+
+    if (!normalizedTitle) {
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      title: current.title || normalizedTitle,
+    }));
+  }, []);
+
   const requireVerifiedEmail = async () => {
     const status = authStatus?.authenticated
       ? authStatus
@@ -334,3 +349,4 @@ export default function RequestPage() {
     </div>
   );
 }
+

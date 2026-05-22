@@ -1737,13 +1737,13 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                       <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
                     </>
                   ) : (
-                    <div className="absolute inset-0 flex items-center justify-center bg-[#1F2833] text-lg font-black text-[#D90429]">
+                    <div className="absolute inset-0 flex items-center justify-center bg-[#1F2833] text-lg font-black text-white">
                       {episodeLabel}
                     </div>
                   )}
 
                   <div className="absolute right-2.5 top-2.5 md:right-3 md:top-3">
-                    <p className="text-[10px] md:text-xs font-black leading-none text-[#D90429] drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)]">
+                    <p className="rounded-full border border-white/25 bg-black/68 px-2 py-1 text-[10px] font-black leading-none text-white shadow-[0_6px_18px_rgba(0,0,0,0.38)] backdrop-blur-md md:text-xs">
                       {episodeLabel}
                     </p>
                   </div>

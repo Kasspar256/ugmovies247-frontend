@@ -116,7 +116,7 @@ async function readProcessingCachedValue<T>(options: {
 
 export async function readCachedVideoJobs<T>(loader: () => Promise<T>, ttlMs = 1000 * 30) {
   return readProcessingCachedValue<T>({
-    resource: 'video-jobs',
+    resource: 'video-jobs-v2',
     cache: videoJobsCache as TimedProcessingCache<T> | null,
     ttlMs,
     loader,
@@ -152,6 +152,7 @@ export function clearAdminProcessingCache(resources?: Array<'jobs' | 'repairs'>)
   if (targets.includes('jobs')) {
     videoJobsCache = null;
     clearProcessingQuotaFailure('video-jobs');
+    clearProcessingQuotaFailure('video-jobs-v2');
   }
 
   if (targets.includes('repairs')) {

@@ -179,41 +179,6 @@ function getMovieSearchRank(movie: Movie, searchTerm: string) {
   return null;
 }
 
-function formatSearchTermForMessage(query: string) {
-  const searchTerm = cleanOption(query);
-  return searchTerm.length > 42 ? `${searchTerm.slice(0, 42)}...` : searchTerm;
-}
-
-function buildNoMoviesMessage({
-  hasQuery,
-  query,
-  selectedVj,
-  selectedGenre,
-}: {
-  hasQuery: boolean;
-  query: string;
-  selectedVj: string;
-  selectedGenre: string;
-}) {
-  if (hasQuery) {
-    return `No movies found matching '${formatSearchTermForMessage(query)}'. Try a different keyword.`;
-  }
-
-  if (selectedVj !== FILTER_ALL && selectedGenre !== FILTER_ALL) {
-    return 'No movies found for the selected VJ and Genre.';
-  }
-
-  if (selectedVj !== FILTER_ALL) {
-    return 'No movies found for the selected VJ.';
-  }
-
-  if (selectedGenre !== FILTER_ALL) {
-    return 'No movies found for the selected Genre.';
-  }
-
-  return 'No movies found right now.';
-}
-
 function FilterDropdown({
   kind,
   label,
@@ -369,7 +334,6 @@ function SearchSkeletonGrid() {
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedVj, setSelectedVj] = useState(FILTER_ALL);
   const [selectedGenre, setSelectedGenre] = useState(FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<FilterKind | null>(null);
@@ -382,14 +346,6 @@ export default function SearchPage() {
   usePublicMovieCatalogUpdates((catalog) => {
     setAllMovies(dedupeSeriesMovies(catalog));
   });
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQuery(query);
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [query]);
 
   useEffect(() => {
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
@@ -471,7 +427,7 @@ export default function SearchPage() {
   }, [selectedGenre, genreOptions]);
 
   const filteredMovies = useMemo(() => {
-    const searchTerm = normalizeForSearch(debouncedQuery);
+    const searchTerm = normalizeForSearch(query);
 
     return allMovies
       .map((movie, index) => {
@@ -500,11 +456,11 @@ export default function SearchPage() {
       .filter((entry): entry is { movie: Movie; index: number; rank: number } => Boolean(entry))
       .sort((left, right) => left.rank - right.rank || left.index - right.index)
       .map((entry) => entry.movie);
-  }, [allMovies, debouncedQuery, selectedGenre, selectedVj]);
+  }, [allMovies, query, selectedGenre, selectedVj]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [debouncedQuery, selectedGenre, selectedVj]);
+  }, [query, selectedGenre, selectedVj]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -534,13 +490,10 @@ export default function SearchPage() {
   const visibleMovies = filteredMovies.slice(0, visibleCount);
   const hasActiveFilters =
     query.trim().length > 0 || selectedVj !== FILTER_ALL || selectedGenre !== FILTER_ALL;
-  const isFilteringPending = query !== debouncedQuery;
-  const noMoviesMessage = buildNoMoviesMessage({
-    hasQuery: query.trim().length > 0,
-    query,
-    selectedVj,
-    selectedGenre,
-  });
+  const requestTitle = cleanOption(query);
+  const requestHref = requestTitle
+    ? `/request?title=${encodeURIComponent(requestTitle)}`
+    : '/request';
 
   const handleToggleFilter = (kind: FilterKind) => {
     setOpenFilter((current) => (current === kind ? null : kind));
@@ -558,7 +511,6 @@ export default function SearchPage() {
 
   const handleClearFilters = () => {
     setQuery('');
-    setDebouncedQuery('');
     setSelectedVj(FILTER_ALL);
     setSelectedGenre(FILTER_ALL);
     setOpenFilter(null);
@@ -566,7 +518,6 @@ export default function SearchPage() {
 
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setDebouncedQuery(query);
     setVisibleCount(PAGE_SIZE);
     setOpenFilter(null);
 
@@ -760,7 +711,7 @@ export default function SearchPage() {
       <section className="relative z-10 mx-auto mt-5 max-w-[1380px] px-4 md:mt-8 md:px-8 lg:px-10">
         <div className="mb-4 flex items-center justify-between gap-4 md:mb-6">
           <div className="text-[10px] font-black uppercase tracking-[0.26em] text-cyan-100/50">
-            {isFilteringPending ? 'Searching...' : hasActiveFilters ? 'Filtered movies' : 'All movies'}
+            {hasActiveFilters ? 'Filtered movies' : 'All movies'}
           </div>
           {hasActiveFilters && (
             <button
@@ -782,18 +733,32 @@ export default function SearchPage() {
         {loading && !allMovies.length ? (
           <SearchSkeletonGrid />
         ) : filteredMovies.length === 0 ? (
-          <div className="rounded-[32px] border border-white/10 bg-white/[0.06] p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.32)] backdrop-blur-xl md:p-12">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] text-cyan-100">
-              <Film size={28} />
-            </div>
-            <h3 className="mx-auto mt-5 max-w-xl break-words text-lg font-extrabold leading-7 text-white md:text-xl md:font-black md:leading-8">
-              {noMoviesMessage}
-            </h3>
-            {!query.trim() && (
-              <p className="mx-auto mt-2 max-w-md text-sm leading-7 text-white/60">
-                Try a different VJ, genre, or movie name. The full movie grid returns as soon as you reset the filters.
+          <div className="mx-auto max-w-2xl overflow-hidden rounded-[34px] border border-white/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.09),rgba(217,4,41,0.08),rgba(6,9,18,0.78))] p-[1px] text-center shadow-[0_26px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl">
+            <div className="rounded-[33px] bg-[#090D16]/88 px-5 py-8 md:px-10 md:py-12">
+              <div className="mx-auto grid h-20 w-20 place-items-center rounded-[28px] border border-cyan-100/20 bg-white/[0.07] text-white shadow-[0_0_34px_rgba(56,189,248,0.18),inset_0_0_24px_rgba(255,255,255,0.04)]">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[#D90429]/35 bg-[#D90429]/16">
+                  <SearchIcon size={27} strokeWidth={2.4} />
+                </div>
+              </div>
+              <h3 className="mx-auto mt-6 max-w-xl text-2xl font-black leading-tight tracking-[-0.01em] text-white md:text-4xl">
+                Can&apos;t find what you&apos;re looking for?
+              </h3>
+              <p className="mx-auto mt-4 max-w-xl text-sm font-semibold leading-7 text-white/72 md:text-base md:leading-8">
+                Request any movie or series now. Our team will process, format, and upload it in less than 5 hours.
               </p>
-            )}
+              {requestTitle ? (
+                <div className="mx-auto mt-5 max-w-md rounded-2xl border border-white/10 bg-white/[0.055] px-4 py-3 text-xs font-bold leading-6 text-white/62">
+                  Ready to request: <span className="font-black text-white">{requestTitle}</span>
+                </div>
+              ) : null}
+              <Link
+                href={requestHref}
+                className="mx-auto mt-6 inline-flex min-h-14 w-full max-w-sm items-center justify-center gap-3 rounded-2xl bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white shadow-[0_18px_45px_rgba(217,4,41,0.32)] transition-transform duration-200 hover:scale-[1.01] hover:bg-[#F00632]"
+              >
+                <Film size={18} />
+                Request This Movie Now
+              </Link>
+            </div>
           </div>
         ) : (
           <>
@@ -820,3 +785,4 @@ export default function SearchPage() {
     </main>
   );
 }
+

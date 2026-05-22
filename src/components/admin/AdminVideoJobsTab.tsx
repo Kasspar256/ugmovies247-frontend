@@ -9,6 +9,7 @@ import { Card, StatTile, TextInput } from '@/components/admin/controlCenterField
 
 type VideoJobsResponse = {
   jobs?: VideoJobDocument[];
+  limit?: number;
 };
 
 type RepairResponse = {
@@ -122,6 +123,7 @@ export function AdminVideoJobsTab() {
   const [repairScanLimit, setRepairScanLimit] = useState(100);
   const [repairSearch, setRepairSearch] = useState('');
   const [selectedRepairMovieIds, setSelectedRepairMovieIds] = useState<string[]>([]);
+  const [jobLimit, setJobLimit] = useState(500);
 
   const loadJobs = async (showSpinner = false) => {
     if (showSpinner) {
@@ -129,11 +131,12 @@ export function AdminVideoJobsTab() {
     }
 
     try {
-      const payload = await fetchAdminJson<VideoJobsResponse>('/api/admin/video-jobs', {
+      const payload = await fetchAdminJson<VideoJobsResponse>('/api/admin/video-jobs?limit=500', {
         force: showSpinner,
         ttlMs: 1000 * 60,
       });
       setJobs(payload.jobs || []);
+      setJobLimit(Number(payload.limit || 500));
       setJobErrorMessage('');
     } catch (error) {
       setJobErrorMessage(
@@ -379,7 +382,7 @@ export function AdminVideoJobsTab() {
 
       <Card
         title="Processing Queue"
-        description="Monitor queued, downloading, inspecting, processing, uploading, failed, and ready MP4 import jobs without opening the terminal."
+        description="Monitor the full visible queue across queued, downloading, inspecting, processing, uploading, failed, and ready MP4 import jobs."
         action={
           <button
             type="button"
@@ -400,6 +403,10 @@ export function AdminVideoJobsTab() {
             value={jobs.filter((job) => job.status === 'uploading').length}
             icon={<UploadCloud size={16} />}
           />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs font-semibold leading-6 text-white/58">
+          Showing {jobs.length} job{jobs.length === 1 ? '' : 's'} from the latest {jobLimit} job queue window. The list below is not sliced by the browser; scroll down to inspect every returned job.
         </div>
 
         <div className="mt-5 rounded-[24px] border border-[#D90429]/18 bg-[linear-gradient(180deg,rgba(23,9,13,0.9),rgba(17,20,28,0.96))] p-4">

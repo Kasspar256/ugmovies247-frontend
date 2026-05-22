@@ -24,7 +24,6 @@ import {
 } from './env';
 import {
   downloadRemoteSource,
-  isSupportedInputMp4Format,
   type RemoteDownloadProgress,
 } from './downloadSource';
 import { getFreeDiskSpace } from './system';
@@ -155,12 +154,14 @@ async function throwIfJobWasCancelled(jobId: string) {
   }
 }
 
-export async function listVideoJobs(limit = 50) {
-  const snapshot = await adminDb
-    .collection(VIDEO_JOBS_COLLECTION)
-    .orderBy('createdAt', 'desc')
-    .limit(limit)
-    .get();
+export async function listVideoJobs(limit = 500) {
+  let query = adminDb.collection(VIDEO_JOBS_COLLECTION).orderBy('createdAt', 'desc');
+
+  if (Number.isFinite(limit) && limit > 0) {
+    query = query.limit(limit);
+  }
+
+  const snapshot = await query.get();
 
   return snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as VideoJobDocument) }));
 }
@@ -699,7 +700,7 @@ async function ensureDiskSafetyBeforeProcessing(sourceFileSizeBytes: number) {
   }
 }
 
-async function inspectImportedMp4(localSourcePath: string) {
+async function inspectImportedVideo(localSourcePath: string) {
   let inspection;
 
   try {
@@ -707,10 +708,15 @@ async function inspectImportedMp4(localSourcePath: string) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown media inspection failure.';
     throw new Error(
-      `The downloaded file could not be parsed as a valid MP4 on the VPS. ${message}`
+      `The downloaded file could not be parsed as a valid video on the VPS. ${message}`
     );
   }
 
+  if (!inspection.codecName) {
+    throw new Error(
+      `The downloaded source does not contain a supported video stream. Detected format: ${inspection.formatName || 'unknown'}.`
+    );
+  }
 
   return inspection;
 }
@@ -858,9 +864,9 @@ export async function processNextVideoJob() {
       fileSizeBytes: source.fileSizeBytes,
       errorMessage: '',
     });
-    await appendJobLog(job.id!, 'Inspecting the downloaded MP4 source.');
+    await appendJobLog(job.id!, 'Inspecting the downloaded video source.');
 
-    const sourceInspection = await inspectImportedMp4(source.path);
+    const sourceInspection = await inspectImportedVideo(source.path);
     await throwIfJobWasCancelled(job.id!);
     await touchWorkerHeartbeat(job.id!);
     await appendJobLog(

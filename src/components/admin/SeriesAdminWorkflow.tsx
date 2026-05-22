@@ -9,6 +9,7 @@ import {
   Plus,
   Save,
   Search,
+  Trash2,
   UploadCloud,
 } from 'lucide-react';
 import type { AdminCategory, AdminLibraryAsset } from '@/types/admin';
@@ -739,6 +740,72 @@ async function loadSeries(seriesId: string) {
   return movie;
 }
 
+function getEpisodeActionKey(seasonNumber: number, episodeNumber: number) {
+  return `${seasonNumber}:${episodeNumber}`;
+}
+
+function getSeasonActionKey(seasonNumber: number) {
+  return String(seasonNumber);
+}
+
+async function deleteSeriesEpisode(
+  seriesId: string,
+  seasonNumber: number,
+  episodeNumber: number
+) {
+  const response = await fetch(
+    `/api/admin/movies/${seriesId}?seasonNumber=${seasonNumber}&episodeNumber=${episodeNumber}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+      cache: 'no-store',
+    }
+  );
+  const result = await parseApiResponse(response);
+
+  if (!result.ok) {
+    throw new Error(result.payload.error || 'Failed to delete episode.');
+  }
+
+  clearAdminFetchCache('/api/admin/movies');
+  clearAdminFetchCache(`/api/admin/movies/${seriesId}`);
+  return result.payload;
+}
+
+async function deleteSeriesSeason(seriesId: string, seasonNumber: number) {
+  const response = await fetch(`/api/admin/movies/${seriesId}?seasonNumber=${seasonNumber}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const result = await parseApiResponse(response);
+
+  if (!result.ok) {
+    throw new Error(result.payload.error || 'Failed to delete season.');
+  }
+
+  clearAdminFetchCache('/api/admin/movies');
+  clearAdminFetchCache(`/api/admin/movies/${seriesId}`);
+  return result.payload;
+}
+
+async function deleteEntireSeries(seriesId: string) {
+  const response = await fetch(`/api/admin/movies/${seriesId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const result = await parseApiResponse(response);
+
+  if (!result.ok) {
+    throw new Error(result.payload.error || 'Failed to delete series.');
+  }
+
+  clearAdminFetchCache('/api/admin/movies');
+  clearAdminFetchCache(`/api/admin/movies/${seriesId}`);
+  return result.payload;
+}
+
 async function loadCategories() {
   const payload = await fetchAdminJson<{ categories?: AdminCategory[] }>('/api/admin/categories');
   return payload.categories || [];
@@ -770,6 +837,7 @@ export function AdminSeriesHubView() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [seriesDeleted, setSeriesDeleted] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -790,6 +858,10 @@ export function AdminSeriesHubView() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    setSeriesDeleted(new URLSearchParams(window.location.search).get('seriesDeleted') === '1');
   }, []);
 
   const filteredSeries = useMemo(() => {
@@ -842,6 +914,12 @@ export function AdminSeriesHubView() {
         </div>
       </Card>
 
+      {seriesDeleted ? (
+        <StatusMessage
+          message="Series deleted. Its seasons, episodes, public catalog entry, and linked storage files were removed."
+          tone="success"
+        />
+      ) : null}
       <StatusMessage message={errorMessage} tone="error" />
 
       {loading ? (
@@ -1207,10 +1285,18 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
 }
 
 export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [series, setSeries] = useState<Movie | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [confirmingDeleteKey, setConfirmingDeleteKey] = useState('');
+  const [deletingEpisodeKey, setDeletingEpisodeKey] = useState('');
+  const [confirmingSeasonDeleteKey, setConfirmingSeasonDeleteKey] = useState('');
+  const [deletingSeasonKey, setDeletingSeasonKey] = useState('');
+  const [confirmingSeriesDelete, setConfirmingSeriesDelete] = useState(false);
+  const [deletingSeries, setDeletingSeries] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1234,6 +1320,60 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
   const nextSeasonNumber = getNextSeasonNumber(series);
   const queuedCount = Number(searchParams.get('queued') || 0);
   const episodeSaved = searchParams.get('episodeSaved') === '1';
+  const episodeDeleted = searchParams.get('episodeDeleted') === '1';
+
+  const handleDeleteEpisode = async (seasonNumber: number, episodeNumber: number) => {
+    const actionKey = getEpisodeActionKey(seasonNumber, episodeNumber);
+    setDeletingEpisodeKey(actionKey);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      await deleteSeriesEpisode(seriesId, seasonNumber, episodeNumber);
+      const nextSeries = await loadSeries(seriesId);
+      setSeries(nextSeries);
+      setConfirmingDeleteKey('');
+      setSuccessMessage(`Season ${seasonNumber} Episode ${episodeNumber} was deleted.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete episode.');
+    } finally {
+      setDeletingEpisodeKey('');
+    }
+  };
+
+  const handleDeleteSeason = async (seasonNumber: number) => {
+    const actionKey = getSeasonActionKey(seasonNumber);
+    setDeletingSeasonKey(actionKey);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      await deleteSeriesSeason(seriesId, seasonNumber);
+      const nextSeries = await loadSeries(seriesId);
+      setSeries(nextSeries);
+      setConfirmingSeasonDeleteKey('');
+      setConfirmingDeleteKey('');
+      setSuccessMessage(`Season ${seasonNumber} and its episode files were deleted.`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete season.');
+    } finally {
+      setDeletingSeasonKey('');
+    }
+  };
+
+  const handleDeleteSeries = async () => {
+    setDeletingSeries(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      await deleteEntireSeries(seriesId);
+      router.push('/admin/series?seriesDeleted=1');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete series.');
+      setDeletingSeries(false);
+    }
+  };
 
   return (
     <SeriesShell
@@ -1260,6 +1400,10 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
       }
     >
       <StatusMessage message={errorMessage} tone="error" />
+      <StatusMessage message={successMessage} tone="success" />
+      {episodeDeleted ? (
+        <StatusMessage message="Episode deleted. The series catalog was refreshed." tone="success" />
+      ) : null}
       {episodeSaved ? (
         <Card
           title={queuedCount > 0 ? 'Episode Queued' : 'Episode Saved'}
@@ -1326,7 +1470,12 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
               </div>
             </div>
             <div className="grid gap-3">
-              {sortSeasons(series.seasons || []).map((season) => (
+              {sortSeasons(series.seasons || []).map((season) => {
+                const seasonActionKey = getSeasonActionKey(season.seasonNumber);
+                const confirmingSeasonDelete = confirmingSeasonDeleteKey === seasonActionKey;
+                const deletingSeason = deletingSeasonKey === seasonActionKey;
+
+                return (
                 <div key={season.seasonNumber} className="rounded-2xl border border-white/10 bg-[#0C1017] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -1337,39 +1486,142 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
                         {formatCount(season.episodes?.length || 0, 'episode', 'episodes')}
                       </p>
                     </div>
-                    <Link
-                      href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/new`}
-                      className="shrink-0 rounded-full border border-[#D90429]/40 bg-[#17070B] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
-                    >
-                      Add EP
-                    </Link>
-                  </div>
-                  <div className="mt-4 grid gap-2">
-                    {sortEpisodes(season.episodes || []).map((episode) => (
+                    <div className="flex shrink-0 flex-wrap justify-end gap-2">
                       <Link
-                        key={episode.episodeNumber}
-                        href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/${episode.episodeNumber}`}
-                        className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#11141C] p-2"
+                        href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/new`}
+                        className="rounded-full border border-[#D90429]/40 bg-[#17070B] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
                       >
-                        <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-black/30">
-                          {getEffectiveEpisodeBackdrop(series, season, episode) ? (
-                            <img
-                              src={getEffectiveEpisodeBackdrop(series, season, episode)}
-                              alt={episode.title}
-                              className="absolute inset-0 h-full w-full object-cover"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
-                            EP {episode.episodeNumber}
-                          </div>
-                          <div className="mt-1 line-clamp-2 text-sm font-bold text-white">
-                            {episode.title || `Episode ${episode.episodeNumber}`}
-                          </div>
-                        </div>
+                        Add EP
                       </Link>
-                    ))}
+                      {confirmingSeasonDelete ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingSeasonDeleteKey('')}
+                            disabled={deletingSeason}
+                            className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white disabled:opacity-55"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSeason(season.seasonNumber)}
+                            disabled={deletingSeason}
+                            className="inline-flex items-center gap-2 rounded-full border border-[#D90429]/45 bg-[#D90429] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white disabled:opacity-55"
+                          >
+                            <Trash2 size={13} />
+                            {deletingSeason ? 'Deleting' : 'Confirm'}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErrorMessage('');
+                            setSuccessMessage('');
+                            setConfirmingDeleteKey('');
+                            setConfirmingSeasonDeleteKey(seasonActionKey);
+                          }}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#D90429]/35 bg-[#17070B] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
+                        >
+                          <Trash2 size={13} />
+                          Delete Season
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {confirmingSeasonDelete ? (
+                    <div className="mt-3 rounded-2xl border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-3 text-xs font-semibold leading-5 text-rose-100">
+                      Confirm only if you want to permanently remove Season {season.seasonNumber},
+                      all of its episodes, and their linked storage files.
+                    </div>
+                  ) : null}
+                  <div className="mt-4 grid gap-2">
+                    {sortEpisodes(season.episodes || []).map((episode) => {
+                      const actionKey = getEpisodeActionKey(
+                        season.seasonNumber,
+                        episode.episodeNumber
+                      );
+                      const confirmingDelete = confirmingDeleteKey === actionKey;
+                      const deleting = deletingEpisodeKey === actionKey;
+
+                      return (
+                        <div
+                          key={episode.episodeNumber}
+                          className="grid gap-3 rounded-2xl border border-white/10 bg-[#11141C] p-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                        >
+                          <Link
+                            href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/${episode.episodeNumber}`}
+                            className="flex min-w-0 items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#D90429]/55"
+                          >
+                            <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-xl bg-black/30">
+                              {getEffectiveEpisodeBackdrop(series, season, episode) ? (
+                                <img
+                                  src={getEffectiveEpisodeBackdrop(series, season, episode)}
+                                  alt={episode.title}
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                />
+                              ) : null}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
+                                EP {episode.episodeNumber}
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-sm font-bold text-white">
+                                {episode.title || `Episode ${episode.episodeNumber}`}
+                              </div>
+                            </div>
+                          </Link>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Link
+                              href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/${episode.episodeNumber}`}
+                              className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-white/10"
+                            >
+                              Edit
+                            </Link>
+                            {confirmingDelete ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingDeleteKey('')}
+                                  disabled={deleting}
+                                  className="inline-flex min-h-10 items-center justify-center rounded-full border border-white/10 bg-white/5 px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-white/10 disabled:opacity-55"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleDeleteEpisode(
+                                      season.seasonNumber,
+                                      episode.episodeNumber
+                                    )
+                                  }
+                                  disabled={deleting}
+                                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-[#D90429]/45 bg-[#D90429] px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-[#F00832] disabled:opacity-55"
+                                >
+                                  <Trash2 size={14} />
+                                  {deleting ? 'Deleting' : 'Confirm'}
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setErrorMessage('');
+                                  setSuccessMessage('');
+                                  setConfirmingDeleteKey(actionKey);
+                                }}
+                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-[#D90429]/35 bg-[#17070B] px-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-[#26080F]"
+                              >
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                     {!season.episodes?.length ? (
                       <Link
                         href={`/admin/series/${seriesId}/seasons/${season.seasonNumber}/episodes/new`}
@@ -1380,7 +1632,8 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
                     ) : null}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {!series.seasons?.length ? (
                 <Link
                   href={`/admin/series/${seriesId}/seasons/1/episodes/new`}
@@ -1389,6 +1642,56 @@ export function AdminSeriesSeasonsView({ seriesId }: { seriesId: string }) {
                   Add Season 1 Episode 1
                 </Link>
               ) : null}
+            </div>
+          </Card>
+          <Card
+            title="Series Safety Controls"
+            description="Use these only when a full show should leave the app and storage completely."
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-[#D90429]/24 bg-[#17070B] px-4 py-4 text-sm font-semibold leading-6 text-rose-100/85">
+                Deleting the entire series permanently removes the series, every season, every
+                episode, the public app listing, and all linked R2 storage files we can identify.
+              </div>
+              {confirmingSeriesDelete ? (
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white/60">
+                    Final warning: this cannot be undone from the admin panel.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingSeriesDelete(false)}
+                    disabled={deletingSeries}
+                    className="min-h-11 rounded-full border border-white/10 bg-white/5 px-4 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-55"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSeries()}
+                    disabled={deletingSeries}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#D90429]/50 bg-[#D90429] px-4 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-55"
+                  >
+                    <Trash2 size={15} />
+                    {deletingSeries ? 'Deleting Series' : 'Confirm Delete Series'}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage('');
+                    setSuccessMessage('');
+                    setConfirmingDeleteKey('');
+                    setConfirmingSeasonDeleteKey('');
+                    setConfirmingSeriesDelete(true);
+                  }}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#D90429]/35 bg-[#17070B] px-4 text-xs font-black uppercase tracking-[0.18em] text-white"
+                >
+                  <Trash2 size={15} />
+                  Delete Entire Series
+                </button>
+              )}
             </div>
           </Card>
         </>
@@ -1501,6 +1804,8 @@ export function AdminSeriesEpisodeEditorView({
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [uploadStats, setUploadStats] = useState<MultipartUploadStats | null>(null);
 
@@ -1531,6 +1836,22 @@ export function AdminSeriesEpisodeEditorView({
   const existingEpisode =
     episodeNumber !== undefined ? findEpisode(series, seasonNumber, episodeNumber) : null;
   const editing = Boolean(existingEpisode);
+
+  const handleDelete = async () => {
+    if (!editing || episodeNumber === undefined) return;
+
+    setDeleting(true);
+    setErrorMessage('');
+
+    try {
+      await deleteSeriesEpisode(seriesId, seasonNumber, episodeNumber);
+      router.push(`/admin/series/${seriesId}/seasons?episodeDeleted=1`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete episode.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!series) return;
@@ -1694,11 +2015,59 @@ export function AdminSeriesEpisodeEditorView({
               </div>
             </Card>
           ) : null}
+          {editing ? (
+            <Card
+              title="Episode Controls"
+              description="Delete this duplicate episode only. The other seasons and episodes stay untouched."
+            >
+              <div className="flex flex-col gap-3 rounded-2xl border border-[#D90429]/20 bg-[#17070B] p-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-black text-white">
+                    Season {seasonNumber} Episode {episodeNumber}
+                  </div>
+                  <div className="mt-1 text-xs font-semibold leading-5 text-white/55">
+                    {existingEpisode?.title || `Episode ${episodeNumber}`}
+                  </div>
+                </div>
+                {confirmingDelete ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={deleting}
+                      className="rounded-full border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-55"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete()}
+                      disabled={deleting || saving}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-[#D90429] px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-55"
+                    >
+                      <Trash2 size={15} />
+                      {deleting ? 'Deleting...' : 'Confirm Delete'}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDelete(true)}
+                    disabled={saving}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-[#D90429]/35 bg-black/20 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white disabled:opacity-55"
+                  >
+                    <Trash2 size={15} />
+                    Delete Episode
+                  </button>
+                )}
+              </div>
+            </Card>
+          ) : null}
           <div className="pointer-events-none sticky bottom-4 z-20">
             <button
               type="button"
               onClick={() => void handleSave()}
-              disabled={saving}
+              disabled={saving || deleting}
               className="pointer-events-auto flex w-full items-center justify-center gap-2 rounded-2xl bg-[#D90429] px-5 py-4 text-sm font-black uppercase tracking-[0.2em] text-white shadow-[0_16px_40px_rgba(217,4,41,0.28)] disabled:cursor-not-allowed disabled:opacity-55"
             >
               <UploadCloud size={18} />

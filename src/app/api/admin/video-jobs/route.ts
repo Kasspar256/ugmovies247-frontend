@@ -7,7 +7,21 @@ import { listVideoJobs } from '@/lib/server/videoJobs';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+const DEFAULT_ADMIN_VIDEO_JOB_LIMIT = 500;
+const MAX_ADMIN_VIDEO_JOB_LIMIT = 1000;
+
+function readVideoJobLimit(request: Request) {
+  const requestUrl = new URL(request.url);
+  const requestedLimit = Number(requestUrl.searchParams.get('limit') || DEFAULT_ADMIN_VIDEO_JOB_LIMIT);
+
+  if (!Number.isFinite(requestedLimit) || requestedLimit <= 0) {
+    return DEFAULT_ADMIN_VIDEO_JOB_LIMIT;
+  }
+
+  return Math.min(MAX_ADMIN_VIDEO_JOB_LIMIT, Math.max(1, Math.floor(requestedLimit)));
+}
+
+export async function GET(request: Request) {
   try {
     const session = await getCurrentAuthSession();
 
@@ -27,8 +41,9 @@ export async function GET() {
       );
     }
 
-    const jobs = await readCachedVideoJobs(() => listVideoJobs(40), 1000 * 60);
-    return NextResponse.json({ jobs });
+    const limit = readVideoJobLimit(request);
+    const jobs = await readCachedVideoJobs(() => listVideoJobs(limit), 1000 * 60);
+    return NextResponse.json({ jobs, limit });
   } catch (error) {
     console.error('[video-jobs] list failed', error);
     const detail = error instanceof Error ? error.message : 'Unknown video jobs error.';
