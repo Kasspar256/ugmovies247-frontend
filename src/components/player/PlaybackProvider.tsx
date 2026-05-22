@@ -96,10 +96,15 @@ type WebkitDocument = Document & {
   webkitExitFullscreen?: () => Promise<void> | void;
 };
 
+type IOSPresentationMode = 'inline' | 'fullscreen' | 'picture-in-picture';
+
 type IOSVideoElement = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void;
   webkitExitFullscreen?: () => void;
   webkitDisplayingFullscreen?: boolean;
+  webkitPresentationMode?: IOSPresentationMode;
+  webkitSupportsPresentationMode?: (mode: IOSPresentationMode) => boolean;
+  webkitSetPresentationMode?: (mode: IOSPresentationMode) => void;
   requestPictureInPicture?: () => Promise<unknown>;
   disablePictureInPicture?: boolean;
 };
@@ -141,6 +146,7 @@ const VOLUME_STORAGE_KEY = 'ugmovies247.player.volume';
 const MUTE_STORAGE_KEY = 'ugmovies247.player.muted';
 const PLAYBACK_RATE_STORAGE_KEY = 'ugmovies247.player.rate';
 const BRIGHTNESS_STORAGE_KEY = 'ugmovies247.player.brightness';
+const PIP_HINT_STORAGE_KEY = 'ugmovies247.player.pip-hint-seen';
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -419,6 +425,20 @@ function useIsIOSDevice() {
   return isIOSDevice;
 }
 
+function useIsAndroidDevice() {
+  const [isAndroidDevice, setIsAndroidDevice] = useState(false);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') {
+      return;
+    }
+
+    setIsAndroidDevice(/Android/i.test(navigator.userAgent || ''));
+  }, []);
+
+  return isAndroidDevice;
+}
+
 function useIsTouchDevice() {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -473,6 +493,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const isDesktop = useIsDesktopViewport();
   const isIOSDevice = useIsIOSDevice();
+  const isAndroidDevice = useIsAndroidDevice();
   const isTouchDevice = useIsTouchDevice();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -483,6 +504,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const castFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pipHintShownRef = useRef(false);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
   const startupGraceUntilRef = useRef(0);
@@ -777,13 +799,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const videoElement = videoElementState as IOSVideoElement | null;
     const pipDocument = document as PictureInPictureDocument;
-    const canUsePictureInPicture = Boolean(
+    const canUseStandardPictureInPicture = Boolean(
       videoElement?.requestPictureInPicture &&
         pipDocument.pictureInPictureEnabled !== false
     );
+    const canUseWebkitPictureInPicture = Boolean(
+      videoElement?.webkitSupportsPresentationMode?.('picture-in-picture')
+    );
 
-    setPictureInPictureSupported(canUsePictureInPicture);
-    setIsPictureInPicture(Boolean(pipDocument.pictureInPictureElement));
+    setPictureInPictureSupported(canUseStandardPictureInPicture || canUseWebkitPictureInPicture);
+    setIsPictureInPicture(
+      Boolean(pipDocument.pictureInPictureElement) ||
+        videoElement?.webkitPresentationMode === 'picture-in-picture'
+    );
 
     if (!videoElement) {
       return;
@@ -791,13 +819,27 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     const handleEnterPictureInPicture = () => setIsPictureInPicture(true);
     const handleLeavePictureInPicture = () => setIsPictureInPicture(false);
+    const handleWebkitPresentationModeChange = () => {
+      setIsPictureInPicture(
+        Boolean(pipDocument.pictureInPictureElement) ||
+          videoElement.webkitPresentationMode === 'picture-in-picture'
+      );
+    };
 
     videoElement.addEventListener('enterpictureinpicture', handleEnterPictureInPicture);
     videoElement.addEventListener('leavepictureinpicture', handleLeavePictureInPicture);
+    videoElement.addEventListener(
+      'webkitpresentationmodechanged',
+      handleWebkitPresentationModeChange
+    );
 
     return () => {
       videoElement.removeEventListener('enterpictureinpicture', handleEnterPictureInPicture);
       videoElement.removeEventListener('leavepictureinpicture', handleLeavePictureInPicture);
+      videoElement.removeEventListener(
+        'webkitpresentationmodechanged',
+        handleWebkitPresentationModeChange
+      );
     };
   }, [videoElementState]);
 
@@ -1182,6 +1224,22 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     showControls(true);
 
     const doc = document as WebkitDocument;
+    const scheduleMobileLandscapeFallback = () => {
+      if (isDesktop || typeof window === 'undefined') {
+        return;
+      }
+
+      const enforceLandscape = () => {
+        void lockLandscapeOrientation();
+
+        if (window.innerHeight >= window.innerWidth) {
+          setSoftLandscapeFullscreen(true);
+        }
+      };
+
+      window.setTimeout(enforceLandscape, 180);
+      window.setTimeout(enforceLandscape, 650);
+    };
 
     if (
       softLandscapeFullscreen ||
@@ -1213,8 +1271,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (isIOSDevice && typeof videoElement.webkitEnterFullscreen === 'function') {
-      setSoftLandscapeFullscreen(true);
       await lockLandscapeOrientation();
+      try {
+        videoElement.webkitEnterFullscreen();
+        window.setTimeout(() => {
+          void lockLandscapeOrientation();
+        }, 250);
+        return;
+      } catch {
+        setSoftLandscapeFullscreen(true);
+      }
+
       window.setTimeout(() => {
         void lockLandscapeOrientation();
       }, 250);
@@ -1222,24 +1289,44 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (shellElement && typeof shellElement.requestFullscreen === 'function') {
-      if (!isDesktop) {
-        await lockLandscapeOrientation();
+      try {
+        await shellElement.requestFullscreen();
+
+        if (!isDesktop) {
+          await lockLandscapeOrientation();
+          scheduleMobileLandscapeFallback();
+        }
+
+        return;
+      } catch {
+        if (!isDesktop) {
+          setSoftLandscapeFullscreen(true);
+          scheduleMobileLandscapeFallback();
+          return;
+        }
       }
-      await shellElement.requestFullscreen();
-      if (!isDesktop) {
-        await lockLandscapeOrientation();
+    }
+
+    if (typeof videoElement.requestFullscreen === 'function') {
+      try {
+        await videoElement.requestFullscreen();
+
+        if (!isDesktop) {
+          await lockLandscapeOrientation();
+          scheduleMobileLandscapeFallback();
+        }
+      } catch {
+        if (!isDesktop) {
+          setSoftLandscapeFullscreen(true);
+          scheduleMobileLandscapeFallback();
+        }
       }
       return;
     }
 
-    if (typeof videoElement.requestFullscreen === 'function') {
-      if (!isDesktop) {
-        await lockLandscapeOrientation();
-      }
-      await videoElement.requestFullscreen();
-      if (!isDesktop) {
-        await lockLandscapeOrientation();
-      }
+    if (!isDesktop) {
+      setSoftLandscapeFullscreen(true);
+      scheduleMobileLandscapeFallback();
     }
   }, [isDesktop, isIOSDevice, showControls, softLandscapeFullscreen]);
 
@@ -1249,26 +1336,66 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     showControls(true);
 
-    if (!videoElement?.requestPictureInPicture || pipDocument.pictureInPictureEnabled === false) {
+    const canUseStandardPictureInPicture = Boolean(
+      videoElement?.requestPictureInPicture &&
+        pipDocument.pictureInPictureEnabled !== false
+    );
+    const canUseWebkitPictureInPicture = Boolean(
+      videoElement?.webkitSupportsPresentationMode?.('picture-in-picture') &&
+        videoElement.webkitSetPresentationMode
+    );
+
+    if (!videoElement) {
+      showCastFeedback('Picture-in-picture is not ready yet.');
+      return;
+    }
+
+    if (!canUseStandardPictureInPicture && !canUseWebkitPictureInPicture) {
+      if (isAndroidDevice) {
+        showCastFeedback(
+          'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
+        );
+        void tryEnterFullscreen();
+        return;
+      }
+
       showCastFeedback('Picture-in-picture is not supported on this browser.');
       return;
     }
 
     try {
-      if (pipDocument.pictureInPictureElement) {
-        await pipDocument.exitPictureInPicture?.();
+      if (canUseStandardPictureInPicture) {
+        if (pipDocument.pictureInPictureElement) {
+          await pipDocument.exitPictureInPicture?.();
+          return;
+        }
+
+        await videoElement.requestPictureInPicture?.();
         return;
       }
 
-      await videoElement.requestPictureInPicture();
+      if (videoElement.webkitPresentationMode === 'picture-in-picture') {
+        videoElement.webkitSetPresentationMode?.('inline');
+        return;
+      }
+
+      videoElement.webkitSetPresentationMode?.('picture-in-picture');
     } catch (error) {
+      if (isAndroidDevice) {
+        showCastFeedback(
+          'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
+        );
+        void tryEnterFullscreen();
+        return;
+      }
+
       showCastFeedback(
         error instanceof Error
           ? error.message
           : 'Picture-in-picture could not be started right now.'
       );
     }
-  }, [showCastFeedback, showControls]);
+  }, [isAndroidDevice, showCastFeedback, showControls, tryEnterFullscreen]);
 
   const openWatchView = useCallback(() => {
     if (!activeSource?.watchHref) {
@@ -1527,6 +1654,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     };
   }, [activeSource, seekBy, seekTo]);
 
+  const canOfferPictureInPictureControl =
+    pictureInPictureSupported || (isAndroidDevice && isTouchDevice);
+
   useEffect(() => {
     if (!activeSource || !pictureInPictureSupported || typeof document === 'undefined') {
       return;
@@ -1535,24 +1665,78 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const handleVisibilityChange = () => {
       const videoElement = videoRef.current as IOSVideoElement | null;
       const pipDocument = document as PictureInPictureDocument;
+      const canUseStandardPictureInPicture = Boolean(
+        videoElement?.requestPictureInPicture &&
+          pipDocument.pictureInPictureEnabled !== false
+      );
+      const canUseWebkitPictureInPicture = Boolean(
+        videoElement?.webkitSupportsPresentationMode?.('picture-in-picture') &&
+          videoElement.webkitSetPresentationMode
+      );
+      const alreadyInPictureInPicture =
+        Boolean(pipDocument.pictureInPictureElement) ||
+        videoElement?.webkitPresentationMode === 'picture-in-picture';
 
       if (
         document.visibilityState !== 'hidden' ||
         playbackPhaseRef.current !== 'playing' ||
-        !videoElement?.requestPictureInPicture ||
-        pipDocument.pictureInPictureElement
+        !videoElement ||
+        (!canUseStandardPictureInPicture && !canUseWebkitPictureInPicture) ||
+        alreadyInPictureInPicture
       ) {
         return;
       }
 
       // Browsers may block automatic PiP without a recent user gesture; the manual PiP button
       // below remains the reliable path when the platform requires explicit permission.
-      void videoElement.requestPictureInPicture().catch(() => undefined);
+      if (canUseStandardPictureInPicture) {
+        void videoElement.requestPictureInPicture?.().catch(() => undefined);
+        return;
+      }
+
+      try {
+        videoElement.webkitSetPresentationMode?.('picture-in-picture');
+      } catch {
+        // Safari may still require a direct user gesture.
+      }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [activeSource, pictureInPictureSupported]);
+
+  useEffect(() => {
+    if (
+      !activeSource ||
+      !canOfferPictureInPictureControl ||
+      isPictureInPicture ||
+      playbackPhase !== 'playing' ||
+      pipHintShownRef.current ||
+      typeof window === 'undefined'
+    ) {
+      return;
+    }
+
+    try {
+      if (window.localStorage.getItem(PIP_HINT_STORAGE_KEY) === 'true') {
+        pipHintShownRef.current = true;
+        return;
+      }
+
+      window.localStorage.setItem(PIP_HINT_STORAGE_KEY, 'true');
+    } catch {
+      // Storage can be unavailable in some private browser shells; the hint is optional.
+    }
+
+    pipHintShownRef.current = true;
+    showCastFeedback('Tap the small-window button to keep watching outside the app.');
+  }, [
+    activeSource,
+    canOfferPictureInPictureControl,
+    isPictureInPicture,
+    playbackPhase,
+    showCastFeedback,
+  ]);
 
   const hasInlineHost = Boolean(inlineHost);
   const isInlineMode = Boolean(activeSource && hasInlineHost);
@@ -2497,7 +2681,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                       >
                         <Cast size={isMobileInlineMode ? 15 : 18} />
                       </PlayerShellButton>
-                      {pictureInPictureSupported ? (
+                      {canOfferPictureInPictureControl ? (
                         <PlayerShellButton
                           ariaLabel={
                             isPictureInPicture
@@ -3040,6 +3224,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                       >
                         <Maximize size={14} />
                       </PlayerShellButton>
+                      {canOfferPictureInPictureControl ? (
+                        <PlayerShellButton
+                          ariaLabel={
+                            isPictureInPicture
+                              ? 'Exit picture-in-picture'
+                              : 'Watch in picture-in-picture'
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void tryTogglePictureInPicture();
+                          }}
+                          className={`h-8 w-8 ${
+                            isPictureInPicture ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                          }`}
+                        >
+                          <PictureInPictureIcon size={14} />
+                        </PlayerShellButton>
+                      ) : null}
                       <PlayerShellButton
                         ariaLabel="Close mini player"
                         onClick={(event) => {

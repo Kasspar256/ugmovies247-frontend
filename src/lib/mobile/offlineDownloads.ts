@@ -68,6 +68,31 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || 'Download failed.');
 }
 
+function isAndroidStoragePermissionError(error: unknown) {
+  const message = getErrorMessage(error);
+
+  return (
+    /androidmanifest\.xml/i.test(message) ||
+    /read_external_storage/i.test(message) ||
+    /write_external_storage/i.test(message) ||
+    /missing\s+the\s+following\s+permissions/i.test(message)
+  );
+}
+
+function getUserFacingDownloadError(error: unknown) {
+  const message = getErrorMessage(error);
+
+  if (message === 'Download cancelled.') {
+    return message;
+  }
+
+  if (isAndroidStoragePermissionError(error)) {
+    return 'Offline downloads need an app update before saving on this Android device. You can still stream this title for now.';
+  }
+
+  return message || 'Download failed. Please check your connection and try again.';
+}
+
 function safeFilePart(value: string) {
   return value
     .toLowerCase()
@@ -141,7 +166,7 @@ function restoreInterruptedActiveDownloads() {
         error:
           job.status === 'downloading'
             ? 'Download was interrupted before it finished. Tap Retry to start it again.'
-            : job.error || 'Download failed.',
+            : getUserFacingDownloadError(job.error || 'Download failed.'),
         updatedAtIso: nowIso(),
       });
     });
@@ -626,11 +651,12 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       throw new Error('Download cancelled.');
     }
 
+    const userFacingError = getUserFacingDownloadError(error);
     const failedJob = activeDownloads.get(downloadInput.downloadKey) || job;
     activeDownloads.set(downloadInput.downloadKey, {
       ...failedJob,
       status: 'failed',
-      error: getErrorMessage(error),
+      error: userFacingError,
       updatedAtIso: nowIso(),
     });
     notifyDownloadListeners();
@@ -641,7 +667,7 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       error,
     });
 
-    throw error;
+    throw new Error(userFacingError);
   } finally {
     await progressListener?.remove().catch(() => undefined);
   }

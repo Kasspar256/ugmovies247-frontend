@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import path from 'path';
 import { FIRESTORE_ENV_NAMESPACE, MOVIES_COLLECTION } from './firestoreNamespaces';
 import {
@@ -8,6 +8,7 @@ import {
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 export const MOVIE_CACHE_QUOTA_COOLDOWN_MS = 1000 * 60 * 10;
+export const MOVIE_CACHE_DISK_REFRESH_CHECK_MS = 1000 * 10;
 export const MOVIE_CACHE_PATH = path.join(
   process.cwd(),
   '.runtime-cache',
@@ -23,6 +24,7 @@ export type CachedMovieCatalog = {
 
 export let inMemoryMovieCache: CachedMovieCatalog | null = null;
 let movieCatalogQuotaBlockedUntil = 0;
+let lastDiskRefreshCheckAt = 0;
 
 export function setInMemoryMovieCache(cache: CachedMovieCatalog | null) {
   inMemoryMovieCache = cache;
@@ -93,6 +95,75 @@ export async function readMovieCatalogFromDisk() {
   }
 }
 
+export async function refreshInMemoryMovieCacheFromDiskIfNewer(options?: {
+  collectionName?: string;
+  reviewOnly?: boolean;
+  force?: boolean;
+  minIntervalMs?: number;
+}) {
+  const now = Date.now();
+  const minIntervalMs = options?.minIntervalMs ?? MOVIE_CACHE_DISK_REFRESH_CHECK_MS;
+
+  if (!options?.force && now - lastDiskRefreshCheckAt < minIntervalMs) {
+    return inMemoryMovieCache;
+  }
+
+  lastDiskRefreshCheckAt = now;
+
+  try {
+    const diskStat = await stat(MOVIE_CACHE_PATH);
+    const memoryCachedAt = inMemoryMovieCache?.cachedAt
+      ? new Date(inMemoryMovieCache.cachedAt).getTime()
+      : 0;
+
+    if (
+      !options?.force &&
+      inMemoryMovieCache?.movies?.length &&
+      Number.isFinite(diskStat.mtimeMs) &&
+      diskStat.mtimeMs <= memoryCachedAt
+    ) {
+      return inMemoryMovieCache;
+    }
+  } catch {
+    return inMemoryMovieCache;
+  }
+
+  const diskCache = await readMovieCatalogFromDisk();
+
+  if (!diskCache?.movies?.length) {
+    return inMemoryMovieCache;
+  }
+
+  if (
+    options?.collectionName &&
+    diskCache.collectionName &&
+    diskCache.collectionName !== options.collectionName
+  ) {
+    return inMemoryMovieCache;
+  }
+
+  if (typeof options?.reviewOnly === 'boolean') {
+    if (options.reviewOnly && diskCache.reviewOnly !== true) {
+      return inMemoryMovieCache;
+    }
+
+    if (!options.reviewOnly && diskCache.reviewOnly === true) {
+      return inMemoryMovieCache;
+    }
+  }
+
+  const diskCachedAt = diskCache.cachedAt ? new Date(diskCache.cachedAt).getTime() : 0;
+  const memoryCachedAt = inMemoryMovieCache?.cachedAt
+    ? new Date(inMemoryMovieCache.cachedAt).getTime()
+    : 0;
+
+  if (!inMemoryMovieCache?.movies?.length || diskCachedAt > memoryCachedAt) {
+    setInMemoryMovieCache(diskCache);
+  }
+
+  return inMemoryMovieCache;
+}
+
 export async function persistMovieCatalog(cache: CachedMovieCatalog) {
   setInMemoryMovieCache(cache);
 
@@ -104,13 +175,67 @@ export async function persistMovieCatalog(cache: CachedMovieCatalog) {
   }
 }
 
+function readTimestampMs(value: unknown) {
+  if (!value) {
+    return 0;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (typeof value === 'string') {
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const seconds = typeof record.seconds === 'number' ? record.seconds : null;
+
+    if (seconds !== null) {
+      return seconds * 1000;
+    }
+  }
+
+  return 0;
+}
+
 function getMovieTimestamp(movie: Record<string, unknown>) {
-  const dateAdded = String(movie.date_added || '');
-  const updatedAt = String(movie.updatedAt || '');
-  const createdAt = String(movie.createdAt || '');
-  const candidate = dateAdded || updatedAt || createdAt;
-  const timestamp = candidate ? new Date(candidate).getTime() : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  const partTimestamps = Array.isArray(movie.parts)
+    ? movie.parts.map((part) => {
+        const rawPart = part as Record<string, unknown>;
+        return Math.max(
+          readTimestampMs(rawPart.updatedAt),
+          readTimestampMs(rawPart.createdAt),
+          readTimestampMs(rawPart.processedAt)
+        );
+      })
+    : [];
+  const episodeTimestamps = Array.isArray(movie.seasons)
+    ? movie.seasons.flatMap((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        return Array.isArray(rawSeason.episodes)
+          ? rawSeason.episodes.map((episode) => {
+              const rawEpisode = episode as Record<string, unknown>;
+              return Math.max(
+                readTimestampMs(rawEpisode.updatedAt),
+                readTimestampMs(rawEpisode.createdAt),
+                readTimestampMs(rawEpisode.processedAt)
+              );
+            })
+          : [];
+      })
+    : [];
+
+  return Math.max(
+    readTimestampMs(movie.date_added),
+    readTimestampMs(movie.updatedAt),
+    readTimestampMs(movie.createdAt),
+    readTimestampMs(movie.processedAt),
+    ...partTimestamps,
+    ...episodeTimestamps
+  );
 }
 
 function sortCatalogMovies(movies: Array<Record<string, unknown>>) {
@@ -123,6 +248,13 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
   if (!movieId) {
     return;
   }
+
+  await refreshInMemoryMovieCacheFromDiskIfNewer({
+    collectionName: MOVIES_COLLECTION,
+    reviewOnly: false,
+    force: true,
+    minIntervalMs: 0,
+  });
 
   const currentCache = inMemoryMovieCache || (await readMovieCatalogFromDisk());
   const isReviewOnlyCache = currentCache?.reviewOnly === true;
@@ -192,6 +324,13 @@ async function updateMovieInCatalogCache(
   movieId: string,
   updater: (movie: Record<string, unknown>) => Record<string, unknown> | null
 ) {
+  await refreshInMemoryMovieCacheFromDiskIfNewer({
+    collectionName: MOVIES_COLLECTION,
+    reviewOnly: false,
+    force: true,
+    minIntervalMs: 0,
+  });
+
   const currentCache = inMemoryMovieCache || (await readMovieCatalogFromDisk());
 
   if (!currentCache?.movies?.length) {

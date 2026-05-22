@@ -16,6 +16,7 @@ import {
   persistMovieCatalog,
   readMovieCatalogFromDisk,
   recordMovieCatalogQuotaFailure,
+  refreshInMemoryMovieCacheFromDiskIfNewer,
   setInMemoryMovieCache,
 } from '@/lib/server/movieCatalogCache';
 import {
@@ -341,11 +342,39 @@ function readTimestampMs(value: unknown) {
 }
 
 function getMovieTimestamp(movie: Record<string, unknown>) {
+  const partTimestamps = Array.isArray(movie.parts)
+    ? movie.parts.map((part) => {
+        const rawPart = part as Record<string, unknown>;
+        return Math.max(
+          readTimestampMs(rawPart.updatedAt),
+          readTimestampMs(rawPart.createdAt),
+          readTimestampMs(rawPart.processedAt)
+        );
+      })
+    : [];
+  const episodeTimestamps = Array.isArray(movie.seasons)
+    ? movie.seasons.flatMap((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        return Array.isArray(rawSeason.episodes)
+          ? rawSeason.episodes.map((episode) => {
+              const rawEpisode = episode as Record<string, unknown>;
+              return Math.max(
+                readTimestampMs(rawEpisode.updatedAt),
+                readTimestampMs(rawEpisode.createdAt),
+                readTimestampMs(rawEpisode.processedAt)
+              );
+            })
+          : [];
+      })
+    : [];
+
   return Math.max(
     readTimestampMs(movie.date_added),
     readTimestampMs(movie.updatedAt),
     readTimestampMs(movie.createdAt),
-    readTimestampMs(movie.processedAt)
+    readTimestampMs(movie.processedAt),
+    ...partTimestamps,
+    ...episodeTimestamps
   );
 }
 
@@ -462,14 +491,24 @@ function compactMovieForCatalog(movie: Record<string, unknown>) {
   };
 }
 
-async function fetchMovieCatalog(collectionName: string, reviewOnly: boolean) {
+async function fetchMovieCatalog(
+  collectionName: string,
+  reviewOnly: boolean,
+  options?: { forceFresh?: boolean }
+) {
+  await refreshInMemoryMovieCacheFromDiskIfNewer({
+    collectionName,
+    reviewOnly,
+    force: options?.forceFresh,
+  });
+
   const inMemoryCacheForMode = matchesCatalogMode(
     inMemoryMovieCache,
     collectionName,
     reviewOnly
   );
 
-  if (isFreshMovieCache(inMemoryCacheForMode)) {
+  if (!options?.forceFresh && isFreshMovieCache(inMemoryCacheForMode)) {
     return inMemoryCacheForMode;
   }
 
@@ -477,7 +516,7 @@ async function fetchMovieCatalog(collectionName: string, reviewOnly: boolean) {
   const diskCacheForMode = matchesCatalogMode(diskCache, collectionName, reviewOnly);
   const staleCache = pickMovieCatalogCache(inMemoryCacheForMode, diskCacheForMode);
 
-  if (isFreshMovieCache(diskCacheForMode)) {
+  if (!options?.forceFresh && isFreshMovieCache(diskCacheForMode)) {
     setInMemoryMovieCache(diskCacheForMode);
     return diskCacheForMode;
   }
@@ -531,6 +570,9 @@ export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const sinceParam = requestUrl.searchParams.get('since') || '';
+    const shouldForceFreshCatalog =
+      requestUrl.searchParams.get('force') === '1' ||
+      requestUrl.searchParams.get('fresh') === '1';
     const shouldReturnCompactCatalog = requestUrl.searchParams.get('compact') === '1';
     const sinceTimestamp = sinceParam ? new Date(sinceParam).getTime() : 0;
     const shouldReturnDelta = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0;
@@ -552,7 +594,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const catalog = await fetchMovieCatalog(collectionName, isAppInReview);
+    const catalog = await fetchMovieCatalog(collectionName, isAppInReview, {
+      forceFresh: shouldForceFreshCatalog,
+    });
     const visibleMovieDocs = catalog.movies
       .filter((movieDoc) =>
         isAppInReview ? movieDoc.is_for_review === true : hasVisibleCatalogAsset(movieDoc, collectionName)

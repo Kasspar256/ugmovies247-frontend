@@ -422,6 +422,7 @@ export async function listAllMoviesForAdmin() {
     const cache: CachedMovieCatalog = {
       movies,
       cachedAt: new Date().toISOString(),
+      collectionName: MOVIES_COLLECTION,
     };
 
     setInMemoryMovieCache(cache);

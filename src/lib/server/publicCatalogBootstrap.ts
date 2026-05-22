@@ -54,11 +54,40 @@ function readTimestampMs(value: unknown) {
 }
 
 function getMovieTimestamp(movie: RawMovie | Movie) {
+  const rawMovie = movie as RawMovie;
+  const partTimestamps = Array.isArray(rawMovie.parts)
+    ? rawMovie.parts.map((part) => {
+        const rawPart = part as RawMovie;
+        return Math.max(
+          readTimestampMs(rawPart.updatedAt),
+          readTimestampMs(rawPart.createdAt),
+          readTimestampMs(rawPart.processedAt)
+        );
+      })
+    : [];
+  const episodeTimestamps = Array.isArray(rawMovie.seasons)
+    ? rawMovie.seasons.flatMap((season) => {
+        const rawSeason = season as RawMovie;
+        return Array.isArray(rawSeason.episodes)
+          ? rawSeason.episodes.map((episode) => {
+              const rawEpisode = episode as RawMovie;
+              return Math.max(
+                readTimestampMs(rawEpisode.updatedAt),
+                readTimestampMs(rawEpisode.createdAt),
+                readTimestampMs(rawEpisode.processedAt)
+              );
+            })
+          : [];
+      })
+    : [];
+
   return Math.max(
     readTimestampMs(movie.date_added),
     readTimestampMs(movie.updatedAt),
     readTimestampMs(movie.createdAt),
-    readTimestampMs(movie.processedAt)
+    readTimestampMs(movie.processedAt),
+    ...partTimestamps,
+    ...episodeTimestamps
   );
 }
 

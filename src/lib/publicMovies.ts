@@ -274,11 +274,30 @@ function readTimestampMs(value: unknown) {
 }
 
 function getMovieSyncTimestampMs(movie: Movie) {
+  const partTimestamps = (movie.parts || []).map((part) =>
+    Math.max(
+      readTimestampMs(part.updatedAt),
+      readTimestampMs(part.createdAt),
+      readTimestampMs(part.processedAt)
+    )
+  );
+  const episodeTimestamps = (movie.seasons || []).flatMap((season) =>
+    (season.episodes || []).map((episode) =>
+      Math.max(
+        readTimestampMs(episode.updatedAt),
+        readTimestampMs(episode.createdAt),
+        readTimestampMs(episode.processedAt)
+      )
+    )
+  );
+
   return Math.max(
     readTimestampMs(movie.updatedAt),
     readTimestampMs(movie.createdAt),
     readTimestampMs(movie.date_added),
-    readTimestampMs(movie.processedAt)
+    readTimestampMs(movie.processedAt),
+    ...partTimestamps,
+    ...episodeTimestamps
   );
 }
 
@@ -520,9 +539,17 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     }
   }
 
-  const moviesUrl = shouldRefreshEntitlement
-    ? '/api/movies?compact=1&refreshEntitlement=1'
-    : '/api/movies?compact=1';
+  const moviesParams = new URLSearchParams({ compact: '1' });
+
+  if (shouldRefreshEntitlement) {
+    moviesParams.set('refreshEntitlement', '1');
+  }
+
+  if (forceRefresh) {
+    moviesParams.set('force', '1');
+  }
+
+  const moviesUrl = `/api/movies?${moviesParams.toString()}`;
 
   inFlightMovieCatalogRequest = fetch(moviesUrl, {
     credentials: 'include',

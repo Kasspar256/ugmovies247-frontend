@@ -300,6 +300,9 @@ const [actionMessage, setActionMessage] = useState('');
 const [showPremiumDownloadModal, setShowPremiumDownloadModal] = useState(false);
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(() => hasCachedPremiumAccess());
+const [sourceRefreshPending, setSourceRefreshPending] = useState(
+  () => Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie))
+);
 const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>(
   () => initialResolvedMovieState?.sourceEntries || []
 );
@@ -319,7 +322,8 @@ const shouldBypassCatalogCache =
 useEffect(() => {
 setIsTrailerPlaying(false);
 setHasLocalPremiumAccess(hasCachedPremiumAccess());
-}, [params.id]);
+setSourceRefreshPending(Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie)));
+}, [params.id, routeInitialMovie]);
 
 useEffect(() => {
 let active = true;
@@ -357,6 +361,7 @@ if (routeInitialMovie) {
   applyResolvedMovie(routeInitialMovie, initialCatalogForRoute);
 
   if (!movieHasAnyPlaybackSource(routeInitialMovie)) {
+    setSourceRefreshPending(true);
     void fetchPublicMovieById(params.id)
       .then((freshMovie) => {
         if (!active) {
@@ -372,6 +377,11 @@ if (routeInitialMovie) {
       })
       .catch((error) => {
         console.warn('[movie-page] silent exact source refresh failed after bootstrap render', error);
+      })
+      .finally(() => {
+        if (active) {
+          setSourceRefreshPending(false);
+        }
       });
   } else if (!shouldBypassCatalogCache) {
     void fetchPublicMovies()
@@ -420,6 +430,10 @@ const cachedMovie = cachedMovies.find((candidate) =>
 
 if (cachedMovie && !renderedMovie) {
   applyResolvedMovie(cachedMovie, cachedMovies);
+
+  if (!movieHasAnyPlaybackSource(cachedMovie)) {
+    setSourceRefreshPending(true);
+  }
 }
 
 const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
@@ -432,6 +446,7 @@ const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
 });
 
 if (freshMovie) {
+setSourceRefreshPending(false);
 applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
 void fetchPublicMovies({ force: shouldBypassCatalogCache })
   .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
@@ -442,6 +457,7 @@ return;
 }
 
 if (renderedMovie) {
+  setSourceRefreshPending(false);
   return;
 }
 
@@ -451,6 +467,7 @@ const matchedMovie = allMovies.find((candidate) =>
 );
 
 if (matchedMovie) {
+setSourceRefreshPending(false);
 applyResolvedMovie(matchedMovie, allMovies);
 return;
 }
@@ -467,6 +484,7 @@ return;
 }
 
 if (!renderedMovie) {
+  setSourceRefreshPending(false);
   setSeriesSourceEntries([]);
   setMovie(null);
 }
@@ -992,11 +1010,13 @@ useEffect(() => {
   };
 }, [downloadInput?.downloadKey]);
 
+// Autoplay is only a launch instruction; keeping it out of the media identity
+// prevents the mini-player from reloading when returning to the full player page.
 const playbackSessionKey = activeEpisode
-  ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
+  ? `series-${selectedSeason?.seasonNumber}-${activeEpisode.episodeNumber}-${playbackVideoUrl || 'no-source'}`
   : selectedPart
-    ? `part-${selectedPartIndex}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`
-    : `${movie?.id || 'movie'}-${playbackVideoUrl || 'no-source'}${shouldAutoplay ? '-autoplay' : ''}`;
+    ? `part-${selectedPartIndex}-${playbackVideoUrl || 'no-source'}`
+    : `${movie?.id || 'movie'}-${playbackVideoUrl || 'no-source'}`;
 
 const currentMovieHref = movie
   ? movie.contentType === 'series' && selectedSeason && selectedEpisode
@@ -1412,6 +1432,31 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
       hasPlaybackSource ? (
         <div className="relative z-10 h-full w-full">
           <PersistentPlaybackHost active className="h-full w-full" />
+        </div>
+      ) : sourceRefreshPending ? (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black px-6 text-center">
+          {playbackPoster ? (
+            <>
+              <img
+                src={playbackPoster}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover opacity-35 blur-[1px]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/55 to-black/78" />
+            </>
+          ) : null}
+          <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full border border-white/16 bg-white/10 pl-1 shadow-[0_0_30px_rgba(255,255,255,0.12)] backdrop-blur-md md:h-20 md:w-20">
+            <svg className="h-7 w-7 text-white md:h-9 md:w-9" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M4 4l12 6-12 6z" />
+            </svg>
+          </div>
+          <div className="relative z-10 mt-5 rounded-full border border-white/12 bg-white/6 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/78 backdrop-blur-md">
+            Preparing Player
+          </div>
+          <p className="relative z-10 mt-3 max-w-lg text-xs leading-6 text-white/68 md:text-sm">
+            We are opening the best available stream for this title.
+          </p>
         </div>
       ) : (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/34 px-6 text-center">

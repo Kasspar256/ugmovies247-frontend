@@ -8,6 +8,7 @@ import MovieRequestDeepLinkHandler from '@/components/MovieRequestDeepLinkHandle
 import NavigationStateRetainer from '@/components/NavigationStateRetainer';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
 import PublicCatalogHydrator from '@/components/PublicCatalogHydrator';
+import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
 
 export const metadata = {
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <MovieRequestDeepLinkHandler />
           <NavigationStateRetainer />
           <PublicCatalogHydrator />
+          <ServiceWorkerRegistrar />
           <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
             <AuthGate>
               <AppChrome>{children}</AppChrome>
