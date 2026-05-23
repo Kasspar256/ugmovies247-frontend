@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, CreditCard, ReceiptText } from 'lucide-react';
+import { ChevronRight, CreditCard, Loader2, ReceiptText } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 import { APP_REVIEW_HOME_PATH, isAppInReview } from '@/lib/appReview';
 import type {
+  RecurringAgreementSummary,
   SubscriptionEntitlement,
   UserPaymentHistoryEntry,
 } from '@/types/subscriptions';
@@ -15,6 +16,7 @@ import type {
 type PaymentsPayload = {
   entitlement: SubscriptionEntitlement;
   payments: UserPaymentHistoryEntry[];
+  recurringAgreement?: RecurringAgreementSummary;
   emailVerified?: boolean;
 };
 
@@ -31,6 +33,24 @@ const EMPTY_ENTITLEMENT: SubscriptionEntitlement = {
     paymentProvider: '',
     updatedAt: '',
   },
+};
+
+const EMPTY_RECURRING_AGREEMENT: RecurringAgreementSummary = {
+  status: 'inactive',
+  planType: null,
+  planName: '',
+  amount: 0,
+  currency: 'ZAR',
+  autoRenewEnabled: false,
+  nextChargeAt: '',
+  lastChargeAt: '',
+  lastChargeStatus: '',
+  lastPaymentId: '',
+  tokenAvailable: false,
+  pendingPaymentId: '',
+  failureReason: '',
+  failedChargeAttempts: 0,
+  firstFailedChargeAt: '',
 };
 
 function formatDate(value?: string, includeTime = true) {
@@ -78,6 +98,10 @@ export default function PaymentsPage() {
   const [payload, setPayload] = useState<PaymentsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [confirmingAutoRenewCancel, setConfirmingAutoRenewCancel] = useState(false);
+  const [cancellingAutoRenew, setCancellingAutoRenew] = useState(false);
 
   useEffect(() => {
     if (isAppInReview) {
@@ -106,6 +130,7 @@ export default function PaymentsPage() {
         setPayload({
           entitlement: data.entitlement || EMPTY_ENTITLEMENT,
           payments: data.payments || [],
+          recurringAgreement: data.recurringAgreement || EMPTY_RECURRING_AGREEMENT,
           emailVerified: data.emailVerified === true,
         });
       } catch (loadError) {
@@ -136,6 +161,63 @@ export default function PaymentsPage() {
 
   const entitlement = payload?.entitlement || EMPTY_ENTITLEMENT;
   const payments = payload?.payments || [];
+  const recurringAgreement = payload?.recurringAgreement || EMPTY_RECURRING_AGREEMENT;
+  const canCancelAutoRenew =
+    entitlement.subscription.isActive === true &&
+    entitlement.subscription.paymentProvider === 'payfast' &&
+    (recurringAgreement.autoRenewEnabled === true ||
+      entitlement.subscription.autoRenewEnabled === true) &&
+    recurringAgreement.status !== 'cancelled';
+
+  const handleCancelAutoRenew = async () => {
+    setCancellingAutoRenew(true);
+    setActionError('');
+    setActionMessage('');
+
+    try {
+      const response = await fetch('/api/subscriptions/auto-renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store',
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        recurringAgreement?: RecurringAgreementSummary;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Auto-renew could not be cancelled.');
+      }
+
+      setPayload((current) => {
+        const nextSubscription = {
+          ...(current?.entitlement.subscription || EMPTY_ENTITLEMENT.subscription),
+          autoRenewEnabled: false,
+        };
+
+        return {
+          entitlement: {
+            ...(current?.entitlement || EMPTY_ENTITLEMENT),
+            subscription: nextSubscription,
+          },
+          payments: current?.payments || [],
+          recurringAgreement: data.recurringAgreement || {
+            ...EMPTY_RECURRING_AGREEMENT,
+            status: 'cancelled',
+          },
+          emailVerified: current?.emailVerified,
+        };
+      });
+      setConfirmingAutoRenewCancel(false);
+      setActionMessage('Auto-renew has been cancelled. Your current access stays active until it expires.');
+    } catch (cancelError) {
+      setActionError(cancelError instanceof Error ? cancelError.message : 'Auto-renew could not be cancelled.');
+    } finally {
+      setCancellingAutoRenew(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(7.5rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
@@ -167,6 +249,17 @@ export default function PaymentsPage() {
         ) : (
           <div className="mt-6 space-y-4">
             <EmailVerificationWarning emailVerified={payload?.emailVerified === true} />
+            {(actionMessage || actionError) ? (
+              <div
+                className={`rounded-[22px] border px-4 py-3 text-sm font-semibold leading-6 ${
+                  actionError
+                    ? 'border-red-500/20 bg-red-500/10 text-red-100'
+                    : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
+                }`}
+              >
+                {actionError || actionMessage}
+              </div>
+            ) : null}
 
             <section className="rounded-[28px] border border-white/10 bg-[#11141C]/82 p-5 shadow-[0_20px_48px_rgba(0,0,0,0.32)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -184,14 +277,61 @@ export default function PaymentsPage() {
                   </p>
                 </div>
 
-                <Link
-                  href="/subscribe"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white/82"
-                >
-                  <CreditCard size={14} />
-                  Manage Plans
-                </Link>
+                <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                  <Link
+                    href="/subscribe"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-white/82"
+                  >
+                    <CreditCard size={14} />
+                    Manage Plans
+                  </Link>
+                  {canCancelAutoRenew ? (
+                    confirmingAutoRenewCancel ? (
+                      <div className="w-full rounded-[20px] border border-[#D90429]/25 bg-[#D90429]/10 p-3 sm:w-80">
+                        <p className="text-xs font-semibold leading-5 text-rose-100/82">
+                          Cancel future card renewals? You will keep access until this plan expires.
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingAutoRenewCancel(false)}
+                            disabled={cancellingAutoRenew}
+                            className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white disabled:opacity-60"
+                          >
+                            Keep It
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelAutoRenew()}
+                            disabled={cancellingAutoRenew}
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#D90429] px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white disabled:opacity-60"
+                          >
+                            {cancellingAutoRenew ? <Loader2 size={13} className="animate-spin" /> : null}
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionError('');
+                          setActionMessage('');
+                          setConfirmingAutoRenewCancel(true);
+                        }}
+                        className="inline-flex items-center justify-center rounded-full border border-[#D90429]/30 bg-[#D90429]/10 px-4 py-2.5 text-xs font-black uppercase tracking-[0.2em] text-[#FFB3C1]"
+                      >
+                        Cancel Auto Renew
+                      </button>
+                    )
+                  ) : null}
+                </div>
               </div>
+              {canCancelAutoRenew && recurringAgreement.nextChargeAt ? (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm leading-6 text-white/62">
+                  Next card renewal: <span className="font-bold text-white">{formatDate(recurringAgreement.nextChargeAt)}</span>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-[28px] border border-white/10 bg-[#11141C]/70 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
@@ -289,3 +429,4 @@ export default function PaymentsPage() {
     </main>
   );
 }
+

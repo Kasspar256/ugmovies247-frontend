@@ -306,6 +306,20 @@ export async function startCardCheckoutForUser(options: {
 
 export async function cancelCardAutoRenewForUser(userId: string) {
   const currentAgreement = await resolveRecurringAgreementForUser(userId);
+  const hasCancelableAgreement = Boolean(
+    currentAgreement &&
+      currentAgreement.status !== 'cancelled' &&
+      (currentAgreement.autoRenewEnabled === true ||
+        Boolean(currentAgreement.token) ||
+        Boolean(currentAgreement.nextChargeAt) ||
+        currentAgreement.status === 'active' ||
+        currentAgreement.status === 'payment_failed' ||
+        currentAgreement.status === 'needs_attention')
+  );
+
+  if (!hasCancelableAgreement) {
+    throw new Error('This account does not have an active card auto-renew subscription.');
+  }
 
   if (currentAgreement?.token) {
     const remoteCancellation = await cancelPayFastTokenizedAgreement(currentAgreement.token);

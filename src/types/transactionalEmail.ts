@@ -11,7 +11,8 @@ export type TransactionalEmailType =
   | 'auto_renew_success'
   | 'auto_renew_failed'
   | 'subscription_cancelled'
-  | 'movie_request_update';
+  | 'movie_request_update'
+  | 'app_feedback';
 
 export type TransactionalEmailStatus = 'sent' | 'failed' | 'skipped';
 

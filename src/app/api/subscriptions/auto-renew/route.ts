@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Failed to start PayFast auto-renew setup.',
+        error: error instanceof Error ? error.message : 'Failed to update card auto-renew.',
       },
       { status: 500 }
     );
