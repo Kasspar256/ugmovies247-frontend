@@ -133,8 +133,17 @@ export async function GET() {
         collectionName: MOVIES_COLLECTION,
       };
 
-      setInMemoryMovieCache(cache);
-      await persistMovieCatalog(cache);
+      const persisted = await persistMovieCatalog(cache, { previousCache: staleCache });
+
+      if (!persisted && staleCache?.movies?.length) {
+        console.warn('[admin] rejected unsafe fresh admin movie cache, serving stale cache');
+        return NextResponse.json({ movies: staleCache.movies, source: 'stale-cache-validation' });
+      }
+
+      if (!persisted) {
+        throw new Error('Fresh admin movie catalog failed integrity validation.');
+      }
+
       clearMovieCatalogQuotaFailure();
     } catch (firestoreError) {
       recordMovieCatalogQuotaFailure(firestoreError);

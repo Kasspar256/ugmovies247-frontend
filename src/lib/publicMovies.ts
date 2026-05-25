@@ -175,6 +175,15 @@ function compactCatalogForPersistentCache(cache: CachedPublicMovieCatalog): Cach
 }
 
 function persistCatalog(cache: CachedPublicMovieCatalog) {
+  if (!cache.movies.length) {
+    const existingCatalog = getAnyAvailableCatalog();
+
+    if (existingCatalog?.movies?.length) {
+      console.warn('[movies-cache] refused to overwrite local catalog with an empty response');
+      return;
+    }
+  }
+
   inMemoryMovieCatalog = cache;
 
   if (!canUsePersistentStorage()) {
@@ -561,6 +570,13 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
       }
 
       const movies = normalizeCatalogMovies(payload.movies);
+      const staleCatalog = getAnyAvailableCatalog();
+
+      if (!movies.length && staleCatalog?.movies?.length) {
+        console.warn('[movies-cache] API returned an empty catalog, keeping local catalog');
+        return filterPublicReadyMovies(staleCatalog.movies);
+      }
+
       persistCatalog({
         movies,
         cachedAt: Date.now(),

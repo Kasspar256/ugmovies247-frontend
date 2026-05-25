@@ -33,6 +33,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
+let movieCatalogBackgroundRefreshPromise: Promise<CachedMovieCatalog | null> | null = null;
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   hasPremiumAccess: false,
@@ -536,6 +537,11 @@ async function fetchMovieCatalog(
     return diskCacheForMode;
   }
 
+  if (!options?.forceFresh && staleCache?.movies?.length) {
+    refreshMovieCatalogInBackground(collectionName, reviewOnly, staleCache);
+    return staleCache;
+  }
+
   if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
     if (diskCacheForMode) {
       setInMemoryMovieCache(diskCacheForMode);
@@ -544,6 +550,14 @@ async function fetchMovieCatalog(
     return staleCache;
   }
 
+  return refreshMovieCatalogFromFirestore(collectionName, reviewOnly, staleCache);
+}
+
+async function refreshMovieCatalogFromFirestore(
+  collectionName: string,
+  reviewOnly: boolean,
+  staleCache: CachedMovieCatalog | null
+) {
   try {
     const snapshot = await readMovieSnapshotWithFallback(
       collectionName,
@@ -564,11 +578,18 @@ async function fetchMovieCatalog(
       collectionName,
       reviewOnly,
     };
+    const persisted = await persistMovieCatalog(cache, { previousCache: staleCache });
 
-    setInMemoryMovieCache(cache);
-    await persistMovieCatalog(cache);
-    clearMovieCatalogQuotaFailure();
-    return cache;
+    if (persisted) {
+      clearMovieCatalogQuotaFailure();
+      return cache;
+    }
+
+    if (staleCache?.movies?.length) {
+      return staleCache;
+    }
+
+    throw new Error('Fresh movie catalog failed integrity validation.');
   } catch (error) {
     recordMovieCatalogQuotaFailure(error);
 
@@ -579,6 +600,29 @@ async function fetchMovieCatalog(
 
     throw error;
   }
+}
+
+function refreshMovieCatalogInBackground(
+  collectionName: string,
+  reviewOnly: boolean,
+  staleCache: CachedMovieCatalog
+) {
+  if (movieCatalogBackgroundRefreshPromise) {
+    return;
+  }
+
+  movieCatalogBackgroundRefreshPromise = refreshMovieCatalogFromFirestore(
+    collectionName,
+    reviewOnly,
+    staleCache
+  )
+    .catch((error) => {
+      console.warn('[movies-api] background movie catalog refresh failed; keeping stale cache', error);
+      return staleCache;
+    })
+    .finally(() => {
+      movieCatalogBackgroundRefreshPromise = null;
+    });
 }
 
 export async function GET(request: Request) {

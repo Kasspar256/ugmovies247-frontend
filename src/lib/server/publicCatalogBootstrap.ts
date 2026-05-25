@@ -243,8 +243,7 @@ export function setPublicBootstrapCatalogFromMovieCache(
   source: 'memory' | 'disk' = 'memory'
 ) {
   if (!cache?.movies?.length) {
-    inMemoryPublicBootstrapCatalog = null;
-    return null;
+    return inMemoryPublicBootstrapCatalog;
   }
 
   if (isAppInReview !== (cache.reviewOnly === true) && cache.reviewOnly !== undefined) {
@@ -254,8 +253,7 @@ export function setPublicBootstrapCatalogFromMovieCache(
   const movies = pickBootstrapMovies(cache.movies);
 
   if (!movies.length) {
-    inMemoryPublicBootstrapCatalog = null;
-    return null;
+    return inMemoryPublicBootstrapCatalog;
   }
 
   inMemoryPublicBootstrapCatalog = {

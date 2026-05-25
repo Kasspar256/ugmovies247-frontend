@@ -1,9 +1,8 @@
-import { mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { mkdir, readFile, rename, stat, unlink, writeFile } from 'fs/promises';
 import path from 'path';
 import { FIRESTORE_ENV_NAMESPACE, MOVIES_COLLECTION } from './firestoreNamespaces';
 import {
   setPublicBootstrapCatalogFromMovieCache,
-  upsertPublicBootstrapMovie,
 } from './publicCatalogBootstrap';
 
 export const MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
@@ -25,10 +24,129 @@ export type CachedMovieCatalog = {
 export let inMemoryMovieCache: CachedMovieCatalog | null = null;
 let movieCatalogQuotaBlockedUntil = 0;
 let lastDiskRefreshCheckAt = 0;
+let movieCatalogPersistPromise: Promise<boolean> | null = null;
 
 export function setInMemoryMovieCache(cache: CachedMovieCatalog | null) {
   inMemoryMovieCache = cache;
   setPublicBootstrapCatalogFromMovieCache(cache);
+}
+
+type MovieCatalogValidationResult = {
+  ok: boolean;
+  reason?: string;
+  stats: {
+    totalMovies: number;
+    standaloneMovies: number;
+    series: number;
+    categorizedMovies: number;
+  };
+};
+
+function isStrictProductionCatalog(cache: CachedMovieCatalog) {
+  return (
+    FIRESTORE_ENV_NAMESPACE === 'production' &&
+    cache.collectionName === MOVIES_COLLECTION &&
+    cache.reviewOnly !== true
+  );
+}
+
+function hasCatalogIdentity(movie: Record<string, unknown>) {
+  return Boolean(String(movie.id || movie.movieId || '').trim());
+}
+
+function isSeriesCatalogEntry(movie: Record<string, unknown>) {
+  return (
+    movie.contentType === 'series' ||
+    (Array.isArray(movie.seasons) &&
+      movie.seasons.some((season) => {
+        const rawSeason = season as Record<string, unknown>;
+        return Array.isArray(rawSeason.episodes) && rawSeason.episodes.length > 0;
+      }))
+  );
+}
+
+function hasCategorySignals(movie: Record<string, unknown>) {
+  return (
+    (Array.isArray(movie.category) && movie.category.length > 0) ||
+    (Array.isArray(movie.genres) && movie.genres.length > 0) ||
+    (Array.isArray(movie.tags) && movie.tags.length > 0) ||
+    Boolean(String(movie.vj || '').trim())
+  );
+}
+
+export function validateMovieCatalogCache(
+  cache: CachedMovieCatalog,
+  options?: {
+    previousCache?: CachedMovieCatalog | null;
+    allowLargeShrink?: boolean;
+  }
+): MovieCatalogValidationResult {
+  const movies = Array.isArray(cache.movies) ? cache.movies : [];
+  const stats = movies.reduce(
+    (accumulator, movie) => {
+      if (!hasCatalogIdentity(movie)) {
+        return accumulator;
+      }
+
+      accumulator.totalMovies += 1;
+
+      if (isSeriesCatalogEntry(movie)) {
+        accumulator.series += 1;
+      } else {
+        accumulator.standaloneMovies += 1;
+      }
+
+      if (hasCategorySignals(movie)) {
+        accumulator.categorizedMovies += 1;
+      }
+
+      return accumulator;
+    },
+    {
+      totalMovies: 0,
+      standaloneMovies: 0,
+      series: 0,
+      categorizedMovies: 0,
+    }
+  );
+
+  if (!movies.length || stats.totalMovies === 0) {
+    return { ok: false, reason: 'catalog contains no valid movie documents', stats };
+  }
+
+  if (!cache.cachedAt || Number.isNaN(new Date(cache.cachedAt).getTime())) {
+    return { ok: false, reason: 'catalog is missing a valid cachedAt timestamp', stats };
+  }
+
+  if (isStrictProductionCatalog(cache)) {
+    if (stats.standaloneMovies === 0) {
+      return { ok: false, reason: 'production catalog contains zero standalone movies', stats };
+    }
+
+    if (stats.series === 0) {
+      return { ok: false, reason: 'production catalog contains zero series', stats };
+    }
+
+    if (stats.categorizedMovies === 0) {
+      return { ok: false, reason: 'production catalog is missing category/vj/genre signals', stats };
+    }
+
+    const previousMovies = options?.previousCache?.movies?.length || 0;
+
+    if (
+      !options?.allowLargeShrink &&
+      previousMovies >= 50 &&
+      stats.totalMovies < Math.floor(previousMovies * 0.7)
+    ) {
+      return {
+        ok: false,
+        reason: `production catalog shrank suspiciously from ${previousMovies} to ${stats.totalMovies}`,
+        stats,
+      };
+    }
+  }
+
+  return { ok: true, stats };
 }
 
 function isMovieCatalogQuotaError(error: unknown) {
@@ -81,11 +199,13 @@ export async function readMovieCatalogFromDisk() {
     const raw = await readFile(MOVIE_CACHE_PATH, 'utf8');
     const parsed = JSON.parse(raw) as CachedMovieCatalog;
 
-    if (
-      !Array.isArray(parsed.movies) ||
-      parsed.movies.length === 0 ||
-      typeof parsed.cachedAt !== 'string'
-    ) {
+    const validation = validateMovieCatalogCache(parsed);
+
+    if (!validation.ok) {
+      console.warn('[movie-cache] ignored invalid disk cache', {
+        reason: validation.reason,
+        stats: validation.stats,
+      });
       return null;
     }
 
@@ -164,15 +284,59 @@ export async function refreshInMemoryMovieCacheFromDiskIfNewer(options?: {
   return inMemoryMovieCache;
 }
 
-export async function persistMovieCatalog(cache: CachedMovieCatalog) {
-  setInMemoryMovieCache(cache);
-
-  try {
-    await mkdir(path.dirname(MOVIE_CACHE_PATH), { recursive: true });
-    await writeFile(MOVIE_CACHE_PATH, JSON.stringify(cache), 'utf8');
-  } catch (error) {
-    console.warn('[movie-cache] failed to persist movie cache', error);
+export async function persistMovieCatalog(
+  cache: CachedMovieCatalog,
+  options?: {
+    previousCache?: CachedMovieCatalog | null;
+    allowLargeShrink?: boolean;
   }
+) {
+  const previousCache = pickMovieCatalogCache(options?.previousCache, inMemoryMovieCache);
+  const validation = validateMovieCatalogCache(cache, {
+    previousCache,
+    allowLargeShrink: options?.allowLargeShrink,
+  });
+
+  if (!validation.ok) {
+    console.warn('[movie-cache] refused to persist unsafe movie catalog', {
+      reason: validation.reason,
+      stats: validation.stats,
+      previousMovies: previousCache?.movies?.length || 0,
+    });
+    return false;
+  }
+
+  const persist = async () => {
+    setInMemoryMovieCache(cache);
+
+    const cacheDirectory = path.dirname(MOVIE_CACHE_PATH);
+    const tempPath = path.join(
+      cacheDirectory,
+      `${path.basename(MOVIE_CACHE_PATH)}.${process.pid}.${Date.now()}.tmp`
+    );
+
+    try {
+      await mkdir(cacheDirectory, { recursive: true });
+      await writeFile(tempPath, JSON.stringify(cache), 'utf8');
+      await rename(tempPath, MOVIE_CACHE_PATH);
+      return true;
+    } catch (error) {
+      await unlink(tempPath).catch(() => undefined);
+      console.warn('[movie-cache] failed to persist movie cache', error);
+      return false;
+    }
+  };
+
+  const queuedPersist = (movieCatalogPersistPromise || Promise.resolve(true))
+    .catch(() => true)
+    .then(persist);
+  movieCatalogPersistPromise = queuedPersist;
+
+  return queuedPersist.finally(() => {
+    if (movieCatalogPersistPromise === queuedPersist) {
+      movieCatalogPersistPromise = null;
+    }
+  });
 }
 
 function readTimestampMs(value: unknown) {
@@ -276,9 +440,7 @@ export async function upsertMovieInCatalogCache(movie: Record<string, unknown>) 
     reviewOnly: isReviewOnlyCache ? true : undefined,
   };
 
-  setInMemoryMovieCache(nextCache);
-  upsertPublicBootstrapMovie({ ...movie, id: movieId });
-  await persistMovieCatalog(nextCache);
+  await persistMovieCatalog(nextCache, { previousCache: currentCache });
 }
 
 export async function removeMovieFromCatalogCache(movieId: string) {
@@ -352,6 +514,5 @@ async function updateMovieInCatalogCache(
     reviewOnly: currentCache.reviewOnly === true ? true : undefined,
   };
 
-  setInMemoryMovieCache(nextCache);
-  await persistMovieCatalog(nextCache);
+  await persistMovieCatalog(nextCache, { previousCache: currentCache });
 }

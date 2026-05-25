@@ -424,9 +424,17 @@ export async function listAllMoviesForAdmin() {
       cachedAt: new Date().toISOString(),
       collectionName: MOVIES_COLLECTION,
     };
+    const persisted = await persistMovieCatalog(cache, { previousCache: staleCache });
 
-    setInMemoryMovieCache(cache);
-    await persistMovieCatalog(cache);
+    if (!persisted) {
+      if (staleCache?.movies?.length) {
+        console.warn('[admin-data] rejected unsafe fresh admin movie cache, serving stale cache');
+        return normalizeCatalog(staleCache);
+      }
+
+      throw new Error('Fresh admin movie catalog failed integrity validation.');
+    }
+
     clearMovieCatalogQuotaFailure();
 
     return normalizeCatalog(cache);
