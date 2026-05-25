@@ -42,10 +42,13 @@ import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 import { startCasting } from '@/lib/cast';
 import {
   getOptimizedArtworkUrl,
-  hasLoadedArtworkUrl,
-  markArtworkUrlLoaded,
   type ArtworkVariant,
 } from '@/lib/artwork';
+import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
+import {
+  getCatalogBackdropCandidates,
+  getCatalogPosterCandidates,
+} from '@/lib/catalogArtwork';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
@@ -204,21 +207,6 @@ function formatRuntimeLabel(movie: Movie | null) {
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
-function getSeriesBackdropCardImage(movie: Movie) {
-  const firstSeason = movie.seasons?.[0];
-  const firstEpisode = firstSeason?.episodes?.[0];
-
-  return (
-    movie.overriddenBackdrop ||
-    firstEpisode?.overriddenBackdrop ||
-    movie.poster ||
-    firstSeason?.poster ||
-    firstEpisode?.thumbnail ||
-    firstEpisode?.poster ||
-    ''
-  );
-}
-
 function getPosterCardImage(movie: Movie) {
   const firstPart = movie.parts?.[0];
   const firstSeason = movie.seasons?.[0];
@@ -274,111 +262,22 @@ const HomeCardImage = memo(function HomeCardImage({
   priority = false,
   variant = 'card',
 }: {
-  src?: string;
+  src?: string | string[];
   alt: string;
   imageClassName: string;
   logoClassName?: string;
   priority?: boolean;
   variant?: ArtworkVariant;
 }) {
-  const normalizedSrc = getOptimizedArtworkUrl(src, variant);
-  const [isLoaded, setIsLoaded] = useState(() => hasLoadedArtworkUrl(normalizedSrc));
-  const [hasError, setHasError] = useState(false);
-
-  useEffect(() => {
-    if (hasLoadedArtworkUrl(normalizedSrc)) {
-      setIsLoaded(true);
-      setHasError(false);
-      return;
-    }
-
-    setIsLoaded(false);
-    setHasError(false);
-
-    if (!normalizedSrc || typeof window === 'undefined') {
-      return;
-    }
-
-    let active = true;
-    const image = new window.Image();
-    image.decoding = 'async';
-    image.src = normalizedSrc;
-
-    if (image.complete && image.naturalWidth > 0) {
-      markArtworkUrlLoaded(normalizedSrc);
-
-      if (active) {
-        setIsLoaded(true);
-      }
-
-      return () => {
-        active = false;
-      };
-    }
-
-    image.onload = () => {
-      markArtworkUrlLoaded(normalizedSrc);
-
-      if (active) {
-        setHasError(false);
-        setIsLoaded(true);
-      }
-    };
-
-    image.onerror = () => {
-      if (active) {
-        setHasError(true);
-        setIsLoaded(false);
-      }
-    };
-
-    return () => {
-      active = false;
-    };
-  }, [normalizedSrc]);
-
-  const showPlaceholder = !normalizedSrc || !isLoaded || hasError;
-  const showLoadingShimmer = Boolean(normalizedSrc && !isLoaded && !hasError);
-
   return (
-    <div
-      className={`relative h-full w-full overflow-hidden ${
-        showLoadingShimmer
-          ? 'poster-shimmer'
-          : 'bg-[radial-gradient(circle_at_center,rgba(34,41,54,0.98)_0%,rgba(20,24,34,0.98)_56%,rgba(11,12,16,1)_100%)]'
-      }`}
-    >
-      {showPlaceholder && !showLoadingShimmer && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <img
-            src="/logow.png"
-            alt=""
-            aria-hidden="true"
-            className={logoClassName}
-          />
-        </div>
-      )}
-
-      {normalizedSrc ? (
-        <img
-          src={normalizedSrc}
-          alt={alt}
-          className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
-          loading={priority ? 'eager' : 'lazy'}
-          fetchPriority={priority ? 'high' : 'auto'}
-          decoding="async"
-          onLoad={() => {
-            markArtworkUrlLoaded(normalizedSrc);
-            setHasError(false);
-            setIsLoaded(true);
-          }}
-          onError={() => {
-            setHasError(true);
-            setIsLoaded(false);
-          }}
-        />
-      ) : null}
-    </div>
+    <CatalogArtworkImage
+      src={src}
+      alt={alt}
+      imageClassName={imageClassName}
+      logoClassName={logoClassName}
+      priority={priority}
+      variant={variant}
+    />
   );
 });
 
@@ -1536,7 +1435,7 @@ const MovieRow = memo(function MovieRow({
     >
         <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
           <HomeCardImage
-            src={getPosterCardImage(m)}
+            src={getCatalogPosterCandidates(m)}
             alt={m.title}
             imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-110"
             priority={index < priorityImageCount}
@@ -1597,7 +1496,7 @@ const MovieRow = memo(function MovieRow({
     >
         <div className="relative aspect-[16/9] overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] shadow-[0_22px_48px_rgba(0,0,0,0.32)] transition-transform duration-300 md:hover:-translate-y-1.5">
           <HomeCardImage
-            src={getSeriesBackdropCardImage(m)}
+            src={getCatalogBackdropCandidates(m)}
             alt={m.title}
             imageClassName="h-full w-full object-cover object-center transition-transform duration-500 md:group-hover/card:scale-105"
             logoClassName="h-14 w-14 scale-[1.95] object-contain opacity-95 drop-shadow-[0_10px_24px_rgba(217,4,41,0.18)] md:h-20 md:w-20"
