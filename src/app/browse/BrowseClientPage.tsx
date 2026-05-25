@@ -854,18 +854,29 @@ export default function BrowseClientPage({
         <section className="relative w-full h-[62vh] sm:h-[68vh] flex flex-col justify-end pb-10 px-4 pt-20 transition-all duration-1000 ease-in-out md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
             {heroBackdropCandidates.length ? (
-              <CatalogArtworkImage
-                src={heroBackdropCandidates}
-                alt="Hero Backdrop"
-                imageClassName="h-full w-full object-cover object-top transition-opacity duration-1000"
-                priority
-                variant="hero"
-              />
+              <>
+                <CatalogArtworkImage
+                  src={heroBackdropCandidates}
+                  alt="Hero Backdrop"
+                  imageClassName="h-full w-full scale-105 object-cover object-center opacity-55 blur-[10px] transition-opacity duration-1000"
+                  priority
+                  variant="hero"
+                />
+                <div className="absolute inset-x-0 top-0 h-[58%] overflow-hidden">
+                  <CatalogArtworkImage
+                    src={heroBackdropCandidates}
+                    alt="Hero Backdrop"
+                    imageClassName="h-full w-full object-contain object-top transition-opacity duration-1000"
+                    priority
+                    variant="hero"
+                  />
+                </div>
+              </>
             ) : (
               <div className="poster-shimmer h-full w-full" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/70 to-transparent h-[60%] bottom-0 mt-auto"></div>
-            <div className="absolute inset-0 bg-black/20"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/72 to-[#0B0C10]/10"></div>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/24 via-transparent to-transparent"></div>
           </div>
 
           <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
