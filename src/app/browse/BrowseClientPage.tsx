@@ -851,7 +851,7 @@ export default function BrowseClientPage({
       {/* Hero Section */}
       {heroMovie && (
         <>
-        <section className="relative flex h-[58vh] min-h-[520px] w-full flex-col justify-end px-4 pb-7 pt-14 transition-all duration-1000 ease-in-out sm:h-[62vh] md:hidden">
+        <section className="relative flex h-[53vh] min-h-[470px] w-full flex-col justify-end px-4 pb-5 pt-14 transition-all duration-1000 ease-in-out sm:h-[58vh] md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
             {heroBackdropCandidates.length ? (
               <>
@@ -862,11 +862,11 @@ export default function BrowseClientPage({
                   priority
                   variant="hero"
                 />
-                <div className="absolute left-[-10vw] top-0 h-[48vh] w-[120vw] overflow-hidden">
+                <div className="absolute inset-0 overflow-hidden">
                   <CatalogArtworkImage
                     src={heroBackdropCandidates}
                     alt="Hero Backdrop"
-                    imageClassName="h-full w-full object-cover object-[center_26%] transition-opacity duration-1000"
+                    imageClassName="h-full w-full object-cover object-[center_30%] transition-opacity duration-1000"
                     priority
                     variant="hero"
                   />
@@ -879,18 +879,18 @@ export default function BrowseClientPage({
               className="absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(180deg, rgba(11,12,16,0.03) 0%, rgba(11,12,16,0.08) 28%, rgba(11,12,16,0.5) 62%, rgba(11,12,16,0.9) 88%, #0B0C10 100%)',
+                  'linear-gradient(180deg, rgba(11,12,16,0.04) 0%, rgba(11,12,16,0.1) 34%, rgba(11,12,16,0.58) 72%, rgba(11,12,16,0.96) 100%)',
               }}
             ></div>
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-transparent"></div>
           </div>
 
-          <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
-            <h1 className="mb-3 w-full text-[clamp(2rem,8vw,2.55rem)] font-extrabold leading-[0.98] tracking-tight text-white drop-shadow-2xl">
+          <div className="relative z-10 mx-auto flex w-full max-w-4xl -translate-y-5 flex-col items-center text-center">
+            <h1 className="mb-2.5 w-full text-[clamp(1.75rem,7vw,2.2rem)] font-extrabold leading-[0.98] tracking-tight text-white drop-shadow-2xl">
               {heroMovie.title}
             </h1>
 
-            <div className="mb-5 flex w-full items-center justify-center gap-3 text-[10px] font-semibold tracking-[0.18em] text-gray-400">
+            <div className="mb-4 flex w-full items-center justify-center gap-3 text-[9px] font-semibold tracking-[0.16em] text-gray-400">
               <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
               {heroRuntimeLabel && (
                 <>
@@ -913,7 +913,7 @@ export default function BrowseClientPage({
                 <button
                   type="button"
                   onClick={handleHeroTrailerClick}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2.5 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
                 >
                   <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                   <span className="text-[10px]">WATCH TRAILER</span>
@@ -921,7 +921,7 @@ export default function BrowseClientPage({
               ) : (
                 <Link
                   href={heroPlayHref}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2.5 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
                 >
                   <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                   <span className="text-[10px]">PLAY NOW</span>
@@ -929,7 +929,7 @@ export default function BrowseClientPage({
               )}
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-md border border-white/5 bg-[#1F2833] px-3 py-2.5 font-bold text-white transition-colors hover:bg-gray-800"
+                className="flex flex-1 items-center justify-center gap-2 rounded-md border border-white/5 bg-[#1F2833] px-3 py-2 font-bold text-white transition-colors hover:bg-gray-800"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span className="text-[10px]">{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
@@ -1082,7 +1082,7 @@ export default function BrowseClientPage({
         </>
       )}
 
-      <div className="relative z-20 px-4 -mt-4 mb-4 md:hidden">
+      <div className="relative z-20 -mt-8 mb-3 px-4 md:hidden">
          <div className="flex gap-2 overflow-x-auto pb-3 style-hide-scrollbar snap-x">
            <button
   onClick={() => setActiveCategory('ALL')}
@@ -1590,4 +1590,3 @@ const MovieRow = memo(function MovieRow({
     </section>
   );
 });
-
