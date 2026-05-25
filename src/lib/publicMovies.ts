@@ -14,7 +14,7 @@ type CachedPublicMovieCatalog = {
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
   ? 'ugmovies247.public-movies.review.v1'
-  : 'ugmovies247.public-movies.v6';
+  : 'ugmovies247.public-movies.v7';
 const PUBLIC_MOVIE_CACHE_READ_KEYS = isAppInReview
   ? ['ugmovies247.public-movies.review.v1']
   : [PUBLIC_MOVIE_CACHE_KEY];
@@ -215,6 +215,7 @@ export function clearPublicMovieCache() {
     window.localStorage?.removeItem('ugmovies247.public-movies.v3');
     window.localStorage?.removeItem('ugmovies247.public-movies.v4');
     window.localStorage?.removeItem('ugmovies247.public-movies.v5');
+    window.localStorage?.removeItem('ugmovies247.public-movies.v6');
     window.sessionStorage?.removeItem(PUBLIC_MOVIE_CACHE_KEY);
     window.sessionStorage?.removeItem('ugmovies247.public-movies.review.v1');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v1');
@@ -222,6 +223,7 @@ export function clearPublicMovieCache() {
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v3');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v4');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v5');
+    window.sessionStorage?.removeItem('ugmovies247.public-movies.v6');
   } catch {
     // Ignore persistent storage removal failures and keep the cache cleared in memory.
   }

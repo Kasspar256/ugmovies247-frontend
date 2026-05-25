@@ -40,10 +40,7 @@ import type { CachedPlaybackProgressRecord } from '@/types/playbackProgress';
 import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/appEnv';
 import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 import { startCasting } from '@/lib/cast';
-import {
-  getOptimizedArtworkUrl,
-  type ArtworkVariant,
-} from '@/lib/artwork';
+import { type ArtworkVariant } from '@/lib/artwork';
 import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
 import {
   getCatalogBackdropCandidates,
@@ -205,26 +202,6 @@ function formatRuntimeLabel(movie: Movie | null) {
   }
 
   return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-}
-
-function getPosterCardImage(movie: Movie) {
-  const firstPart = movie.parts?.[0];
-  const firstSeason = movie.seasons?.[0];
-  const firstEpisode = firstSeason?.episodes?.[0];
-
-  return (
-    movie.poster ||
-    firstPart?.poster ||
-    firstPart?.thumbnail ||
-    firstEpisode?.poster ||
-    firstEpisode?.thumbnail ||
-    firstEpisode?.overriddenBackdrop ||
-    firstSeason?.poster ||
-    movie.overriddenBackdrop ||
-    movie.overriddenPlayerBackdrop ||
-    movie.playerBackdrop ||
-    ''
-  );
 }
 
 function buildPriorityArtworkMovies(options: {
@@ -415,7 +392,11 @@ export default function BrowseClientPage({
       setLoading(false);
     }
 
-    if (hasCachedMovies && (!hasSeedMovies || cachedMovies.length >= seedMovies.length)) {
+    if (
+      hasCachedMovies &&
+      !initialMoviesVisible &&
+      (!hasSeedMovies || cachedMovies.length >= seedMovies.length)
+    ) {
       setMovies(cachedMovies);
       setHasResolvedCatalog(true);
       setIsUsingPartialBootstrap(hasPartialCachedMovies && !hasAuthoritativeCachedMovies);
@@ -665,17 +646,8 @@ export default function BrowseClientPage({
     () => countUnreadLatestUploads(displayMovies),
     [displayMovies]
   );
-  const heroPosterUrl = useMemo(
-    () =>
-      getOptimizedArtworkUrl(
-        heroMovie
-          ? heroMovie.overriddenBackdrop ||
-              heroMovie.playerBackdrop ||
-              heroMovie.overriddenPlayerBackdrop ||
-              getPosterCardImage(heroMovie)
-          : '',
-        'hero'
-      ),
+  const heroBackdropCandidates = useMemo(
+    () => (heroMovie ? getCatalogBackdropCandidates(heroMovie) : []),
     [heroMovie]
   );
   const priorityArtworkMovies = useMemo(
@@ -881,14 +853,13 @@ export default function BrowseClientPage({
         <>
         <section className="relative w-full h-[62vh] sm:h-[68vh] flex flex-col justify-end pb-10 px-4 pt-20 transition-all duration-1000 ease-in-out md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
-            {heroPosterUrl ? (
-              <img
-                src={heroPosterUrl}
+            {heroBackdropCandidates.length ? (
+              <CatalogArtworkImage
+                src={heroBackdropCandidates}
                 alt="Hero Backdrop"
-                className="w-full h-full object-cover object-top transition-opacity duration-1000"
-                loading="eager"
-                fetchPriority="high"
-                decoding="async"
+                imageClassName="h-full w-full object-cover object-top transition-opacity duration-1000"
+                priority
+                variant="hero"
               />
             ) : (
               <div className="poster-shimmer h-full w-full" />
@@ -962,14 +933,13 @@ export default function BrowseClientPage({
         </section>
         <section className="relative hidden overflow-hidden md:block md:pt-[88px]">
           <div className="relative min-h-[1040px] overflow-hidden bg-[#05070C]">
-            {heroPosterUrl ? (
-              <img
-                src={heroPosterUrl}
+            {heroBackdropCandidates.length ? (
+              <CatalogArtworkImage
+                src={heroBackdropCandidates}
                 alt="Hero Backdrop"
-                className="absolute inset-0 h-full w-full object-cover object-[center_10%] transition-opacity duration-1000 [filter:brightness(1.12)_contrast(1.06)_saturate(1.08)]"
-                loading="eager"
-                fetchPriority="high"
-                decoding="async"
+                imageClassName="h-full w-full object-cover object-[center_10%] transition-opacity duration-1000 [filter:brightness(1.12)_contrast(1.06)_saturate(1.08)]"
+                priority
+                variant="hero"
               />
             ) : (
               <div className="poster-shimmer absolute inset-0" />
