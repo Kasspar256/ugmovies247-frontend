@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronDown,
@@ -29,6 +29,7 @@ type SearchPageSnapshot = {
 };
 
 let searchPageSnapshot: SearchPageSnapshot | null = null;
+let searchPageScrollY = 0;
 
 function cleanOption(value?: string | null) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -77,6 +78,26 @@ function getVjName(movie: Movie) {
 function getVjLabel(movie: Movie) {
   const vj = getVjName(movie);
   return vj ? `VJ ${vj}` : 'VJ HD';
+}
+
+function getCatalogPosterImage(movie: Movie) {
+  const firstPart = movie.parts?.[0];
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    movie.poster ||
+    firstPart?.poster ||
+    firstPart?.thumbnail ||
+    firstEpisode?.poster ||
+    firstEpisode?.thumbnail ||
+    firstEpisode?.overriddenBackdrop ||
+    firstSeason?.poster ||
+    movie.overriddenBackdrop ||
+    movie.overriddenPlayerBackdrop ||
+    movie.playerBackdrop ||
+    ''
+  );
 }
 
 function matchesSelectedValue(value: string, selectedValue: string) {
@@ -273,7 +294,7 @@ function FilterDropdown({
 }
 
 function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
-  const posterUrl = getOptimizedArtworkUrl(movie.poster, 'card');
+  const posterUrl = getOptimizedArtworkUrl(getCatalogPosterImage(movie), 'card');
 
   return (
     <Link
@@ -298,6 +319,9 @@ function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean 
             loading={priority ? 'eager' : 'lazy'}
             fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
+            onError={(event) => {
+              event.currentTarget.style.opacity = '0';
+            }}
           />
         ) : null}
 
@@ -370,6 +394,29 @@ export default function SearchPage() {
       visibleCount,
     };
   }, [allMovies, query, selectedGenre, selectedVj, visibleCount]);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (searchPageScrollY > 0) {
+      window.scrollTo(0, searchPageScrollY);
+    }
+
+    const rememberScroll = () => {
+      searchPageScrollY = window.scrollY;
+    };
+
+    window.addEventListener('scroll', rememberScroll, { passive: true });
+    window.addEventListener('pagehide', rememberScroll);
+
+    return () => {
+      rememberScroll();
+      window.removeEventListener('scroll', rememberScroll);
+      window.removeEventListener('pagehide', rememberScroll);
+    };
+  }, []);
 
   useEffect(() => {
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());

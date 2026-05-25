@@ -20,15 +20,21 @@ function getMovieVjLabel(movie: Movie) {
 }
 
 function getPosterCardImage(movie: Movie) {
+  const firstPart = movie.parts?.[0];
   const firstSeason = movie.seasons?.[0];
   const firstEpisode = firstSeason?.episodes?.[0];
 
   return (
     movie.poster ||
+    firstPart?.poster ||
+    firstPart?.thumbnail ||
     firstSeason?.poster ||
     firstEpisode?.poster ||
     firstEpisode?.thumbnail ||
+    firstEpisode?.overriddenBackdrop ||
     movie.overriddenBackdrop ||
+    movie.overriddenPlayerBackdrop ||
+    movie.playerBackdrop ||
     ''
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
@@ -29,6 +29,7 @@ type SeriesPageSnapshot = {
 };
 
 let seriesPageSnapshot: SeriesPageSnapshot | null = null;
+let seriesPageScrollY = 0;
 
 function AiModeStyles() {
   return (
@@ -106,6 +107,26 @@ function getAllSeries(catalog: Movie[]) {
   return dedupeSeriesMovies(catalog).filter((movie) => movie.contentType === 'series');
 }
 
+function getCatalogPosterImage(movie: Movie) {
+  const firstPart = movie.parts?.[0];
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    movie.poster ||
+    firstPart?.poster ||
+    firstPart?.thumbnail ||
+    firstEpisode?.poster ||
+    firstEpisode?.thumbnail ||
+    firstEpisode?.overriddenBackdrop ||
+    firstSeason?.poster ||
+    movie.overriddenBackdrop ||
+    movie.overriddenPlayerBackdrop ||
+    movie.playerBackdrop ||
+    ''
+  );
+}
+
 function CatalogSkeletonGrid() {
   return (
     <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
@@ -124,16 +145,7 @@ function CatalogSkeletonGrid() {
 }
 
 function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) {
-  const firstSeason = series.seasons?.[0];
-  const firstEpisode = firstSeason?.episodes?.[0];
-  const poster =
-    series.poster ||
-    firstSeason?.poster ||
-    firstEpisode?.poster ||
-    firstEpisode?.thumbnail ||
-    series.overriddenBackdrop ||
-    '';
-  const posterUrl = getOptimizedArtworkUrl(poster, 'card');
+  const posterUrl = getOptimizedArtworkUrl(getCatalogPosterImage(series), 'card');
 
   return (
     <Link href={`/movie/${series.id}`} className="group min-w-0">
@@ -202,6 +214,29 @@ export default function SeriesDirectoryPage() {
       selectedGenre,
     };
   }, [selectedGenre, selectedVj, series]);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (seriesPageScrollY > 0) {
+      window.scrollTo(0, seriesPageScrollY);
+    }
+
+    const rememberScroll = () => {
+      seriesPageScrollY = window.scrollY;
+    };
+
+    window.addEventListener('scroll', rememberScroll, { passive: true });
+    window.addEventListener('pagehide', rememberScroll);
+
+    return () => {
+      rememberScroll();
+      window.removeEventListener('scroll', rememberScroll);
+      window.removeEventListener('pagehide', rememberScroll);
+    };
+  }, []);
 
   useEffect(() => {
     const cachedSeries = getAllSeries(readCachedPublicMovies());

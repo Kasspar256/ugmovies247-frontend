@@ -227,10 +227,13 @@ function getPosterCardImage(movie: Movie) {
   return (
     movie.poster ||
     firstPart?.poster ||
+    firstPart?.thumbnail ||
     firstEpisode?.poster ||
     firstEpisode?.thumbnail ||
+    firstEpisode?.overriddenBackdrop ||
     firstSeason?.poster ||
     movie.overriddenBackdrop ||
+    movie.overriddenPlayerBackdrop ||
     movie.playerBackdrop ||
     ''
   );
