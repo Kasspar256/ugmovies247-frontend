@@ -112,6 +112,7 @@ type BrowseMemorySnapshot = {
 };
 
 let browseMemorySnapshot: BrowseMemorySnapshot | null = null;
+let browseRailScrollSnapshot: Record<string, number> = {};
 
 function readBrowseMemorySnapshot() {
   return browseMemorySnapshot;
@@ -119,6 +120,21 @@ function readBrowseMemorySnapshot() {
 
 function writeBrowseMemorySnapshot(snapshot: BrowseMemorySnapshot) {
   browseMemorySnapshot = snapshot;
+}
+
+function getBrowseRailScrollKey(categoryKey: string | undefined, title: string) {
+  return `browse-row:${categoryKey || title}`;
+}
+
+function readBrowseRailScrollPosition(key: string) {
+  return browseRailScrollSnapshot[key] || 0;
+}
+
+function writeBrowseRailScrollPosition(key: string, value: number) {
+  browseRailScrollSnapshot = {
+    ...browseRailScrollSnapshot,
+    [key]: value,
+  };
 }
 
 const DESKTOP_CATEGORY_PILLS = [
@@ -321,10 +337,17 @@ const HomeCardImage = memo(function HomeCardImage({
   }, [normalizedSrc]);
 
   const showPlaceholder = !normalizedSrc || !isLoaded || hasError;
+  const showLoadingShimmer = Boolean(normalizedSrc && !isLoaded && !hasError);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_center,rgba(34,41,54,0.98)_0%,rgba(20,24,34,0.98)_56%,rgba(11,12,16,1)_100%)]">
-      {showPlaceholder && (
+    <div
+      className={`relative h-full w-full overflow-hidden ${
+        showLoadingShimmer
+          ? 'poster-shimmer'
+          : 'bg-[radial-gradient(circle_at_center,rgba(34,41,54,0.98)_0%,rgba(20,24,34,0.98)_56%,rgba(11,12,16,1)_100%)]'
+      }`}
+    >
+      {showPlaceholder && !showLoadingShimmer && (
         <div className="absolute inset-0 flex items-center justify-center">
           <img
             src="/logow.png"
@@ -1424,6 +1447,40 @@ const MovieRow = memo(function MovieRow({
     [movies, rowRenderLimit]
   );
   const railRef = useRef<HTMLDivElement | null>(null);
+  const railScrollKey = useMemo(
+    () => getBrowseRailScrollKey(categoryKey, title),
+    [categoryKey, title]
+  );
+
+  useEffect(() => {
+    const rail = railRef.current;
+
+    if (!rail) {
+      return;
+    }
+
+    const savedScrollLeft = readBrowseRailScrollPosition(railScrollKey);
+
+    if (savedScrollLeft > 0) {
+      rail.scrollLeft = savedScrollLeft;
+    }
+
+    let frame = 0;
+    const handleScroll = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        writeBrowseRailScrollPosition(railScrollKey, rail.scrollLeft || 0);
+      });
+    };
+
+    rail.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      writeBrowseRailScrollPosition(railScrollKey, rail.scrollLeft || 0);
+      window.cancelAnimationFrame(frame);
+      rail.removeEventListener('scroll', handleScroll);
+    };
+  }, [railScrollKey, rowMovies.length]);
 
   const scrollRail = (direction: 'left' | 'right') => {
     const container = railRef.current;

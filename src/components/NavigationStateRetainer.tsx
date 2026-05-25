@@ -31,6 +31,24 @@ function writeScrollPosition(key: string, value: number) {
   }
 }
 
+function restoreScrollPosition(value: number) {
+  let frameCount = 0;
+  let frameHandle = 0;
+
+  const restore = () => {
+    window.scrollTo({ top: value, behavior: 'auto' });
+    frameCount += 1;
+
+    if (frameCount < 8 && Math.abs((window.scrollY || 0) - value) > 2) {
+      frameHandle = window.requestAnimationFrame(restore);
+    }
+  };
+
+  frameHandle = window.requestAnimationFrame(restore);
+
+  return () => window.cancelAnimationFrame(frameHandle);
+}
+
 export default function NavigationStateRetainer() {
   const pathname = usePathname();
   const routeKey = useMemo(
@@ -56,11 +74,7 @@ export default function NavigationStateRetainer() {
     const savedScrollY = readScrollMap()[routeKey];
 
     if (typeof savedScrollY === 'number' && savedScrollY > 0) {
-      const frame = window.requestAnimationFrame(() => {
-        window.scrollTo({ top: savedScrollY, behavior: 'auto' });
-      });
-
-      return () => window.cancelAnimationFrame(frame);
+      return restoreScrollPosition(savedScrollY);
     }
 
     return undefined;
@@ -73,11 +87,13 @@ export default function NavigationStateRetainer() {
 
     window.addEventListener('pagehide', saveCurrentRoute);
     window.addEventListener('beforeunload', saveCurrentRoute);
+    window.addEventListener('visibilitychange', saveCurrentRoute);
 
     return () => {
       saveCurrentRoute();
       window.removeEventListener('pagehide', saveCurrentRoute);
       window.removeEventListener('beforeunload', saveCurrentRoute);
+      window.removeEventListener('visibilitychange', saveCurrentRoute);
     };
   }, []);
 

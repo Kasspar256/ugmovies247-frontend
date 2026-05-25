@@ -12,13 +12,23 @@ import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
-import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { getArtworkImageProps } from '@/lib/artwork';
 import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
 
 const FILTER_ALL = '__all__';
 const PAGE_SIZE = 72;
 
 type FilterKind = 'vj' | 'genre';
+
+type SearchPageSnapshot = {
+  query: string;
+  selectedVj: string;
+  selectedGenre: string;
+  allMovies: Movie[];
+  visibleCount: number;
+};
+
+let searchPageSnapshot: SearchPageSnapshot | null = null;
 
 function cleanOption(value?: string | null) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -263,30 +273,35 @@ function FilterDropdown({
 }
 
 function SearchMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
+  const imageProps = getArtworkImageProps(movie.poster, 'card');
+
   return (
     <Link
       href={`/movie/${movie.id}`}
       className="group min-w-0"
     >
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
+        <div className="poster-shimmer absolute inset-0 flex h-full w-full items-center justify-center">
+          <img
+            src="/logow.png"
+            alt=""
+            aria-hidden="true"
+            className="h-14 w-14 scale-[1.8] object-contain opacity-70"
+          />
+        </div>
+
         {movie.poster ? (
           <img
-            src={getOptimizedArtworkUrl(movie.poster, 'card')}
+            src={imageProps.src}
+            srcSet={imageProps.srcSet}
+            sizes={imageProps.sizes}
             alt={movie.title}
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
           />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-[#111827]">
-            <img
-              src="/logow.png"
-              alt=""
-              aria-hidden="true"
-              className="h-14 w-14 scale-[1.8] object-contain opacity-70"
-            />
-          </div>
-        )}
+        ) : null}
 
         <div className="absolute left-0 top-0 z-10 max-w-[76%] rounded-br-lg bg-[#D90429] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.1em] text-white shadow-[2px_2px_10px_rgba(0,0,0,0.5)] md:text-[9px]">
           <span className="block truncate">{getVjLabel(movie)}</span>
@@ -324,7 +339,7 @@ function SearchSkeletonGrid() {
           key={index}
           className="min-w-0"
         >
-          <div className="aspect-[2/3] animate-pulse rounded-[14px] border border-white/8 bg-white/[0.08] md:rounded-[17px]" />
+          <div className="poster-shimmer aspect-[2/3] rounded-[14px] border border-white/8 md:rounded-[17px]" />
           <div className="mt-3 h-3 w-4/5 animate-pulse rounded-full bg-white/[0.08]" />
         </div>
       ))}
@@ -333,19 +348,30 @@ function SearchSkeletonGrid() {
 }
 
 export default function SearchPage() {
-  const [query, setQuery] = useState('');
-  const [selectedVj, setSelectedVj] = useState(FILTER_ALL);
-  const [selectedGenre, setSelectedGenre] = useState(FILTER_ALL);
+  const initialSnapshot = searchPageSnapshot;
+  const [query, setQuery] = useState(() => initialSnapshot?.query || '');
+  const [selectedVj, setSelectedVj] = useState(() => initialSnapshot?.selectedVj || FILTER_ALL);
+  const [selectedGenre, setSelectedGenre] = useState(() => initialSnapshot?.selectedGenre || FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<FilterKind | null>(null);
-  const [allMovies, setAllMovies] = useState<Movie[]>([]);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
+  const [allMovies, setAllMovies] = useState<Movie[]>(() => initialSnapshot?.allMovies || []);
+  const [visibleCount, setVisibleCount] = useState(() => initialSnapshot?.visibleCount || PAGE_SIZE);
+  const [loading, setLoading] = useState(() => !initialSnapshot?.allMovies?.length);
   const [loadError, setLoadError] = useState('');
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   usePublicMovieCatalogUpdates((catalog) => {
     setAllMovies(dedupeSeriesMovies(catalog));
   });
+
+  useEffect(() => {
+    searchPageSnapshot = {
+      query,
+      selectedVj,
+      selectedGenre,
+      allMovies,
+      visibleCount,
+    };
+  }, [allMovies, query, selectedGenre, selectedVj, visibleCount]);
 
   useEffect(() => {
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
@@ -785,4 +811,3 @@ export default function SearchPage() {
     </main>
   );
 }
-

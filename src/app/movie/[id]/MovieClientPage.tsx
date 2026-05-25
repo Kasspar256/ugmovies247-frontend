@@ -38,6 +38,7 @@ import {
 import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
+import { getArtworkImageProps } from '@/lib/artwork';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -1345,7 +1346,7 @@ if (loading && !movie) {
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-6 text-white md:px-10 md:pt-[112px]">
       <div className="mx-auto max-w-[1360px]">
-        <div className="aspect-video w-full rounded-[28px] border border-white/10 bg-[#05070B]" />
+        <div className="poster-shimmer aspect-video w-full rounded-[28px] border border-white/10" />
         <div className="mx-auto mt-8 max-w-2xl space-y-4 text-center">
           <div className="mx-auto h-9 w-64 rounded-full bg-white/8" />
           <div className="mx-auto h-4 w-44 rounded-full bg-white/6" />
@@ -1706,6 +1707,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
               episode.poster ||
               selectedSeason?.poster ||
               movie.poster;
+            const episodePreviewProps = getArtworkImageProps(episodePreview, 'backdrop');
 
             return (
               <button
@@ -1728,10 +1730,15 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 <div className="relative aspect-[1.85/1] w-full bg-[#11141C]">
                   {episodePreview ? (
                     <>
+                      <div className="poster-shimmer absolute inset-0" />
                       <img
-                        src={episodePreview}
+                        src={episodePreviewProps.src}
+                        srcSet={episodePreviewProps.srcSet}
+                        sizes={episodePreviewProps.sizes}
                         alt={episode.title}
                         className="absolute inset-0 h-full w-full object-cover object-center"
+                        loading="lazy"
+                        decoding="async"
                       />
                       <div className="absolute inset-0 bg-gradient-to-r from-black/18 via-black/12 to-black/38" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
@@ -1766,34 +1773,45 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         </div>
       ) : (
         <div className="flex gap-2 md:gap-3 overflow-x-auto pb-3 snap-x snap-mandatory [scrollbar-color:#D90429_#1F2833]">
-          {relatedMovies.map((relatedMovie) => (
-            <Link
-              key={relatedMovie.id}
-              href={`/movie/${relatedMovie.id}`}
-              className="group min-w-[104px] max-w-[104px] md:min-w-[220px] md:max-w-[220px] lg:min-w-[236px] lg:max-w-[236px] xl:min-w-[248px] xl:max-w-[248px] bg-[#1F2833]/20 border border-white/5 hover:border-[#D90429]/50 rounded-lg overflow-hidden transition-colors snap-start flex-shrink-0"
-            >
-              <div className="relative aspect-[3/4] bg-[#1F2833] overflow-hidden">
-                {isSeriesMovie(relatedMovie) && (
-                  <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
-                    EPS
-                  </div>
-                )}
-                <img
-                  src={relatedMovie.poster}
-                  alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UGMOVIES247`}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-              </div>
-              <div className="p-2.5 md:p-3.5">
-                <h3 className="text-[10px] md:text-[15px] text-white font-bold line-clamp-2 group-hover:text-[#D90429] transition-colors">
-                  {relatedMovie.title}
-                </h3>
-                <p className="text-[#888888] text-[9px] md:text-[11px] mt-1.5 uppercase tracking-wider">
-                  {formatVjLabel(relatedMovie.vj)}
-                </p>
-              </div>
-            </Link>
-          ))}
+          {relatedMovies.map((relatedMovie) => {
+            const relatedArtwork = getArtworkImageProps(relatedMovie.poster, 'card');
+
+            return (
+              <Link
+                key={relatedMovie.id}
+                href={`/movie/${relatedMovie.id}`}
+                className="group min-w-[104px] max-w-[104px] md:min-w-[220px] md:max-w-[220px] lg:min-w-[236px] lg:max-w-[236px] xl:min-w-[248px] xl:max-w-[248px] bg-[#1F2833]/20 border border-white/5 hover:border-[#D90429]/50 rounded-lg overflow-hidden transition-colors snap-start flex-shrink-0"
+              >
+                <div className="relative aspect-[3/4] overflow-hidden bg-[#1F2833]">
+                  <div className="poster-shimmer absolute inset-0" />
+                  {isSeriesMovie(relatedMovie) && (
+                    <div className="absolute top-2 right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
+                      EPS
+                    </div>
+                  )}
+                  {relatedArtwork.src ? (
+                    <img
+                      src={relatedArtwork.src}
+                      srcSet={relatedArtwork.srcSet}
+                      sizes={relatedArtwork.sizes}
+                      alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UGMOVIES247`}
+                      className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : null}
+                </div>
+                <div className="p-2.5 md:p-3.5">
+                  <h3 className="text-[10px] md:text-[15px] text-white font-bold line-clamp-2 group-hover:text-[#D90429] transition-colors">
+                    {relatedMovie.title}
+                  </h3>
+                  <p className="text-[#888888] text-[9px] md:text-[11px] mt-1.5 uppercase tracking-wider">
+                    {formatVjLabel(relatedMovie.vj)}
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

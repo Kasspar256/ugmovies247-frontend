@@ -74,6 +74,8 @@ function NavItem({
   return (
     <Link
       href={href}
+      scroll={false}
+      prefetch
       className={`flex w-16 flex-col items-center gap-1 transition-colors active:scale-95 ${itemColor}`}
     >
       <span className={iconColor}>{children}</span>

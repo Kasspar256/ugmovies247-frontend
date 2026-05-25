@@ -177,11 +177,13 @@ export default function DesktopHeader() {
           <div className="flex min-w-0 items-center gap-3 lg:gap-6">
             <Link
               href="/browse"
+              scroll={false}
+              prefetch
               className="flex h-12 items-center justify-center overflow-hidden rounded-full bg-[#111723] px-1 transition-transform duration-200 hover:scale-[1.02]"
             >
               <img
                 src="/logow.png"
-                alt="UG Movies 247"
+                alt="UGMOVIES247"
                 className="h-[132px] w-auto max-w-none translate-y-[8px] object-contain"
               />
             </Link>
@@ -194,6 +196,8 @@ export default function DesktopHeader() {
                   <Link
                     key={link.href}
                     href={link.href}
+                    scroll={false}
+                    prefetch
                     className={`rounded-full px-4 py-2 text-[12px] font-black uppercase tracking-[0.24em] transition-colors ${
                       active
                         ? 'bg-white text-[#0B0C10]'
@@ -217,6 +221,8 @@ export default function DesktopHeader() {
                   <Link
                     key={action.href}
                     href={action.href}
+                    scroll={false}
+                    prefetch
                     aria-label={action.label}
                     className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
                       active
@@ -231,6 +237,8 @@ export default function DesktopHeader() {
 
               <Link
                 href="/search"
+                scroll={false}
+                prefetch
                 aria-label="Search"
                 className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
                   isActivePath(pathname, '/search')
@@ -244,6 +252,8 @@ export default function DesktopHeader() {
 
             <Link
               href="/profile"
+              scroll={false}
+              prefetch
               className={`flex items-center gap-3 rounded-full border border-transparent px-3 py-1.5 transition-colors ${
                 isActivePath(pathname, '/profile')
                   ? 'border-[#D90429]/40 bg-[#D90429]/12 text-white'

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { getArtworkImageProps } from '@/lib/artwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
@@ -21,6 +21,14 @@ import {
 import type { Movie } from '@/types/movie';
 
 const PAGE_TITLE = 'Movies';
+
+type MoviesPageSnapshot = {
+  movies: Movie[];
+  selectedVj: string;
+  selectedGenre: string;
+};
+
+let moviesPageSnapshot: MoviesPageSnapshot | null = null;
 
 function AiModeStyles() {
   return (
@@ -109,7 +117,7 @@ function CatalogSkeletonGrid() {
           key={index}
           className="min-w-0"
         >
-          <div className="aspect-[2/3] animate-pulse rounded-[14px] border border-white/8 bg-white/[0.08] md:rounded-[17px]" />
+          <div className="poster-shimmer aspect-[2/3] rounded-[14px] border border-white/8 md:rounded-[17px]" />
           <div className="mt-3 h-3 w-4/5 animate-pulse rounded-full bg-white/[0.08]" />
         </div>
       ))}
@@ -118,10 +126,12 @@ function CatalogSkeletonGrid() {
 }
 
 function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
+  const imageProps = getArtworkImageProps(movie.poster, 'card');
+
   return (
     <Link href={`/movie/${movie.id}`} className="group min-w-0">
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
-        <div className="absolute inset-0 flex h-full w-full items-center justify-center bg-[#111827]">
+        <div className="poster-shimmer absolute inset-0 flex h-full w-full items-center justify-center">
           <img
             src="/logow.png"
             alt=""
@@ -132,10 +142,13 @@ function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean
 
         {movie.poster ? (
           <img
-            src={getOptimizedArtworkUrl(movie.poster, 'card')}
+            src={imageProps.src}
+            srcSet={imageProps.srcSet}
+            sizes={imageProps.sizes}
             alt={movie.title}
             className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}
+            fetchPriority={priority ? 'high' : 'auto'}
             decoding="async"
             onError={(event) => {
               event.currentTarget.style.opacity = '0';
@@ -165,16 +178,25 @@ function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean
 }
 
 export default function MoviesPage() {
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialSnapshot = moviesPageSnapshot;
+  const [movies, setMovies] = useState<Movie[]>(() => initialSnapshot?.movies || []);
+  const [loading, setLoading] = useState(() => !initialSnapshot?.movies?.length);
   const [loadError, setLoadError] = useState('');
-  const [selectedVj, setSelectedVj] = useState(CATALOG_FILTER_ALL);
-  const [selectedGenre, setSelectedGenre] = useState(CATALOG_FILTER_ALL);
+  const [selectedVj, setSelectedVj] = useState(() => initialSnapshot?.selectedVj || CATALOG_FILTER_ALL);
+  const [selectedGenre, setSelectedGenre] = useState(() => initialSnapshot?.selectedGenre || CATALOG_FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<CatalogFilterKind | null>(null);
 
   usePublicMovieCatalogUpdates((catalog) => {
     setMovies(getStandaloneMovies(catalog));
   });
+
+  useEffect(() => {
+    moviesPageSnapshot = {
+      movies,
+      selectedVj,
+      selectedGenre,
+    };
+  }, [movies, selectedGenre, selectedVj]);
 
   useEffect(() => {
     const cachedMovies = getStandaloneMovies(readCachedPublicMovies());

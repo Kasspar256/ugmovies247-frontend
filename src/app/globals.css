@@ -3,6 +3,37 @@
 @tailwind utilities;
 
 @layer utilities {
+  .poster-shimmer {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 42%, rgba(60, 72, 92, 0.68), transparent 38%),
+      linear-gradient(180deg, rgba(24, 30, 42, 0.98) 0%, rgba(10, 12, 18, 1) 100%);
+  }
+
+  .poster-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-120%);
+    background: linear-gradient(
+      110deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.04) 34%,
+      rgba(255, 255, 255, 0.16) 48%,
+      rgba(255, 255, 255, 0.05) 62%,
+      transparent 100%
+    );
+    animation: poster-shimmer-sweep 1.55s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes poster-shimmer-sweep {
+    100% {
+      transform: translateX(120%);
+    }
+  }
+
   .style-hide-scrollbar::-webkit-scrollbar {
     display: none;
   }

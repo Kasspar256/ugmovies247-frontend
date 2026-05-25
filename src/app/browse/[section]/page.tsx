@@ -11,11 +11,26 @@ import {
   getHomeCollectionByKey,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
+import { getArtworkImageProps } from '@/lib/artwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import type { Movie } from '@/types/movie';
 
 function getMovieVjLabel(movie: Movie) {
   return movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD';
+}
+
+function getPosterCardImage(movie: Movie) {
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    movie.poster ||
+    firstSeason?.poster ||
+    firstEpisode?.poster ||
+    firstEpisode?.thumbnail ||
+    movie.overriddenBackdrop ||
+    ''
+  );
 }
 
 export default function BrowseSectionPage() {
@@ -118,36 +133,55 @@ export default function BrowseSectionPage() {
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {collection.movies.map((movie) => (
-                <Link
-                  href={`/movie/${movie.id}`}
-                  key={movie.id}
-                  className="group overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] transition-colors hover:border-[#D90429]/35"
-                >
-                  <div className="relative aspect-[2/3] overflow-hidden bg-[#1F2833]">
-                    <img
-                      src={movie.poster || 'https://via.placeholder.com/300x450/1F2833/888888?text=NO+POSTER'}
-                      alt={movie.title}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      loading="lazy"
-                    />
-                    {isSeriesMovie(movie) && (
-                      <span className="absolute right-2 top-2 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white">
-                        Series
-                      </span>
-                    )}
-                  </div>
+              {collection.movies.map((movie) => {
+                const poster = getPosterCardImage(movie);
+                const imageProps = getArtworkImageProps(poster, 'card');
 
-                  <div className="p-3">
-                    <div className="text-sm font-semibold leading-6 text-white line-clamp-2">
-                      {movie.title}
+                return (
+                  <Link
+                    href={`/movie/${movie.id}`}
+                    key={movie.id}
+                    className="group overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] transition-colors hover:border-[#D90429]/35"
+                  >
+                    <div className="relative aspect-[2/3] overflow-hidden bg-[#1F2833]">
+                      <div className="poster-shimmer absolute inset-0" />
+                      {poster ? (
+                        <img
+                          src={imageProps.src}
+                          srcSet={imageProps.srcSet}
+                          sizes={imageProps.sizes}
+                          alt={movie.title}
+                          className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          loading="lazy"
+                          fetchPriority="auto"
+                          decoding="async"
+                        />
+                      ) : (
+                        <img
+                          src="/logow.png"
+                          alt=""
+                          aria-hidden="true"
+                          className="absolute inset-0 m-auto h-14 w-14 scale-[1.8] object-contain opacity-70"
+                        />
+                      )}
+                      {isSeriesMovie(movie) && (
+                        <span className="absolute right-2 top-2 z-10 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white">
+                          Series
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
-                      {getMovieVjLabel(movie)}
+
+                    <div className="p-3">
+                      <div className="text-sm font-semibold leading-6 text-white line-clamp-2">
+                        {movie.title}
+                      </div>
+                      <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
+                        {getMovieVjLabel(movie)}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </>
         )}
