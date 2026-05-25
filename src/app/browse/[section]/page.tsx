@@ -11,7 +11,7 @@ import {
   getHomeCollectionByKey,
   type HomePageCategoryRecord,
 } from '@/lib/homeRows';
-import { getArtworkImageProps } from '@/lib/artwork';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import type { Movie } from '@/types/movie';
 
@@ -135,7 +135,7 @@ export default function BrowseSectionPage() {
             <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {collection.movies.map((movie) => {
                 const poster = getPosterCardImage(movie);
-                const imageProps = getArtworkImageProps(poster, 'card');
+                const posterUrl = getOptimizedArtworkUrl(poster, 'card');
 
                 return (
                   <Link
@@ -145,11 +145,9 @@ export default function BrowseSectionPage() {
                   >
                     <div className="relative aspect-[2/3] overflow-hidden bg-[#1F2833]">
                       <div className="poster-shimmer absolute inset-0" />
-                      {poster ? (
+                      {posterUrl ? (
                         <img
-                          src={imageProps.src}
-                          srcSet={imageProps.srcSet}
-                          sizes={imageProps.sizes}
+                          src={posterUrl}
                           alt={movie.title}
                           className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                           loading="lazy"

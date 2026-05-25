@@ -1,5 +1,4 @@
-const CACHE_VERSION = 'ugmovies247-shell-v4';
-const IMAGE_CACHE_VERSION = `${CACHE_VERSION}-images`;
+const CACHE_VERSION = 'ugmovies247-shell-v5';
 const OFFLINE_URL = '/offline.html';
 const NAVIGATION_PRECACHE_URLS = [OFFLINE_URL, '/downloads', '/siteicon.png', '/favicon.png'];
 
@@ -58,7 +57,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_VERSION && key !== IMAGE_CACHE_VERSION)
+            .filter((key) => key !== CACHE_VERSION)
             .map((key) => caches.delete(key))
         )
       )
@@ -79,46 +78,10 @@ async function cacheSuccessfulNavigation(request, response) {
   }
 }
 
-function isImageRequest(request) {
-  if (request.destination === 'image') {
-    return true;
-  }
-
-  const accept = request.headers.get('accept') || '';
-  return accept.includes('image/');
-}
-
-async function cacheFirstImage(request) {
-  const cache = await caches.open(IMAGE_CACHE_VERSION);
-  const cachedResponse = await cache.match(request, { ignoreVary: true });
-
-  if (cachedResponse) {
-    return cachedResponse;
-  }
-
-  const response = await fetch(request);
-
-  if (response && (response.ok || response.type === 'opaque')) {
-    await cache.put(request, response.clone()).catch(() => undefined);
-  }
-
-  return response;
-}
-
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
   if (request.method !== 'GET') {
-    return;
-  }
-
-  if (isImageRequest(request)) {
-    event.respondWith(
-      cacheFirstImage(request).catch(async () => {
-        const cache = await caches.open(IMAGE_CACHE_VERSION);
-        return (await cache.match(request, { ignoreVary: true })) || Response.error();
-      })
-    );
     return;
   }
 

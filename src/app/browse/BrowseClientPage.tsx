@@ -41,7 +41,6 @@ import { APP_ENV_LABEL, FIREBASE_PROJECT_LABEL, IS_PRODUCTION_APP } from '@/lib/
 import { countUnreadLatestUploads } from '@/lib/latestUploadNotifications';
 import { startCasting } from '@/lib/cast';
 import {
-  getArtworkImageProps,
   getOptimizedArtworkUrl,
   hasLoadedArtworkUrl,
   markArtworkUrlLoaded,
@@ -280,7 +279,6 @@ const HomeCardImage = memo(function HomeCardImage({
   variant?: ArtworkVariant;
 }) {
   const normalizedSrc = getOptimizedArtworkUrl(src, variant);
-  const imageProps = getArtworkImageProps(src, variant);
   const [isLoaded, setIsLoaded] = useState(() => hasLoadedArtworkUrl(normalizedSrc));
   const [hasError, setHasError] = useState(false);
 
@@ -360,9 +358,7 @@ const HomeCardImage = memo(function HomeCardImage({
 
       {normalizedSrc ? (
         <img
-          src={imageProps.src}
-          srcSet={imageProps.srcSet}
-          sizes={imageProps.sizes}
+          src={normalizedSrc}
           alt={alt}
           className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
           loading={priority ? 'eager' : 'lazy'}
@@ -767,9 +763,18 @@ export default function BrowseClientPage({
     () => countUnreadLatestUploads(displayMovies),
     [displayMovies]
   );
-  const heroPosterImageProps = useMemo(
-    () => getArtworkImageProps(heroMovie?.poster, 'hero'),
-    [heroMovie?.poster]
+  const heroPosterUrl = useMemo(
+    () =>
+      getOptimizedArtworkUrl(
+        heroMovie
+          ? heroMovie.overriddenBackdrop ||
+              heroMovie.playerBackdrop ||
+              heroMovie.overriddenPlayerBackdrop ||
+              getPosterCardImage(heroMovie)
+          : '',
+        'hero'
+      ),
+    [heroMovie]
   );
   const priorityArtworkMovies = useMemo(
     () =>
@@ -974,16 +979,18 @@ export default function BrowseClientPage({
         <>
         <section className="relative w-full h-[62vh] sm:h-[68vh] flex flex-col justify-end pb-10 px-4 pt-20 transition-all duration-1000 ease-in-out md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
-            <img
-              src={heroPosterImageProps.src}
-              srcSet={heroPosterImageProps.srcSet}
-              sizes={heroPosterImageProps.sizes}
-              alt="Hero Backdrop"
-              className="w-full h-full object-cover object-top transition-opacity duration-1000"
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-            />
+            {heroPosterUrl ? (
+              <img
+                src={heroPosterUrl}
+                alt="Hero Backdrop"
+                className="w-full h-full object-cover object-top transition-opacity duration-1000"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+              />
+            ) : (
+              <div className="poster-shimmer h-full w-full" />
+            )}
             <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/70 to-transparent h-[60%] bottom-0 mt-auto"></div>
             <div className="absolute inset-0 bg-black/20"></div>
           </div>
@@ -1053,16 +1060,18 @@ export default function BrowseClientPage({
         </section>
         <section className="relative hidden overflow-hidden md:block md:pt-[88px]">
           <div className="relative min-h-[1040px] overflow-hidden bg-[#05070C]">
-            <img
-              src={heroPosterImageProps.src}
-              srcSet={heroPosterImageProps.srcSet}
-              sizes={heroPosterImageProps.sizes}
-              alt="Hero Backdrop"
-              className="absolute inset-0 h-full w-full object-cover object-[center_10%] transition-opacity duration-1000 [filter:brightness(1.12)_contrast(1.06)_saturate(1.08)]"
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-            />
+            {heroPosterUrl ? (
+              <img
+                src={heroPosterUrl}
+                alt="Hero Backdrop"
+                className="absolute inset-0 h-full w-full object-cover object-[center_10%] transition-opacity duration-1000 [filter:brightness(1.12)_contrast(1.06)_saturate(1.08)]"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+              />
+            ) : (
+              <div className="poster-shimmer absolute inset-0" />
+            )}
             <div
               className="absolute inset-0"
               style={{

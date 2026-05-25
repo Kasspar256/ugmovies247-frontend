@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import { getArtworkImageProps } from '@/lib/artwork';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
@@ -133,7 +133,7 @@ function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) 
     firstEpisode?.thumbnail ||
     series.overriddenBackdrop ||
     '';
-  const imageProps = getArtworkImageProps(poster, 'card');
+  const posterUrl = getOptimizedArtworkUrl(poster, 'card');
 
   return (
     <Link href={`/movie/${series.id}`} className="group min-w-0">
@@ -147,11 +147,9 @@ function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) 
           />
         </div>
 
-        {poster ? (
+        {posterUrl ? (
           <img
-            src={imageProps.src}
-            srcSet={imageProps.srcSet}
-            sizes={imageProps.sizes}
+            src={posterUrl}
             alt={series.title}
             className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
             loading={priority ? 'eager' : 'lazy'}

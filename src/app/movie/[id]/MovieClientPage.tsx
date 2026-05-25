@@ -38,7 +38,7 @@ import {
 import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
-import { getArtworkImageProps } from '@/lib/artwork';
+import { getOptimizedArtworkUrl } from '@/lib/artwork';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -1707,7 +1707,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
               episode.poster ||
               selectedSeason?.poster ||
               movie.poster;
-            const episodePreviewProps = getArtworkImageProps(episodePreview, 'backdrop');
+            const episodePreviewUrl = getOptimizedArtworkUrl(episodePreview, 'backdrop');
 
             return (
               <button
@@ -1728,13 +1728,11 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                 type="button"
               >
                 <div className="relative aspect-[1.85/1] w-full bg-[#11141C]">
-                  {episodePreview ? (
+                  {episodePreviewUrl ? (
                     <>
                       <div className="poster-shimmer absolute inset-0" />
                       <img
-                        src={episodePreviewProps.src}
-                        srcSet={episodePreviewProps.srcSet}
-                        sizes={episodePreviewProps.sizes}
+                        src={episodePreviewUrl}
                         alt={episode.title}
                         className="absolute inset-0 h-full w-full object-cover object-center"
                         loading="lazy"
@@ -1774,7 +1772,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
       ) : (
         <div className="flex gap-2 md:gap-3 overflow-x-auto pb-3 snap-x snap-mandatory [scrollbar-color:#D90429_#1F2833]">
           {relatedMovies.map((relatedMovie) => {
-            const relatedArtwork = getArtworkImageProps(relatedMovie.poster, 'card');
+            const relatedArtworkUrl = getOptimizedArtworkUrl(relatedMovie.poster, 'card');
 
             return (
               <Link
@@ -1789,11 +1787,9 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
                       EPS
                     </div>
                   )}
-                  {relatedArtwork.src ? (
+                  {relatedArtworkUrl ? (
                     <img
-                      src={relatedArtwork.src}
-                      srcSet={relatedArtwork.srcSet}
-                      sizes={relatedArtwork.sizes}
+                      src={relatedArtworkUrl}
                       alt={`${isAppInReview ? 'Discover' : 'Watch'} ${relatedMovie.title} on UGMOVIES247`}
                       className="relative z-[1] h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
