@@ -862,11 +862,11 @@ export default function BrowseClientPage({
                   priority
                   variant="hero"
                 />
-                <div className="absolute inset-x-0 top-0 h-[58%] overflow-hidden">
+                <div className="absolute left-[-12vw] top-[6rem] h-[40vh] w-[124vw] overflow-hidden">
                   <CatalogArtworkImage
                     src={heroBackdropCandidates}
                     alt="Hero Backdrop"
-                    imageClassName="h-full w-full object-contain object-top transition-opacity duration-1000"
+                    imageClassName="h-full w-full object-cover object-center transition-opacity duration-1000"
                     priority
                     variant="hero"
                   />
@@ -875,7 +875,7 @@ export default function BrowseClientPage({
             ) : (
               <div className="poster-shimmer h-full w-full" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/72 to-[#0B0C10]/10"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/54 to-[#0B0C10]/5"></div>
             <div className="absolute inset-0 bg-gradient-to-b from-black/24 via-transparent to-transparent"></div>
           </div>
 
