@@ -82,7 +82,7 @@ export function validateMovieCatalogCache(
   }
 ): MovieCatalogValidationResult {
   const movies = Array.isArray(cache.movies) ? cache.movies : [];
-  const stats = movies.reduce(
+  const stats = movies.reduce<MovieCatalogValidationResult['stats']>(
     (accumulator, movie) => {
       if (!hasCatalogIdentity(movie)) {
         return accumulator;
