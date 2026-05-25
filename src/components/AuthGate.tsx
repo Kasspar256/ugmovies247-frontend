@@ -10,6 +10,7 @@ import {
 } from '@/lib/auth/status-client';
 import { logoutCurrentUser, restoreServerSessionFromClientAuth } from '@/lib/auth/client';
 import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
+import { notifyLocalPremiumAccessUpdated, readLocalPremiumAccessSnapshot } from '@/lib/clientAccessState';
 import { isLegalRoute } from '@/lib/legalRoutes';
 
 const AUTH_SESSION_HEARTBEAT_MS = 1000 * 20;
@@ -58,6 +59,23 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       redirectingRef.current = false;
     }
   }, [shouldSkip]);
+
+  useEffect(() => {
+    notifyLocalPremiumAccessUpdated();
+
+    const syncLocalAccess = () => {
+      readLocalPremiumAccessSnapshot();
+      notifyLocalPremiumAccessUpdated();
+    };
+
+    window.addEventListener('storage', syncLocalAccess);
+    window.addEventListener('focus', syncLocalAccess);
+
+    return () => {
+      window.removeEventListener('storage', syncLocalAccess);
+      window.removeEventListener('focus', syncLocalAccess);
+    };
+  }, []);
 
   useEffect(() => {
     if (shouldSkip) {
@@ -109,6 +127,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         });
 
         if (response.ok) {
+          notifyLocalPremiumAccessUpdated();
           return;
         }
 
@@ -124,10 +143,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
 
         if (restoredSession) {
+          notifyLocalPremiumAccessUpdated();
           return;
         }
 
         const status = await fetchAuthStatus({ force: true });
+
+        if (status.authenticated) {
+          notifyLocalPremiumAccessUpdated();
+          return;
+        }
 
         if (status.reason === 'session_replaced' || status.reason === 'session_revoked') {
           await redirectToLogin(status.reason);
@@ -142,10 +167,25 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       if (cachedStatus) {
         if (!cachedStatus.authenticated) {
+          if (
+            cachedStatus.reason === 'session_replaced' ||
+            cachedStatus.reason === 'session_revoked'
+          ) {
+            await redirectToLogin(cachedStatus.reason);
+            return;
+          }
+
+          if (readLocalPremiumAccessSnapshot().hasPremiumAccess) {
+            notifyLocalPremiumAccessUpdated();
+            void sendHeartbeat();
+            return;
+          }
+
           await redirectToLogin(cachedStatus.reason);
           return;
         }
 
+        notifyLocalPremiumAccessUpdated();
         void sendHeartbeat();
         return;
       }
@@ -156,6 +196,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
 
         if (restoredSession) {
+          notifyLocalPremiumAccessUpdated();
           return {
             authenticated: true,
             code: 'offline_restored_session',
@@ -174,6 +215,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       }
 
       if (status.authenticated) {
+        notifyLocalPremiumAccessUpdated();
         return;
       }
 
@@ -182,9 +224,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (readLocalPremiumAccessSnapshot().hasPremiumAccess) {
+        notifyLocalPremiumAccessUpdated();
+        return;
+      }
+
       const restoredSession = await restoreServerSessionFromClientAuth().catch(() => null);
 
       if (restoredSession) {
+        notifyLocalPremiumAccessUpdated();
         return;
       }
 

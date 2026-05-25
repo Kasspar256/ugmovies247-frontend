@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
@@ -21,6 +21,11 @@ import {
   primePublicMovieCatalog,
   readCachedPublicMovies,
 } from '@/lib/publicMovies';
+import {
+  applyLocalPremiumAccessToCatalog,
+  LOCAL_PREMIUM_ACCESS_UPDATED_EVENT,
+  readLocalPremiumAccessSnapshot,
+} from '@/lib/clientAccessState';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   fetchPlaybackProgressRecords,
@@ -94,6 +99,27 @@ type BrowseClientPageProps = {
   initialCatalogCachedAt?: string;
   initialCatalogIsPartial?: boolean;
 };
+
+type BrowseMemorySnapshot = {
+  movies: Movie[];
+  homePageCategories: HomePageCategoryRecord[];
+  continueWatchingRecords: CachedPlaybackProgressRecord[];
+  sessionUser: SessionUser | null;
+  activeCategory: string;
+  hasResolvedCatalog: boolean;
+  isUsingPartialBootstrap: boolean;
+  cachedAt: string;
+};
+
+let browseMemorySnapshot: BrowseMemorySnapshot | null = null;
+
+function readBrowseMemorySnapshot() {
+  return browseMemorySnapshot;
+}
+
+function writeBrowseMemorySnapshot(snapshot: BrowseMemorySnapshot) {
+  browseMemorySnapshot = snapshot;
+}
 
 const DESKTOP_CATEGORY_PILLS = [
   {
@@ -174,6 +200,23 @@ function getSeriesBackdropCardImage(movie: Movie) {
     firstSeason?.poster ||
     firstEpisode?.thumbnail ||
     firstEpisode?.poster ||
+    ''
+  );
+}
+
+function getPosterCardImage(movie: Movie) {
+  const firstPart = movie.parts?.[0];
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    movie.poster ||
+    firstPart?.poster ||
+    firstEpisode?.poster ||
+    firstEpisode?.thumbnail ||
+    firstSeason?.poster ||
+    movie.overriddenBackdrop ||
+    movie.playerBackdrop ||
     ''
   );
 }
@@ -324,29 +367,86 @@ export default function BrowseClientPage({
   initialCatalogIsPartial = false,
 }: BrowseClientPageProps) {
   const normalizedInitialMovies = useMemo(() => dedupeSeriesMovies(initialMovies), [initialMovies]);
-  const [movies, setMovies] = useState<Movie[]>(() => normalizedInitialMovies);
+  const memorySnapshot = useMemo(() => readBrowseMemorySnapshot(), []);
+  const seedMovies = memorySnapshot?.movies?.length ? memorySnapshot.movies : normalizedInitialMovies;
+  const seedCategories = memorySnapshot?.homePageCategories?.length
+    ? memorySnapshot.homePageCategories
+    : initialHomePageCategories.length
+      ? initialHomePageCategories
+      : DEFAULT_HOME_PAGE_CATEGORIES;
+  const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(false);
+  const [movies, setMovies] = useState<Movie[]>(() => seedMovies);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
-    initialHomePageCategories.length ? initialHomePageCategories : DEFAULT_HOME_PAGE_CATEGORIES
+    seedCategories
   );
-  const [, setLoading] = useState(() => normalizedInitialMovies.length === 0);
+  const [, setLoading] = useState(() => seedMovies.length === 0);
   const [hasResolvedCatalog, setHasResolvedCatalog] = useState(
-    () => normalizedInitialMovies.length > 0
+    () => memorySnapshot?.hasResolvedCatalog ?? seedMovies.length > 0
   );
   const [isUsingPartialBootstrap, setIsUsingPartialBootstrap] = useState(
-    () => initialCatalogIsPartial && normalizedInitialMovies.length > 0
+    () =>
+      memorySnapshot?.isUsingPartialBootstrap ??
+      (initialCatalogIsPartial && normalizedInitialMovies.length > 0)
   );
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string>(
+    () => memorySnapshot?.activeCategory || 'ALL'
+  );
   const [showHeroDetails, setShowHeroDetails] = useState(false);
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(
+    () => memorySnapshot?.sessionUser || null
+  );
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [activeTrailer, setActiveTrailer] = useState<{ url: string; title: string } | null>(null);
   const [continueWatchingRecords, setContinueWatchingRecords] = useState<CachedPlaybackProgressRecord[]>(
-    () => readCachedContinueWatching()
+    () => memorySnapshot?.continueWatchingRecords || readCachedContinueWatching()
   );
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
+  const displayMovies = useMemo(
+    () => applyLocalPremiumAccessToCatalog(movies, hasLocalPremiumAccess),
+    [hasLocalPremiumAccess, movies]
+  );
+
+  useLayoutEffect(() => {
+    const syncLocalPremiumAccess = () => {
+      setHasLocalPremiumAccess(readLocalPremiumAccessSnapshot().hasPremiumAccess);
+    };
+
+    syncLocalPremiumAccess();
+    window.addEventListener(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT, syncLocalPremiumAccess);
+    window.addEventListener('storage', syncLocalPremiumAccess);
+    window.addEventListener('focus', syncLocalPremiumAccess);
+
+    return () => {
+      window.removeEventListener(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT, syncLocalPremiumAccess);
+      window.removeEventListener('storage', syncLocalPremiumAccess);
+      window.removeEventListener('focus', syncLocalPremiumAccess);
+    };
+  }, []);
+
+  useEffect(() => {
+    writeBrowseMemorySnapshot({
+      movies,
+      homePageCategories,
+      continueWatchingRecords,
+      sessionUser,
+      activeCategory,
+      hasResolvedCatalog,
+      isUsingPartialBootstrap,
+      cachedAt: initialCatalogCachedAt,
+    });
+  }, [
+    activeCategory,
+    continueWatchingRecords,
+    hasResolvedCatalog,
+    homePageCategories,
+    initialCatalogCachedAt,
+    isUsingPartialBootstrap,
+    movies,
+    sessionUser,
+  ]);
 
   usePublicMovieCatalogUpdates((catalog) => {
     const nextMovies = dedupeSeriesMovies(catalog);
@@ -363,6 +463,10 @@ export default function BrowseClientPage({
   useEffect(() => {
     let mounted = true;
     const requestId = ++homeLoadRequestRef.current;
+    const memoryMovies = memorySnapshot?.movies || [];
+    const hasMemoryMovies = memoryMovies.length > 0;
+    const hasSeedMovies = seedMovies.length > 0;
+    const localPremiumAccess = readLocalPremiumAccessSnapshot().hasPremiumAccess;
     const initialMoviesVisible = normalizedInitialMovies.length > 0;
     const cachedMovies = dedupeSeriesMovies(readCachedPublicMovies());
     const cachedCategories = readCachedHomePageCategories();
@@ -371,8 +475,18 @@ export default function BrowseClientPage({
     const hasAuthoritativeCachedMovies = hasAuthoritativePublicMovieCatalog();
     const hasPartialCachedMovies = hasPartialPublicMovieCatalog();
     const hasCachedCategories = cachedCategories.length > 0;
+    const hasAuthoritativeMemoryMovies =
+      hasMemoryMovies && memorySnapshot?.isUsingPartialBootstrap !== true;
+    const shouldForceMovieFetch =
+      !hasAuthoritativeCachedMovies && !hasAuthoritativeMemoryMovies && !hasCachedMovies;
 
-    if (initialMoviesVisible) {
+    if (hasMemoryMovies) {
+      primePublicMovieCatalog(memoryMovies, {
+        cachedAt: memorySnapshot?.cachedAt || initialCatalogCachedAt,
+        partial: memorySnapshot?.isUsingPartialBootstrap === true,
+      });
+      setLoading(false);
+    } else if (initialMoviesVisible) {
       primePublicMovieCatalog(normalizedInitialMovies, {
         cachedAt: initialCatalogCachedAt,
         partial: initialCatalogIsPartial,
@@ -380,7 +494,7 @@ export default function BrowseClientPage({
       setLoading(false);
     }
 
-    if (hasCachedMovies) {
+    if (hasCachedMovies && (!hasSeedMovies || cachedMovies.length >= seedMovies.length)) {
       setMovies(cachedMovies);
       setHasResolvedCatalog(true);
       setIsUsingPartialBootstrap(hasPartialCachedMovies && !hasAuthoritativeCachedMovies);
@@ -410,8 +524,8 @@ export default function BrowseClientPage({
             } satisfies ClientAuthStatus));
 
         const moviesPromise = fetchPublicMovies({
-          force: !hasAuthoritativeCachedMovies,
-          refreshEntitlement: !hasAuthoritativeCachedMovies,
+          force: shouldForceMovieFetch,
+          refreshEntitlement: shouldForceMovieFetch && !localPremiumAccess,
         }).then((movieData) => dedupeSeriesMovies(movieData));
 
         const categoriesPromise = fetchHomePageCategories({
@@ -453,7 +567,7 @@ export default function BrowseClientPage({
           setContinueWatchingRecords([]);
         }
 
-        if (movieData.length || !initialMoviesVisible) {
+        if (movieData.length || (!hasSeedMovies && !hasCachedMovies && !hasMemoryMovies)) {
           setMovies(movieData);
         }
         const catalogStillPartial =
@@ -478,7 +592,13 @@ export default function BrowseClientPage({
     return () => {
       mounted = false;
     };
-  }, [initialCatalogCachedAt, initialCatalogIsPartial, normalizedInitialMovies]);
+  }, [
+    initialCatalogCachedAt,
+    initialCatalogIsPartial,
+    memorySnapshot,
+    normalizedInitialMovies,
+    seedMovies,
+  ]);
 
   useEffect(() => {
     const updateAndroidMobileState = () => {
@@ -516,7 +636,7 @@ export default function BrowseClientPage({
     };
   }, [sessionUser]);
 
-  const latestForHero = useMemo(() => movies.slice(0, 5), [movies]);
+  const latestForHero = useMemo(() => displayMovies.slice(0, 5), [displayMovies]);
 
   useEffect(() => {
     if (latestForHero.length <= 1) return;
@@ -539,10 +659,10 @@ export default function BrowseClientPage({
   }, [headerActionMessage]);
 
   const { homeRows, unmatchedMovies } = useMemo(() => buildHomeCollections({
-    movies,
+    movies: displayMovies,
     homePageCategories,
     activeCategory,
-  }), [movies, homePageCategories, activeCategory]);
+  }), [activeCategory, displayMovies, homePageCategories]);
   const shouldSuppressEmptyRows = !hasResolvedCatalog || isUsingPartialBootstrap;
   const visibleHomeRows = useMemo(
     () =>
@@ -559,7 +679,7 @@ export default function BrowseClientPage({
 
     const moviesById = new Map<string, Movie>();
 
-    movies.forEach((movie) => {
+    displayMovies.forEach((movie) => {
       moviesById.set(movie.id, movie);
 
       if (movie.movieId) {
@@ -596,12 +716,12 @@ export default function BrowseClientPage({
           continueTotalDuration: record.totalDuration,
         } satisfies ContinueWatchingMovie;
       });
-  }, [continueWatchingRecords, movies]);
+  }, [continueWatchingRecords, displayMovies]);
 
   // Hero Movie
   const heroMovie = useMemo(
-    () => (latestForHero.length > 0 ? latestForHero[heroIndex] : movies[0] || null),
-    [heroIndex, latestForHero, movies]
+    () => (latestForHero.length > 0 ? latestForHero[heroIndex] : displayMovies[0] || null),
+    [displayMovies, heroIndex, latestForHero]
   );
   const heroPlaybackUrl =
     heroMovie?.video_url ||
@@ -620,7 +740,10 @@ export default function BrowseClientPage({
         ? `/subscribe?returnTo=${encodeURIComponent(`/movie/${heroMovie.id}`)}`
         : `/movie/${heroMovie.id}?autoplay=1`
     : '/browse';
-  const unreadLatestUploadCount = useMemo(() => countUnreadLatestUploads(movies), [movies]);
+  const unreadLatestUploadCount = useMemo(
+    () => countUnreadLatestUploads(displayMovies),
+    [displayMovies]
+  );
   const heroPosterImageProps = useMemo(
     () => getArtworkImageProps(heroMovie?.poster, 'hero'),
     [heroMovie?.poster]
@@ -630,9 +753,9 @@ export default function BrowseClientPage({
       buildPriorityArtworkMovies({
         heroMovie,
         homeRows,
-        fallbackMovies: movies,
+        fallbackMovies: displayMovies,
       }),
-    [heroMovie, homeRows, movies]
+    [displayMovies, heroMovie, homeRows]
   );
 
   useEffect(() => {
@@ -1202,7 +1325,7 @@ export default function BrowseClientPage({
 
       {/* Main Content Rows Container */}
       <div className="relative z-20 space-y-5 md:space-y-12 md:pt-2">
-        {!movies.length && !IS_PRODUCTION_APP && (
+        {!displayMovies.length && !IS_PRODUCTION_APP && (
           <section className="px-4 md:px-12">
             <div className="rounded-2xl border border-sky-500/25 bg-sky-500/10 p-5 md:p-6 text-sky-100 shadow-[0_12px_28px_rgba(0,0,0,0.25)]">
               <div className="text-[11px] font-black uppercase tracking-[0.28em] text-sky-200">
@@ -1344,7 +1467,7 @@ const MovieRow = memo(function MovieRow({
     >
         <div className="group/card relative aspect-[2/3] overflow-hidden rounded-xl bg-[#1F2833] md:rounded-[8px] md:shadow-[0_18px_40px_rgba(0,0,0,0.24)] md:transition-transform md:duration-300 md:hover:-translate-y-1">
           <HomeCardImage
-            src={m.poster}
+            src={getPosterCardImage(m)}
             alt={m.title}
             imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-110"
             priority={index < priorityImageCount}
