@@ -851,22 +851,22 @@ export default function BrowseClientPage({
       {/* Hero Section */}
       {heroMovie && (
         <>
-        <section className="relative w-full h-[62vh] sm:h-[68vh] flex flex-col justify-end pb-10 px-4 pt-20 transition-all duration-1000 ease-in-out md:hidden">
+        <section className="relative flex h-[58vh] min-h-[520px] w-full flex-col justify-end px-4 pb-7 pt-14 transition-all duration-1000 ease-in-out sm:h-[62vh] md:hidden">
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
             {heroBackdropCandidates.length ? (
               <>
                 <CatalogArtworkImage
                   src={heroBackdropCandidates}
                   alt="Hero Backdrop"
-                  imageClassName="h-full w-full scale-105 object-cover object-center opacity-55 blur-[10px] transition-opacity duration-1000"
+                  imageClassName="h-full w-full scale-105 object-cover object-center opacity-50 blur-[10px] transition-opacity duration-1000"
                   priority
                   variant="hero"
                 />
-                <div className="absolute left-[-12vw] top-[6rem] h-[40vh] w-[124vw] overflow-hidden">
+                <div className="absolute left-[-10vw] top-0 h-[48vh] w-[120vw] overflow-hidden">
                   <CatalogArtworkImage
                     src={heroBackdropCandidates}
                     alt="Hero Backdrop"
-                    imageClassName="h-full w-full object-cover object-center transition-opacity duration-1000"
+                    imageClassName="h-full w-full object-cover object-[center_26%] transition-opacity duration-1000"
                     priority
                     variant="hero"
                   />
@@ -875,58 +875,64 @@ export default function BrowseClientPage({
             ) : (
               <div className="poster-shimmer h-full w-full" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0B0C10] via-[#0B0C10]/54 to-[#0B0C10]/5"></div>
-            <div className="absolute inset-0 bg-gradient-to-b from-black/24 via-transparent to-transparent"></div>
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(180deg, rgba(11,12,16,0.03) 0%, rgba(11,12,16,0.08) 28%, rgba(11,12,16,0.5) 62%, rgba(11,12,16,0.9) 88%, #0B0C10 100%)',
+              }}
+            ></div>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-transparent"></div>
           </div>
 
           <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
-            <h1 className="text-4xl font-extrabold text-white mb-4 tracking-tight leading-tight w-full drop-shadow-2xl">
+            <h1 className="mb-3 w-full text-[clamp(2rem,8vw,2.55rem)] font-extrabold leading-[0.98] tracking-tight text-white drop-shadow-2xl">
               {heroMovie.title}
             </h1>
 
-            <div className="flex items-center justify-center gap-4 text-[11px] font-semibold text-gray-400 mb-8 tracking-widest w-full">
+            <div className="mb-5 flex w-full items-center justify-center gap-3 text-[10px] font-semibold tracking-[0.18em] text-gray-400">
               <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
               {heroRuntimeLabel && (
                 <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-gray-600"></span>
                   <span>{heroRuntimeLabel}</span>
                 </>
               )}
               {heroMovie.vj && heroMovie.vj !== 'Unknown' && (
                 <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
-                  <span className="text-[#D90429] uppercase font-bold tracking-[0.2em] relative">
+                  <span className="h-1.5 w-1.5 rounded-full bg-gray-600"></span>
+                  <span className="relative font-bold uppercase tracking-[0.18em] text-[#D90429]">
                     VJ {heroMovie.vj}
                   </span>
                 </>
               )}
             </div>
 
-            <div className="flex flex-row w-full gap-3 justify-center px-2">
+            <div className="flex w-full flex-row justify-center gap-2 px-2">
               {isAppInReview ? (
                 <button
                   type="button"
                   onClick={handleHeroTrailerClick}
-                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2.5 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
                 >
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                  <span className="text-[11px]">WATCH TRAILER</span>
+                  <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <span className="text-[10px]">WATCH TRAILER</span>
                 </button>
               ) : (
                 <Link
                   href={heroPlayHref}
-                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2.5 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
                 >
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                  <span className="text-[11px]">PLAY NOW</span>
+                  <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <span className="text-[10px]">PLAY NOW</span>
                 </Link>
               )}
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
-                className="bg-[#1F2833] hover:bg-gray-800 text-white font-bold flex-1 px-4 py-3 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/5"
+                className="flex flex-1 items-center justify-center gap-2 rounded-md border border-white/5 bg-[#1F2833] px-3 py-2.5 font-bold text-white transition-colors hover:bg-gray-800"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                <span className="text-[11px]">{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
+                <span className="text-[10px]">{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
               </button>
             </div>
 
@@ -1584,3 +1590,4 @@ const MovieRow = memo(function MovieRow({
     </section>
   );
 });
+
