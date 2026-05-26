@@ -29,6 +29,7 @@ export type AdminRequestStatus =
   | 'pending'
   | 'processing'
   | 'uploaded'
+  | 'failed'
   | 'rejected'
   | 'replied'
   | 'new'
@@ -119,6 +120,9 @@ export type RequestProcessingJob = {
   telegramMessageId?: number | string;
   errorMessage?: string;
   workerId?: string;
+  processorQueue?: string;
+  workerHeartbeatAt?: string;
+  queuedAt?: string;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;

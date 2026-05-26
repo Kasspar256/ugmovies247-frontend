@@ -17,7 +17,7 @@ import {
   UploadCloud,
   XCircle,
 } from 'lucide-react';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 import type {
   AdminCategory,
   AdminRequest,
@@ -189,18 +189,26 @@ export function AdminRequestsTab({
   useEffect(() => {
     const jobsQuery = query(
       collection(db, 'request_processing_jobs'),
-      orderBy('updatedAt', 'desc'),
-      limit(50)
+      where('processorQueue', '==', 'request-vps'),
+      limit(500)
     );
 
     return onSnapshot(
       jobsQuery,
       (snapshot) => {
         setWorkerJobs(
-          snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...(doc.data() as Omit<RequestProcessingJob, 'id'>),
-          }))
+          snapshot.docs
+            .map((doc) => ({
+              id: doc.id,
+              ...(doc.data() as Omit<RequestProcessingJob, 'id'>),
+            }))
+            .filter(
+              (job) =>
+                job.processorQueue === 'request-vps' &&
+                Boolean(job.requestId && job.movieId) &&
+                !String(job.id || '').startsWith('telegram-')
+            )
+            .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
         );
         setWorkerError('');
       },
@@ -983,7 +991,7 @@ export function AdminRequestsTab({
               )}
               {job.publicVideoUrl && (
                 <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-100">
-                  Telegram worker link ready: {job.publicVideoUrl}
+                  Request worker video ready: {job.publicVideoUrl}
                 </div>
               )}
             </article>

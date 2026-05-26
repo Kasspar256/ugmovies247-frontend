@@ -51,6 +51,7 @@ export type DraftSeason = {
   overview: string;
   poster: string;
   posterFile: File | null;
+  overriddenBackdrop: string;
   tmdbId?: number | null;
   episodes: DraftEpisode[];
 };
@@ -106,6 +107,7 @@ export const REQUEST_STATUS_OPTIONS: AdminRequestStatus[] = [
   'pending',
   'processing',
   'uploaded',
+  'failed',
   'replied',
   'rejected',
   'new',
@@ -196,6 +198,7 @@ export function createEmptySeason(index = 0): DraftSeason {
     overview: '',
     poster: '',
     posterFile: null,
+    overriddenBackdrop: '',
     tmdbId: null,
     episodes: [createEmptyEpisode(0)],
   };
@@ -312,6 +315,7 @@ export function seriesToDraft(movie: Movie): SeriesDraft {
         overview: season.overview || '',
         poster: season.poster || '',
         posterFile: null,
+        overriddenBackdrop: season.overriddenBackdrop || '',
         tmdbId: season.tmdb_id ?? null,
         episodes: (season.episodes || []).map((episode, episodeIndex) => ({
           id: createClientId(`episode-${season.seasonNumber}-${episode.episodeNumber}`),

@@ -143,7 +143,9 @@ function getRequester(request: AdminRequest) {
 
 function statusClassName(status: string) {
   if (status === 'uploaded') return 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100';
-  if (status === 'rejected' || status === 'closed') return 'border-red-300/25 bg-red-500/10 text-red-100';
+  if (status === 'failed' || status === 'rejected' || status === 'closed') {
+    return 'border-red-300/25 bg-red-500/10 text-red-100';
+  }
   if (status === 'processing') return 'border-sky-300/25 bg-sky-400/10 text-sky-100';
   return 'border-white/10 bg-white/5 text-white/70';
 }
@@ -855,6 +857,7 @@ type DisplayQueueStage =
   | 'inspecting'
   | 'processing'
   | 'uploading'
+  | 'stalled'
   | 'ready'
   | 'failed';
 
@@ -864,11 +867,20 @@ const QUEUE_STAGES: Array<{ id: DisplayQueueStage; label: string }> = [
   { id: 'inspecting', label: 'Inspecting' },
   { id: 'processing', label: 'Processing' },
   { id: 'uploading', label: 'Uploading' },
+  { id: 'stalled', label: 'Stalled' },
   { id: 'ready', label: 'Ready' },
   { id: 'failed', label: 'Failed' },
 ];
 
+function isStaleRequestJob(job: RequestProcessingJob) {
+  if (!isActiveJob(job)) return false;
+
+  const lastTouch = new Date(job.workerHeartbeatAt || job.updatedAt || '').getTime();
+  return Number.isFinite(lastTouch) && Date.now() - lastTouch > 1000 * 60 * 30;
+}
+
 function getDisplayJobStage(job: RequestProcessingJob): DisplayQueueStage {
+  if (isStaleRequestJob(job)) return 'stalled';
   if (job.status === 'uploaded' || job.status === 'ready') return 'ready';
   if (job.status === 'failed') return 'failed';
   if (job.status === 'inspecting') return 'inspecting';
@@ -970,7 +982,7 @@ function RequestProcessingQueuePanel({
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-[#D90429]" style={{ width: `${progress}%` }} />
         </div>
-        <div className="mt-3 grid grid-cols-7 gap-1">
+        <div className="mt-3 grid grid-cols-8 gap-1">
           {QUEUE_STAGES.map((entry, index) => {
             const isComplete = stage !== 'failed' && index < currentStageIndex;
             const isCurrent = entry.id === stage;
@@ -980,7 +992,7 @@ function RequestProcessingQueuePanel({
                 <div
                   className={`h-1.5 rounded-full ${
                     isCurrent
-                      ? entry.id === 'failed'
+                      ? entry.id === 'failed' || entry.id === 'stalled'
                         ? 'bg-red-400'
                         : 'bg-[#D90429]'
                       : isComplete
@@ -996,7 +1008,9 @@ function RequestProcessingQueuePanel({
           })}
         </div>
         <div className="mt-3 line-clamp-2 text-xs leading-5 text-white/55">
-          {job.currentStage || job.errorMessage || 'Waiting for worker update'}
+          {stage === 'stalled'
+            ? 'No request-worker heartbeat for over 30 minutes. Check the worker or retry from the source.'
+            : job.currentStage || job.errorMessage || 'Waiting for worker update'}
         </div>
       </div>
     );
@@ -1005,10 +1019,10 @@ function RequestProcessingQueuePanel({
   return (
     <Card
       title="Live Processing Queue"
-      description="Live request worker status across queued, downloading, inspecting, processing, uploading, ready, and failed stages."
+      description="Only request fulfillment video jobs are shown here. Telegram link-prep jobs are excluded, and any active job without a worker heartbeat for 30 minutes is highlighted as stalled."
     >
       <StatusMessage message={errorMessage} tone="error" />
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         {QUEUE_STAGES.map((stage) => {
           const count = groupedJobs.find((entry) => entry.id === stage.id)?.jobs.length || 0;
 
@@ -1035,7 +1049,7 @@ function RequestProcessingQueuePanel({
               </span>
             </div>
             {stage.jobs.length ? (
-              stage.jobs.slice(0, 8).map(renderJob)
+              stage.jobs.map(renderJob)
             ) : (
               <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-6 text-center text-sm text-white/45">
                 No {stage.label.toLowerCase()} request jobs right now.
@@ -1328,10 +1342,8 @@ export function AdminRequestsHubView() {
         <div className="grid gap-4 md:grid-cols-2">
           {filteredRequests.map((request) => {
             const type = getRequestType(request);
-            const href =
-              type === 'series'
-                ? `/admin/requests/${request.id}/series/details`
-                : `/admin/requests/${request.id}/movie`;
+            const movieHref = `/admin/requests/${request.id}/movie`;
+            const seriesHref = `/admin/requests/${request.id}/series/details`;
 
             return (
               <article
@@ -1364,13 +1376,22 @@ export function AdminRequestsHubView() {
                   <div>Preferred VJ: {request.preferredVj || 'Not specified'}</div>
                   <div>Stage: {request.currentStage || request.workerStatus || 'Waiting'}</div>
                 </div>
-                <Link
-                  href={href}
-                  className="mt-5 flex items-center justify-center gap-2 rounded-full bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-[#D90429]"
-                >
-                  <PlayCircle size={15} />
-                  Fulfill Request
-                </Link>
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  <Link
+                    href={type === 'movie' ? movieHref : seriesHref}
+                    className="flex items-center justify-center gap-2 rounded-full bg-[#D90429] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-[#f00531]"
+                  >
+                    <PlayCircle size={15} />
+                    Fulfill as {type}
+                  </Link>
+                  <Link
+                    href={type === 'movie' ? seriesHref : movieHref}
+                    className="flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white/82 transition hover:border-sky-300/35 hover:bg-sky-400/12"
+                  >
+                    {type === 'movie' ? <Tv size={15} /> : <Film size={15} />}
+                    Override to {type === 'movie' ? 'series' : 'movie'}
+                  </Link>
+                </div>
                 <RequestQuickActions request={request} onComplete={() => void refreshRequests()} />
               </article>
             );
@@ -1439,6 +1460,7 @@ export function AdminRequestMovieFulfillmentView({ requestId }: { requestId: str
       const playerBackdrop = await uploadLandscapeFile(playerBackdropFile);
       const nextDraft = {
         ...draft,
+        contentType: 'movie' as const,
         overridePoster: catalogPoster || draft.overridePoster,
       };
       const nextMovieId =

@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { adminDb } from '@/lib/firebaseAdmin';
-import { REQUEST_PROCESSING_JOBS_COLLECTION } from '@/lib/server/movieRequests';
+import {
+  REQUEST_PROCESSING_JOBS_COLLECTION,
+  REQUEST_PROCESSOR_QUEUE,
+  TELEGRAM_REQUEST_PROCESSOR_QUEUE,
+} from '@/lib/server/movieRequests';
 import type { RequestProcessingJob, RequestProcessingJobStatus } from '@/types/admin';
 
 export const runtime = 'nodejs';
@@ -81,11 +85,64 @@ function mapRequestJobDoc(doc: { id: string; data: () => Record<string, unknown>
         : '',
     errorMessage: String(data.errorMessage || ''),
     workerId: String(data.workerId || ''),
+    processorQueue: String(data.processorQueue || ''),
+    workerHeartbeatAt: timestampToIso(data.workerHeartbeatAt),
+    queuedAt: timestampToIso(data.queuedAt),
     createdAt: timestampToIso(data.createdAt),
     updatedAt: timestampToIso(data.updatedAt),
     startedAt: timestampToIso(data.startedAt),
     completedAt: timestampToIso(data.completedAt),
   };
+}
+
+function isRequestFulfillmentJob(job: RequestProcessingJob) {
+  if (job.processorQueue === TELEGRAM_REQUEST_PROCESSOR_QUEUE) {
+    return false;
+  }
+
+  if (job.id.startsWith('telegram-') || job.telegramChatId || job.telegramMessageId) {
+    return false;
+  }
+
+  return job.processorQueue === REQUEST_PROCESSOR_QUEUE && Boolean(job.requestId && job.movieId);
+}
+
+async function listRequestFulfillmentJobs(limit = 500) {
+  try {
+    const snapshot = await adminDb
+      .collection(REQUEST_PROCESSING_JOBS_COLLECTION)
+      .where('processorQueue', '==', REQUEST_PROCESSOR_QUEUE)
+      .orderBy('updatedAt', 'desc')
+      .limit(limit)
+      .get();
+
+    return snapshot.docs.map(mapRequestJobDoc).filter(isRequestFulfillmentJob);
+  } catch (error) {
+    console.warn('[admin-request-jobs] filtered request queue query failed, using safe fallback', error);
+
+    try {
+      const snapshot = await adminDb
+        .collection(REQUEST_PROCESSING_JOBS_COLLECTION)
+        .where('processorQueue', '==', REQUEST_PROCESSOR_QUEUE)
+        .limit(limit)
+        .get();
+
+      return snapshot.docs
+        .map(mapRequestJobDoc)
+        .filter(isRequestFulfillmentJob)
+        .sort((left, right) => (right.updatedAt || '').localeCompare(left.updatedAt || ''));
+    } catch (fallbackError) {
+      console.warn('[admin-request-jobs] processor queue fallback failed, using broad safe scan', fallbackError);
+
+      const snapshot = await adminDb
+        .collection(REQUEST_PROCESSING_JOBS_COLLECTION)
+        .orderBy('updatedAt', 'desc')
+        .limit(limit)
+        .get();
+
+      return snapshot.docs.map(mapRequestJobDoc).filter(isRequestFulfillmentJob);
+    }
+  }
 }
 
 export async function GET() {
@@ -96,16 +153,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // The request worker runs on a separate VPS and writes with server credentials.
-    // The browser reads this queue through this admin API so Firestore client rules
-    // do not need to expose internal processing documents.
-    const snapshot = await adminDb
-      .collection(REQUEST_PROCESSING_JOBS_COLLECTION)
-      .orderBy('updatedAt', 'desc')
-      .limit(50)
-      .get();
+    const jobs = await listRequestFulfillmentJobs(500);
 
-    return NextResponse.json({ jobs: snapshot.docs.map(mapRequestJobDoc) });
+    return NextResponse.json({ jobs, limit: 500 });
   } catch (error) {
     console.error('[admin-request-jobs] failed to list request jobs', error);
     return NextResponse.json(

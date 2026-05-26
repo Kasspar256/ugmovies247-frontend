@@ -96,6 +96,7 @@ export async function PATCH(request: Request) {
         sourceUrl: String(body.sourceUrl || ''),
         sourceFileName: String(body.sourceFileName || ''),
         sourceFileSizeBytes: body.sourceFileSizeBytes,
+        movieId: String(body.movieId || ''),
         adminNotes: String(body.adminNotes || ''),
         title: String(body.title || ''),
         originalTitle: String(body.originalTitle || ''),

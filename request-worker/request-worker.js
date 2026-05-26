@@ -580,6 +580,12 @@ async function updateProgress(db, job, patch) {
     workerHeartbeatAt: timestamp,
   };
   const requestPatch = {
+    status:
+      nextStatus === 'uploaded'
+        ? 'uploaded'
+        : nextStatus === 'failed'
+          ? 'failed'
+          : 'processing',
     workerStatus: nextStatus,
     currentStage,
     updatedAt: timestamp,
@@ -2278,18 +2284,27 @@ async function notifyMainAppCompletion(job) {
     return false;
   }
 
-  const response = await fetch(`${baseUrl}/api/internal/request-complete`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-request-worker-secret': secret,
-    },
-    body: JSON.stringify({
-      requestId: job.requestId,
-      movieId: job.movieId,
-      jobId: job.id,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  let response;
+
+  try {
+    response = await fetch(`${baseUrl}/api/internal/request-complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-request-worker-secret': secret,
+      },
+      body: JSON.stringify({
+        requestId: job.requestId,
+        movieId: job.movieId,
+        jobId: job.id,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
@@ -2435,6 +2450,7 @@ async function pollOnce(db, s3) {
       console.error(`[request-worker] job ${job.id} failed:`, message);
       await updateProgress(db, job, {
         status: 'failed',
+        progress: Number(job.progress || 0) || undefined,
         currentStage: 'Failed',
         errorMessage: message,
       });
@@ -2504,3 +2520,4 @@ main().catch((error) => {
   console.error('[request-worker] fatal startup error:', error.message || error);
   process.exit(1);
 });
+

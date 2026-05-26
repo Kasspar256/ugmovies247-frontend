@@ -11,6 +11,7 @@ import type { AdminRequest, AdminRequestStatus } from '@/types/admin';
 export const MOVIE_REQUESTS_COLLECTION = 'movie_requests';
 export const REQUEST_PROCESSING_JOBS_COLLECTION = 'request_processing_jobs';
 export const REQUEST_PROCESSOR_QUEUE = 'request-vps';
+export const TELEGRAM_REQUEST_PROCESSOR_QUEUE = 'request-telegram-worker';
 
 function nowIso() {
   return new Date().toISOString();
@@ -71,6 +72,7 @@ function normalizeRequestStatus(value: unknown): AdminRequestStatus {
   return value === 'pending' ||
     value === 'processing' ||
     value === 'uploaded' ||
+    value === 'failed' ||
     value === 'rejected' ||
     value === 'replied' ||
     value === 'new' ||
@@ -250,6 +252,7 @@ type AdvancedMovieRequestFulfillmentInput = {
   adminNotes?: string;
   sourceFileName?: string;
   sourceFileSizeBytes?: number | string | null;
+  movieId?: string;
   title?: string;
   originalTitle?: string;
   description?: string;
@@ -609,7 +612,7 @@ export async function queueAdvancedMovieRequestFulfillment(
   const timestamp = nowIso();
   const title = normalizeString(input.title) || request.title;
   const contentType = input.contentType === 'series' ? 'series' : 'movie';
-  const movieId = request.movieId || createMovieId(requestId, title);
+  const movieId = normalizeString(input.movieId) || request.movieId || createMovieId(requestId, title);
   const processingJobId = `${requestId}-${randomUUID().slice(0, 12)}`;
   const sourceFileName = normalizeString(input.sourceFileName);
   const sourceFileSizeBytes = normalizeNumber(input.sourceFileSizeBytes);
