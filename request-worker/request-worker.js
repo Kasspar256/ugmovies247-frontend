@@ -2430,13 +2430,30 @@ async function processJob(db, s3, job) {
 
 async function pollOnce(db, s3) {
   const collections = getCollections();
-  const snapshot = await db
-    .collection(collections.jobs)
-    .where('status', '==', 'queued')
-    .limit(3)
-    .get();
+  let docs = [];
 
-  for (const doc of snapshot.docs) {
+  try {
+    const snapshot = await db
+      .collection(collections.jobs)
+      .where('processorQueue', '==', 'request-vps')
+      .where('status', '==', 'queued')
+      .limit(1)
+      .get();
+    docs = snapshot.docs;
+  } catch (error) {
+    console.warn('[request-worker] filtered request-vps poll failed; falling back to safe queued scan:', error.message || error);
+    const snapshot = await db
+      .collection(collections.jobs)
+      .where('status', '==', 'queued')
+      .limit(25)
+      .get();
+    docs = snapshot.docs.filter((doc) => {
+      const data = doc.data() || {};
+      return data.processorQueue === 'request-vps';
+    }).slice(0, 1);
+  }
+
+  for (const doc of docs) {
     const job = await claimJob(db, doc);
 
     if (!job) {
@@ -2520,4 +2537,3 @@ main().catch((error) => {
   console.error('[request-worker] fatal startup error:', error.message || error);
   process.exit(1);
 });
-

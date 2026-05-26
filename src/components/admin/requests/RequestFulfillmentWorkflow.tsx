@@ -11,8 +11,10 @@ import {
   ImagePlus,
   Loader2,
   PlayCircle,
+  RotateCcw,
   Save,
   Search,
+  Trash2,
   Tv,
   UploadCloud,
 } from 'lucide-react';
@@ -241,6 +243,19 @@ async function loadCategories() {
 async function loadRequestJobs() {
   const payload = await fetchJson<{ jobs?: RequestProcessingJob[] }>('/api/admin/request-jobs');
   return payload.jobs || [];
+}
+
+async function patchRequestJob(action: 'retry' | 'delete', jobId: string) {
+  const response = await fetch('/api/admin/request-jobs', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, id: jobId }),
+  });
+  const result = await parseApiResponse(response);
+
+  if (!result.ok) {
+    throw new Error(result.payload.error || 'Failed to update request job.');
+  }
 }
 
 async function loadRequest(requestId: string) {
@@ -897,6 +912,12 @@ function isActiveJob(job: RequestProcessingJob) {
 function useLiveRequestJobs() {
   const [jobs, setJobs] = useState<RequestProcessingJob[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const refreshJobs = useCallback(async () => {
+    const nextJobs = await loadRequestJobs();
+    setJobs(nextJobs);
+    setErrorMessage('');
+    return nextJobs;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -931,7 +952,7 @@ function useLiveRequestJobs() {
     };
   }, []);
 
-  return { jobs, errorMessage };
+  return { jobs, errorMessage, refresh: refreshJobs };
 }
 
 async function patchRequestAction(body: Record<string, unknown>) {
@@ -950,21 +971,59 @@ async function patchRequestAction(body: Record<string, unknown>) {
 function RequestProcessingQueuePanel({
   jobs,
   errorMessage,
+  onRefresh,
 }: {
   jobs: RequestProcessingJob[];
   errorMessage: string;
+  onRefresh: () => Promise<unknown>;
 }) {
+  const [busyJobAction, setBusyJobAction] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [actionError, setActionError] = useState('');
   const groupedJobs = QUEUE_STAGES.map((stage) => ({
     ...stage,
     jobs: jobs.filter((job) => getDisplayJobStage(job) === stage.id),
   }));
   const activeCount = jobs.filter(isActiveJob).length;
 
+  const handleJobAction = async (job: RequestProcessingJob, action: 'retry' | 'delete') => {
+    const title = job.title || 'this request job';
+
+    if (
+      action === 'delete' &&
+      !window.confirm(
+        `Remove "${title}" from the request processing queue? This will not delete any live catalog title, but the request will return to pending so you can queue it again.`
+      )
+    ) {
+      return;
+    }
+
+    if (action === 'retry' && !window.confirm(`Retry "${title}" from the beginning on the request VPS?`)) {
+      return;
+    }
+
+    setBusyJobAction(`${action}:${job.id}`);
+    setActionMessage('');
+    setActionError('');
+
+    try {
+      await patchRequestJob(action, job.id);
+      await onRefresh();
+      setActionMessage(action === 'delete' ? 'Request job removed from the queue.' : 'Request job queued again.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Failed to update request job.');
+    } finally {
+      setBusyJobAction('');
+    }
+  };
+
   const renderJob = (job: RequestProcessingJob) => {
     const progress = formatJobProgress(job.progress);
     const stage = getDisplayJobStage(job);
     const currentStageIndex = QUEUE_STAGES.findIndex((entry) => entry.id === stage);
     const stageLabel = QUEUE_STAGES[currentStageIndex]?.label || 'Queued';
+    const canRetry = stage === 'failed' || stage === 'stalled';
+    const canDelete = stage === 'failed' || stage === 'stalled' || stage === 'queued';
 
     return (
       <div key={job.id} className="rounded-2xl border border-white/10 bg-[#0C1017] p-4">
@@ -1012,6 +1071,32 @@ function RequestProcessingQueuePanel({
             ? 'No request-worker heartbeat for over 30 minutes. Check the worker or retry from the source.'
             : job.currentStage || job.errorMessage || 'Waiting for worker update'}
         </div>
+        {canRetry || canDelete ? (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {canRetry ? (
+              <button
+                type="button"
+                disabled={busyJobAction !== ''}
+                onClick={() => void handleJobAction(job, 'retry')}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100 disabled:opacity-50"
+              >
+                <RotateCcw size={13} />
+                {busyJobAction === `retry:${job.id}` ? 'Retrying...' : 'Retry'}
+              </button>
+            ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                disabled={busyJobAction !== ''}
+                onClick={() => void handleJobAction(job, 'delete')}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-red-300/20 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-red-100 disabled:opacity-50"
+              >
+                <Trash2 size={13} />
+                {busyJobAction === `delete:${job.id}` ? 'Removing...' : 'Delete'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -1022,6 +1107,8 @@ function RequestProcessingQueuePanel({
       description="Only request fulfillment video jobs are shown here. Telegram link-prep jobs are excluded, and any active job without a worker heartbeat for 30 minutes is highlighted as stalled."
     >
       <StatusMessage message={errorMessage} tone="error" />
+      <StatusMessage message={actionMessage} tone="success" />
+      <StatusMessage message={actionError} tone="error" />
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         {QUEUE_STAGES.map((stage) => {
           const count = groupedJobs.find((entry) => entry.id === stage.id)?.jobs.length || 0;
@@ -1411,7 +1498,7 @@ export function AdminRequestsHubView() {
 }
 
 export function AdminRequestQueueView() {
-  const { jobs, errorMessage } = useLiveRequestJobs();
+  const { jobs, errorMessage, refresh } = useLiveRequestJobs();
 
   return (
     <RequestShell
@@ -1423,7 +1510,7 @@ export function AdminRequestQueueView() {
         </div>
       }
     >
-      <RequestProcessingQueuePanel jobs={jobs} errorMessage={errorMessage} />
+      <RequestProcessingQueuePanel jobs={jobs} errorMessage={errorMessage} onRefresh={refresh} />
     </RequestShell>
   );
 }
