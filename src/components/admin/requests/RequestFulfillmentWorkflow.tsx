@@ -998,7 +998,12 @@ function RequestProcessingQueuePanel({
       return;
     }
 
-    if (action === 'retry' && !window.confirm(`Retry "${title}" from the beginning on the request VPS?`)) {
+    if (
+      action === 'retry' &&
+      !window.confirm(
+        `Force retry "${title}" from the beginning on the request VPS? Use this when a job is frozen or failed.`
+      )
+    ) {
       return;
     }
 
@@ -1022,8 +1027,8 @@ function RequestProcessingQueuePanel({
     const stage = getDisplayJobStage(job);
     const currentStageIndex = QUEUE_STAGES.findIndex((entry) => entry.id === stage);
     const stageLabel = QUEUE_STAGES[currentStageIndex]?.label || 'Queued';
-    const canRetry = stage === 'failed' || stage === 'stalled';
-    const canDelete = stage === 'failed' || stage === 'stalled' || stage === 'queued';
+    const canRetry = stage !== 'ready' && stage !== 'queued';
+    const canDelete = stage !== 'ready';
 
     return (
       <div key={job.id} className="rounded-2xl border border-white/10 bg-[#0C1017] p-4">
@@ -1081,7 +1086,11 @@ function RequestProcessingQueuePanel({
                 className="inline-flex items-center justify-center gap-2 rounded-full border border-sky-300/20 bg-sky-400/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100 disabled:opacity-50"
               >
                 <RotateCcw size={13} />
-                {busyJobAction === `retry:${job.id}` ? 'Retrying...' : 'Retry'}
+                {busyJobAction === `retry:${job.id}`
+                  ? 'Retrying...'
+                  : stage === 'failed' || stage === 'stalled'
+                    ? 'Retry'
+                    : 'Force Retry'}
               </button>
             ) : null}
             {canDelete ? (

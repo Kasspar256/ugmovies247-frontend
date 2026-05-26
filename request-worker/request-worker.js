@@ -467,16 +467,27 @@ function buildPublicUrl(key) {
 async function uploadToR2(s3, key, filePath, onProgress) {
   const stats = await fs.stat(filePath);
   const stream = createReadStream(filePath);
+  let simulatedUploadRatio = 0.85;
+  const heartbeat = setInterval(() => {
+    simulatedUploadRatio = Math.min(0.98, simulatedUploadRatio + 0.01);
+    onProgress?.(Math.floor(stats.size * simulatedUploadRatio), stats.size);
+  }, 15000);
 
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: requireEnv('R2_BUCKET'),
-      Key: key,
-      Body: stream,
-      ContentLength: stats.size,
-      ContentType: 'video/mp4',
-    })
-  );
+  onProgress?.(Math.floor(stats.size * simulatedUploadRatio), stats.size);
+
+  try {
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: requireEnv('R2_BUCKET'),
+        Key: key,
+        Body: stream,
+        ContentLength: stats.size,
+        ContentType: 'video/mp4',
+      })
+    );
+  } finally {
+    clearInterval(heartbeat);
+  }
 
   onProgress?.(stats.size, stats.size);
   return buildPublicUrl(key);
