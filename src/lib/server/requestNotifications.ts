@@ -167,7 +167,7 @@ export async function sendTelegramAdminMessage(message: string): Promise<Notific
       process.env.TELEGRAM_BOT_TOKEN ||
       ''
   ).trim();
-  const chatId = String(
+  let chatId = String(
     process.env.ADMIN_TELEGRAM_CHAT_ID ||
       process.env.MOVIE_REQUESTS_TELEGRAM_CHAT_ID ||
       process.env.REQUESTS_TELEGRAM_CHAT_ID ||
@@ -199,6 +199,22 @@ export async function sendTelegramAdminMessage(message: string): Promise<Notific
 
     if (!response.ok) {
       const payload = await response.text().catch(() => '');
+      const parsedPayload = (() => {
+        try {
+          return payload ? (JSON.parse(payload) as { parameters?: { migrate_to_chat_id?: number | string } }) : null;
+        } catch {
+          return null;
+        }
+      })();
+      const migratedChatId = parsedPayload?.parameters?.migrate_to_chat_id;
+
+      if (migratedChatId && String(migratedChatId) !== chatId) {
+        chatId = String(migratedChatId);
+        console.warn(`[movie-requests] Telegram group migrated; retrying admin alert with chat_id ${chatId}`);
+        await send();
+        return;
+      }
+
       throw new Error(payload || `Telegram responded with ${response.status}`);
     }
   };
