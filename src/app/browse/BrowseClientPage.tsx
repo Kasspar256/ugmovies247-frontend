@@ -1,5 +1,5 @@
 'use client';
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
@@ -44,6 +44,7 @@ import { type ArtworkVariant } from '@/lib/artwork';
 import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
 import {
   getCatalogBackdropCandidates,
+  getCatalogHeroPosterCandidates,
   getCatalogPosterCandidates,
 } from '@/lib/catalogArtwork';
 import { isAppInReview } from '@/lib/appReview';
@@ -79,6 +80,7 @@ function rememberPendingMovieNavigation(movie: Movie) {
           title: movie.title || movie.name || '',
           name: movie.name || '',
           poster: movie.poster || '',
+          heroPoster: movie.heroPoster || '',
           backdrop: movie.overriddenBackdrop || movie.overriddenPlayerBackdrop || movie.playerBackdrop || '',
           contentType: movie.contentType || 'movie',
           vj: movie.vj || '',
@@ -265,13 +267,11 @@ export default function BrowseClientPage({
   initialCatalogIsPartial = false,
 }: BrowseClientPageProps) {
   const normalizedInitialMovies = useMemo(() => dedupeSeriesMovies(initialMovies), [initialMovies]);
-  const memorySnapshot = useMemo(() => readBrowseMemorySnapshot(), []);
-  const seedMovies = memorySnapshot?.movies?.length ? memorySnapshot.movies : normalizedInitialMovies;
-  const seedCategories = memorySnapshot?.homePageCategories?.length
-    ? memorySnapshot.homePageCategories
-    : initialHomePageCategories.length
-      ? initialHomePageCategories
-      : DEFAULT_HOME_PAGE_CATEGORIES;
+  const [memorySnapshot, setMemorySnapshot] = useState<BrowseMemorySnapshot | null>(null);
+  const seedMovies = normalizedInitialMovies;
+  const seedCategories = initialHomePageCategories.length
+    ? initialHomePageCategories
+    : DEFAULT_HOME_PAGE_CATEGORIES;
   const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(false);
   const [movies, setMovies] = useState<Movie[]>(() => seedMovies);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
@@ -279,27 +279,20 @@ export default function BrowseClientPage({
   );
   const [, setLoading] = useState(() => seedMovies.length === 0);
   const [hasResolvedCatalog, setHasResolvedCatalog] = useState(
-    () => memorySnapshot?.hasResolvedCatalog ?? seedMovies.length > 0
+    () => seedMovies.length > 0
   );
   const [isUsingPartialBootstrap, setIsUsingPartialBootstrap] = useState(
-    () =>
-      memorySnapshot?.isUsingPartialBootstrap ??
-      (initialCatalogIsPartial && normalizedInitialMovies.length > 0)
+    () => initialCatalogIsPartial && normalizedInitialMovies.length > 0
   );
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>(
-    () => memorySnapshot?.activeCategory || 'ALL'
-  );
+  const [activeCategory, setActiveCategory] = useState<string>('ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(
-    () => memorySnapshot?.sessionUser || null
-  );
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
   const [activeTrailer, setActiveTrailer] = useState<{ url: string; title: string } | null>(null);
-  const [continueWatchingRecords, setContinueWatchingRecords] = useState<CachedPlaybackProgressRecord[]>(
-    () => memorySnapshot?.continueWatchingRecords || readCachedContinueWatching()
-  );
+  const [continueWatchingRecords, setContinueWatchingRecords] = useState<CachedPlaybackProgressRecord[]>([]);
   const [isAndroidMobile, setIsAndroidMobile] = useState(false);
+  const [unreadLatestUploadCount, setUnreadLatestUploadCount] = useState(0);
   const homeCastVideoRef = useRef<HTMLVideoElement | null>(null);
   const homeLoadRequestRef = useRef(0);
   const displayMovies = useMemo(
@@ -307,7 +300,11 @@ export default function BrowseClientPage({
     [hasLocalPremiumAccess, movies]
   );
 
-  useLayoutEffect(() => {
+  useEffect(() => {
+    setMemorySnapshot(readBrowseMemorySnapshot());
+  }, []);
+
+  useEffect(() => {
     const syncLocalPremiumAccess = () => {
       setHasLocalPremiumAccess(readLocalPremiumAccessSnapshot().hasPremiumAccess);
     };
@@ -379,6 +376,17 @@ export default function BrowseClientPage({
       !hasAuthoritativeCachedMovies && !hasAuthoritativeMemoryMovies && !hasCachedMovies;
 
     if (hasMemoryMovies) {
+      setMovies(memoryMovies);
+      setHomePageCategories(
+        memorySnapshot?.homePageCategories?.length
+          ? memorySnapshot.homePageCategories
+          : seedCategories
+      );
+      setContinueWatchingRecords(memorySnapshot?.continueWatchingRecords || []);
+      setSessionUser(memorySnapshot?.sessionUser || null);
+      setActiveCategory(memorySnapshot?.activeCategory || 'ALL');
+      setHasResolvedCatalog(memorySnapshot?.hasResolvedCatalog ?? true);
+      setIsUsingPartialBootstrap(memorySnapshot?.isUsingPartialBootstrap === true);
       primePublicMovieCatalog(memoryMovies, {
         cachedAt: memorySnapshot?.cachedAt || initialCatalogCachedAt,
         partial: memorySnapshot?.isUsingPartialBootstrap === true,
@@ -499,6 +507,7 @@ export default function BrowseClientPage({
     initialCatalogIsPartial,
     memorySnapshot,
     normalizedInitialMovies,
+    seedCategories,
     seedMovies,
   ]);
 
@@ -642,12 +651,8 @@ export default function BrowseClientPage({
         ? `/subscribe?returnTo=${encodeURIComponent(`/movie/${heroMovie.id}`)}`
         : `/movie/${heroMovie.id}?autoplay=1`
     : '/browse';
-  const unreadLatestUploadCount = useMemo(
-    () => countUnreadLatestUploads(displayMovies),
-    [displayMovies]
-  );
   const heroBackdropCandidates = useMemo(
-    () => (heroMovie ? getCatalogBackdropCandidates(heroMovie) : []),
+    () => (heroMovie ? getCatalogHeroPosterCandidates(heroMovie) : []),
     [heroMovie]
   );
   const priorityArtworkMovies = useMemo(
@@ -659,6 +664,10 @@ export default function BrowseClientPage({
       }),
     [displayMovies, heroMovie, homeRows]
   );
+
+  useEffect(() => {
+    setUnreadLatestUploadCount(countUnreadLatestUploads(displayMovies));
+  }, [displayMovies]);
 
   useEffect(() => {
     if (priorityArtworkMovies.length) {
@@ -851,27 +860,24 @@ export default function BrowseClientPage({
       {/* Hero Section */}
       {heroMovie && (
         <>
-        <section className="relative flex h-[53vh] min-h-[470px] w-full flex-col justify-end px-4 pb-5 pt-14 transition-all duration-1000 ease-in-out sm:h-[58vh] md:hidden">
+        <section
+          data-hero-revision="hydration-safe-compact-mobile-hero"
+          className="relative flex w-full flex-col justify-end overflow-hidden px-4 transition-all duration-1000 ease-in-out md:hidden"
+          style={{
+            height: 'min(650px, 68svh)',
+            minHeight: '560px',
+            paddingBottom: '6.9rem',
+          }}
+        >
           <div className="absolute inset-0 transition-opacity duration-1000 ease-in-out" key={heroMovie.id}>
             {heroBackdropCandidates.length ? (
-              <>
-                <CatalogArtworkImage
-                  src={heroBackdropCandidates}
-                  alt="Hero Backdrop"
-                  imageClassName="h-full w-full scale-105 object-cover object-center opacity-50 blur-[10px] transition-opacity duration-1000"
-                  priority
-                  variant="hero"
-                />
-                <div className="absolute inset-0 overflow-hidden">
-                  <CatalogArtworkImage
-                    src={heroBackdropCandidates}
-                    alt="Hero Backdrop"
-                    imageClassName="h-full w-full object-cover object-[center_30%] transition-opacity duration-1000"
-                    priority
-                    variant="hero"
-                  />
-                </div>
-              </>
+              <CatalogArtworkImage
+                src={heroBackdropCandidates}
+                alt="Hero Backdrop"
+                imageClassName="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-1000 [filter:brightness(0.9)_contrast(1.04)_saturate(1.04)]"
+                priority
+                variant="hero"
+              />
             ) : (
               <div className="poster-shimmer h-full w-full" />
             )}
@@ -879,57 +885,56 @@ export default function BrowseClientPage({
               className="absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(180deg, rgba(11,12,16,0.04) 0%, rgba(11,12,16,0.1) 34%, rgba(11,12,16,0.58) 72%, rgba(11,12,16,0.96) 100%)',
+                  'linear-gradient(to top, #0B0C10 0%, rgba(11,12,16,0.78) 12%, rgba(11,12,16,0.36) 30%, rgba(11,12,16,0.08) 55%, transparent 78%)',
               }}
             ></div>
-            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-transparent"></div>
           </div>
 
-          <div className="relative z-10 mx-auto flex w-full max-w-4xl -translate-y-5 flex-col items-center text-center">
-            <h1 className="mb-2.5 w-full text-[clamp(1.75rem,7vw,2.2rem)] font-extrabold leading-[0.98] tracking-tight text-white drop-shadow-2xl">
+          <div className="relative z-10 w-full max-w-4xl mx-auto flex flex-col items-center text-center">
+            <h1 className="mb-2 w-full text-[clamp(1.55rem,7vw,2.05rem)] font-extrabold leading-tight tracking-tight text-white drop-shadow-2xl">
               {heroMovie.title}
             </h1>
 
-            <div className="mb-4 flex w-full items-center justify-center gap-3 text-[9px] font-semibold tracking-[0.16em] text-gray-400">
+            <div className="mb-4 flex w-full items-center justify-center gap-3 text-[9px] font-semibold tracking-widest text-gray-300">
               <span>{heroMovie.release_date?.substring(0, 4) || '2026'}</span>
               {heroRuntimeLabel && (
                 <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-gray-600"></span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
                   <span>{heroRuntimeLabel}</span>
                 </>
               )}
               {heroMovie.vj && heroMovie.vj !== 'Unknown' && (
                 <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-gray-600"></span>
-                  <span className="relative font-bold uppercase tracking-[0.18em] text-[#D90429]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-600"></span>
+                  <span className="text-[#D90429] uppercase font-bold tracking-[0.2em] relative">
                     VJ {heroMovie.vj}
                   </span>
                 </>
               )}
             </div>
 
-            <div className="flex w-full flex-row justify-center gap-2 px-2">
+            <div className="flex flex-row w-full gap-3 justify-center px-2">
               {isAppInReview ? (
                 <button
                   type="button"
                   onClick={handleHeroTrailerClick}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
+                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
                 >
-                  <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                   <span className="text-[10px]">WATCH TRAILER</span>
                 </button>
               ) : (
                 <Link
                   href={heroPlayHref}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-md bg-[#D90429] px-3 py-2 font-extrabold text-white shadow-lg shadow-red-900/30 transition-colors hover:bg-red-700"
+                  className="bg-[#D90429] hover:bg-red-700 text-white font-extrabold flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-colors shadow-lg shadow-red-900/30"
                 >
-                  <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                   <span className="text-[10px]">PLAY NOW</span>
                 </Link>
               )}
               <button
                 onClick={() => setShowHeroDetails((prev) => !prev)}
-                className="flex flex-1 items-center justify-center gap-2 rounded-md border border-white/5 bg-[#1F2833] px-3 py-2 font-bold text-white transition-colors hover:bg-gray-800"
+                className="bg-[#1F2833] hover:bg-gray-800 text-white font-bold flex-1 px-4 py-2 rounded-md flex items-center justify-center gap-2 transition-colors border border-white/5"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span className="text-[10px]">{showHeroDetails ? 'HIDE DETAILS' : 'DETAILS'}</span>
@@ -1082,7 +1087,7 @@ export default function BrowseClientPage({
         </>
       )}
 
-      <div className="relative z-20 -mt-8 mb-3 px-4 md:hidden">
+      <div className="relative z-20 px-4 -mt-20 mb-4 md:hidden">
          <div className="flex gap-2 overflow-x-auto pb-3 style-hide-scrollbar snap-x">
            <button
   onClick={() => setActiveCategory('ALL')}

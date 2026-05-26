@@ -153,6 +153,10 @@ function collectCandidateUrlsFromSeason(season: Partial<Season>) {
     urls.add(season.poster);
   }
 
+  if (season.overriddenBackdrop) {
+    urls.add(season.overriddenBackdrop);
+  }
+
   for (const episode of season.episodes || []) {
     for (const url of collectCandidateUrlsFromEpisode(episode as Episode)) {
       urls.add(url);
@@ -265,6 +269,10 @@ function collectCandidateUrls(movie: Movie) {
 
   if (movie.poster) {
     urls.add(movie.poster);
+  }
+
+  if (movie.heroPoster) {
+    urls.add(movie.heroPoster);
   }
 
   if (movie.overriddenBackdrop) {
@@ -559,6 +567,7 @@ export async function PATCH(
       title?: string;
       description?: string;
       poster?: string;
+      heroPoster?: string;
       trailerUrl?: string;
       mainSeriesTrailerUrl?: string;
       trailer_url?: string;
@@ -598,6 +607,8 @@ export async function PATCH(
     const nextDescription =
       typeof body.description === 'string' ? body.description.trim() : undefined;
     const nextPoster = typeof body.poster === 'string' ? body.poster.trim() : undefined;
+    const nextHeroPoster =
+      typeof body.heroPoster === 'string' ? body.heroPoster.trim() : undefined;
     const nextTrailerUrl = typeof body.trailerUrl === 'string' ? body.trailerUrl.trim() : undefined;
     const nextMainSeriesTrailerUrl =
       typeof body.mainSeriesTrailerUrl === 'string' ? body.mainSeriesTrailerUrl.trim() : undefined;
@@ -707,6 +718,9 @@ export async function PATCH(
             return {
               ...season,
               title: body.seasonTitle || season.title || `Season ${seasonNumber}`,
+              overriddenBackdrop:
+                season.overriddenBackdrop || nextEpisode.overriddenBackdrop || season.poster || '',
+              poster: season.poster || nextEpisode.poster || nextEpisode.thumbnail || '',
               episodes: [...otherEpisodes, nextEpisode].sort(
                 (left, right) => left.episodeNumber - right.episodeNumber
               ),
@@ -718,7 +732,8 @@ export async function PATCH(
               seasonNumber,
               title: body.seasonTitle || `Season ${seasonNumber}`,
               overview: '',
-              poster: '',
+              poster: nextEpisode.poster || nextEpisode.thumbnail || '',
+              overriddenBackdrop: nextEpisode.overriddenBackdrop || nextEpisode.poster || '',
               tmdb_id: null,
               episodes: [nextEpisode],
             },
@@ -890,6 +905,10 @@ export async function PATCH(
 
     if (nextPoster !== undefined) {
       updates.poster = nextPoster;
+    }
+
+    if (nextHeroPoster !== undefined) {
+      updates.heroPoster = nextHeroPoster;
     }
 
     if (nextTrailerUrl !== undefined) {

@@ -453,6 +453,7 @@ function compactMovieForCatalog(movie: Record<string, unknown>) {
           title: String(rawSeason.title || ''),
           overview: String(rawSeason.overview || ''),
           poster: String(rawSeason.poster || ''),
+          overriddenBackdrop: String(rawSeason.overriddenBackdrop || ''),
           tmdb_id: typeof rawSeason.tmdb_id === 'number' ? rawSeason.tmdb_id : null,
           episodes: Array.isArray(rawSeason.episodes)
             ? rawSeason.episodes.map((episode) =>
@@ -476,6 +477,7 @@ function compactMovieForCatalog(movie: Record<string, unknown>) {
     releaseYear: typeof movie.releaseYear === 'number' ? movie.releaseYear : null,
     tags: Array.isArray(movie.tags) ? movie.tags : [],
     poster: String(movie.poster || ''),
+    heroPoster: String(movie.heroPoster || ''),
     overriddenBackdrop: String(movie.overriddenBackdrop || ''),
     overriddenPlayerBackdrop: String(movie.overriddenPlayerBackdrop || ''),
     playerBackdrop: String(movie.playerBackdrop || ''),

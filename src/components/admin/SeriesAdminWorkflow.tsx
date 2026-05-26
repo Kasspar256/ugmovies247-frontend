@@ -53,6 +53,8 @@ type SeriesFormState = {
   tags: string;
   categories: string[];
   nativeBackdrop: string;
+  heroPoster: string;
+  heroPosterFile: File | null;
   overriddenBackdrop: string;
   backdropFile: File | null;
   mainSeriesTrailerUrl: string;
@@ -170,6 +172,39 @@ function getEffectiveSeriesBackdrop(series: Movie | null | undefined) {
   );
 }
 
+function getSeasonArtwork(season: Season | null | undefined) {
+  if (!season) return '';
+
+  const firstEpisode = sortEpisodes(season.episodes || [])[0];
+
+  return (
+    season.overriddenBackdrop ||
+    season.poster ||
+    firstEpisode?.overriddenBackdrop ||
+    firstEpisode?.thumbnail ||
+    firstEpisode?.poster ||
+    ''
+  );
+}
+
+function getEffectiveSeriesHeroPoster(series: Movie | null | undefined) {
+  if (!series) return '';
+
+  const firstSeason = series.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return (
+    series.heroPoster ||
+    series.poster ||
+    firstSeason?.poster ||
+    firstEpisode?.poster ||
+    firstEpisode?.thumbnail ||
+    firstSeason?.overriddenBackdrop ||
+    series.overriddenBackdrop ||
+    ''
+  );
+}
+
 function getEffectiveEpisodeBackdrop(
   series: Movie,
   season: Season | null | undefined,
@@ -177,6 +212,7 @@ function getEffectiveEpisodeBackdrop(
 ) {
   return (
     episode?.overriddenBackdrop ||
+    getSeasonArtwork(season) ||
     series.overriddenBackdrop ||
     episode?.thumbnail ||
     episode?.poster ||
@@ -230,6 +266,8 @@ function buildSeriesFormState(series?: Movie | null): SeriesFormState {
     tags: (series?.tags || []).join(', '),
     categories: series?.category || [],
     nativeBackdrop: series?.poster || '',
+    heroPoster: series?.heroPoster || '',
+    heroPosterFile: null,
     overriddenBackdrop: series?.overriddenBackdrop || '',
     backdropFile: null,
     mainSeriesTrailerUrl: series?.mainSeriesTrailerUrl || '',
@@ -268,6 +306,15 @@ async function uploadLandscapeBackdrop(file: File | null, existingUrl: string) {
   }
 
   await validateLandscapeFile(file);
+  const uploaded = await uploadPosterToAdmin(file);
+  return uploaded.publicUrl;
+}
+
+async function uploadHeroPoster(file: File | null, existingUrl: string) {
+  if (!file) {
+    return existingUrl.trim();
+  }
+
   const uploaded = await uploadPosterToAdmin(file);
   return uploaded.publicUrl;
 }
@@ -434,6 +481,88 @@ function LandscapeBackdropField({
         </div>
       ) : null}
       {error ? <div className="text-sm font-semibold text-amber-100">{error}</div> : null}
+    </div>
+  );
+}
+
+function HeroPosterField({
+  label,
+  value,
+  fallbackPreview,
+  file,
+  onFileChange,
+}: {
+  label: string;
+  value: string;
+  fallbackPreview?: string;
+  file: File | null;
+  onFileChange: (file: File | null) => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl('');
+      return undefined;
+    }
+
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const preview = previewUrl || value || fallbackPreview || '';
+
+  return (
+    <div className="space-y-3">
+      <FieldLabel>{label}</FieldLabel>
+      <div className="grid gap-4 md:grid-cols-[170px_minmax(0,1fr)]">
+        <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+          <div className="relative aspect-[2/3] w-full bg-[#080B11]">
+            {preview ? (
+              <img src={preview} alt={label} className="absolute inset-0 h-full w-full object-cover" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs font-semibold text-white/40">
+                Hero poster preview
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-[#0C1017] px-4 py-4 text-xs leading-6 text-white/58">
+            This portrait image is used only for the home hero. If it is empty, the hero falls back
+            to the saved series poster, then the normal TMDb artwork.
+          </div>
+          <div className="rounded-2xl border border-dashed border-white/15 bg-[#0C1017] p-3">
+            <div className="relative min-h-16 w-full overflow-hidden rounded-2xl bg-[#D90429] shadow-[0_12px_26px_rgba(217,4,41,0.22)] active:scale-[0.99]">
+              <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center gap-3 px-4 py-4 text-center text-xs font-black uppercase tracking-[0.2em] text-white">
+                <UploadCloud size={18} />
+                Choose Hero Poster
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                aria-label="Choose hero poster"
+                onChange={(event) => onFileChange(event.currentTarget.files?.[0] || null)}
+                className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-[0.01]"
+                style={{
+                  fontSize: 96,
+                  WebkitAppearance: 'none',
+                }}
+              />
+            </div>
+            <div className="mt-3 break-words text-center text-xs font-semibold text-white/55">
+              {file ? file.name : 'No file selected'}
+            </div>
+          </div>
+          {file ? (
+            <div className="rounded-2xl border border-[#D90429]/20 bg-[#17070B] px-4 py-3 text-xs leading-6 text-white/78">
+              Pending hero poster: {file.name}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -951,11 +1080,13 @@ function SeriesDetailsFields({
   setForm,
   categories,
   fallbackPreview,
+  heroPosterFallback,
 }: {
   form: SeriesFormState;
   setForm: React.Dispatch<React.SetStateAction<SeriesFormState>>;
   categories: AdminCategory[];
   fallbackPreview?: string;
+  heroPosterFallback?: string;
 }) {
   const manualSeriesCategories = useManualSeriesCategories(categories);
   const categoryLabelMap = useCategoryLabelMap();
@@ -1049,6 +1180,13 @@ function SeriesDetailsFields({
         value={form.nativeBackdrop}
         onChange={(value) => setForm((current) => ({ ...current, nativeBackdrop: value }))}
       />
+      <HeroPosterField
+        label="Hero Poster Override"
+        value={form.heroPoster}
+        fallbackPreview={form.nativeBackdrop || heroPosterFallback || fallbackPreview}
+        file={form.heroPosterFile}
+        onFileChange={(file) => setForm((current) => ({ ...current, heroPosterFile: file }))}
+      />
       <LandscapeBackdropField
         label="Override Backdrop"
         value={form.overriddenBackdrop}
@@ -1086,6 +1224,7 @@ export function AdminSeriesCreateView() {
     setErrorMessage('');
 
     try {
+      const heroPoster = await uploadHeroPoster(form.heroPosterFile, form.heroPoster);
       const overriddenBackdrop = await uploadLandscapeBackdrop(form.backdropFile, form.overriddenBackdrop);
       const uploadedTrailer = form.trailerFile
         ? await uploadTrailerVideoToAdmin(form.trailerFile)
@@ -1100,6 +1239,7 @@ export function AdminSeriesCreateView() {
             description: form.description.trim(),
             overview: form.description.trim(),
             poster: form.nativeBackdrop.trim(),
+            heroPoster,
             overriddenBackdrop,
             mainSeriesTrailerUrl: uploadedTrailer?.publicUrl || form.mainSeriesTrailerUrl.trim(),
             tmdb_id: parseTmdbId(form.tmdbId),
@@ -1201,6 +1341,7 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
     setErrorMessage('');
 
     try {
+      const heroPoster = await uploadHeroPoster(form.heroPosterFile, form.heroPoster);
       const overriddenBackdrop = await uploadLandscapeBackdrop(form.backdropFile, form.overriddenBackdrop);
       const uploadedTrailer = form.trailerFile
         ? await uploadTrailerVideoToAdmin(form.trailerFile)
@@ -1212,6 +1353,7 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
           title: form.title.trim(),
           description: form.description.trim(),
           poster: form.nativeBackdrop.trim(),
+          heroPoster,
           overriddenBackdrop,
           mainSeriesTrailerUrl: uploadedTrailer?.publicUrl || form.mainSeriesTrailerUrl.trim(),
           tmdb_id: parseTmdbId(form.tmdbId),
@@ -1265,6 +1407,7 @@ export function AdminSeriesDetailsView({ seriesId }: { seriesId: string }) {
               setForm={setForm}
               categories={categories}
               fallbackPreview={getEffectiveSeriesBackdrop(series)}
+              heroPosterFallback={getEffectiveSeriesHeroPoster(series)}
             />
           </Card>
           <div className="pointer-events-none sticky bottom-4 z-20">
@@ -1714,8 +1857,15 @@ function buildEpisodeFormState(
 ): EpisodeFormState {
   const existingEpisode =
     episodeNumber !== undefined ? findEpisode(series, seasonNumber, episodeNumber) : null;
+  const existingSeason = findSeason(series, seasonNumber);
   const nextEpisodeNumber =
     episodeNumber !== undefined ? episodeNumber : getNextEpisodeNumber(series, seasonNumber);
+  const inheritedBackdrop =
+    getSeasonArtwork(existingSeason) ||
+    series?.overriddenBackdrop ||
+    series?.heroPoster ||
+    series?.poster ||
+    '';
 
   return {
     episodeNumber: String(existingEpisode?.episodeNumber || nextEpisodeNumber),
@@ -1727,7 +1877,7 @@ function buildEpisodeFormState(
       file: null,
       sourceType: existingEpisode?.sourceType,
     },
-    overriddenBackdrop: existingEpisode?.overriddenBackdrop || '',
+    overriddenBackdrop: existingEpisode?.overriddenBackdrop || inheritedBackdrop,
     backdropFile: null,
     episodeTrailerUrl: existingEpisode?.episodeTrailerUrl || '',
     trailerFile: null,
@@ -1978,7 +2128,11 @@ export function AdminSeriesEpisodeEditorView({
               <LandscapeBackdropField
                 label="Episode Backdrop Override"
                 value={form.overriddenBackdrop}
-                fallbackPreview={getEffectiveSeriesBackdrop(series)}
+                fallbackPreview={
+                  series
+                    ? getEffectiveEpisodeBackdrop(series, existingSeason, existingEpisode)
+                    : ''
+                }
                 file={form.backdropFile}
                 onFileChange={(file) => setForm((current) => ({ ...current, backdropFile: file }))}
               />

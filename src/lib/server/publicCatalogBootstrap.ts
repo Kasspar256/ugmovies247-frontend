@@ -160,6 +160,7 @@ export function compactMovieForPublicBootstrap(movie: RawMovie): Movie {
           title: String(rawSeason.title || ''),
           overview: String(rawSeason.overview || ''),
           poster: String(rawSeason.poster || ''),
+          overriddenBackdrop: String(rawSeason.overriddenBackdrop || ''),
           tmdb_id: typeof rawSeason.tmdb_id === 'number' ? rawSeason.tmdb_id : null,
           episodes: Array.isArray(rawSeason.episodes)
             ? rawSeason.episodes.map((episode) =>
@@ -184,6 +185,7 @@ export function compactMovieForPublicBootstrap(movie: RawMovie): Movie {
     tags: Array.isArray(movie.tags) ? movie.tags : [],
     cast: [],
     poster: String(movie.poster || ''),
+    heroPoster: String(movie.heroPoster || ''),
     overriddenBackdrop: String(movie.overriddenBackdrop || ''),
     overriddenPlayerBackdrop: String(movie.overriddenPlayerBackdrop || ''),
     playerBackdrop: String(movie.playerBackdrop || ''),

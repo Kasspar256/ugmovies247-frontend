@@ -44,6 +44,7 @@ export function getCatalogBackdropCandidates(movie: Movie) {
 
   return uniqueArtworkCandidates([
     movie.overriddenBackdrop,
+    firstSeason?.overriddenBackdrop,
     firstEpisode?.overriddenBackdrop,
     movie.overriddenPlayerBackdrop,
     movie.playerBackdrop,
@@ -53,5 +54,26 @@ export function getCatalogBackdropCandidates(movie: Movie) {
     firstEpisode?.poster,
     firstPart?.thumbnail,
     firstPart?.poster,
+  ]);
+}
+
+export function getCatalogHeroPosterCandidates(movie: Movie) {
+  const firstPart = movie.parts?.[0];
+  const firstSeason = movie.seasons?.[0];
+  const firstEpisode = firstSeason?.episodes?.[0];
+
+  return uniqueArtworkCandidates([
+    movie.heroPoster,
+    movie.poster,
+    firstSeason?.poster,
+    firstEpisode?.poster,
+    firstEpisode?.thumbnail,
+    firstPart?.poster,
+    firstPart?.thumbnail,
+    movie.overriddenBackdrop,
+    firstSeason?.overriddenBackdrop,
+    firstEpisode?.overriddenBackdrop,
+    movie.overriddenPlayerBackdrop,
+    movie.playerBackdrop,
   ]);
 }

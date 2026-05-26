@@ -14,7 +14,7 @@ type CachedPublicMovieCatalog = {
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
   ? 'ugmovies247.public-movies.review.v1'
-  : 'ugmovies247.public-movies.v7';
+  : 'ugmovies247.public-movies.v8';
 const PUBLIC_MOVIE_CACHE_READ_KEYS = isAppInReview
   ? ['ugmovies247.public-movies.review.v1']
   : [PUBLIC_MOVIE_CACHE_KEY];
@@ -27,6 +27,16 @@ let inFlightMovieDeltaRequest: Promise<Movie[]> | null = null;
 let lastBackgroundMovieRefreshAt = 0;
 
 export const PUBLIC_MOVIES_UPDATED_EVENT = 'ugmovies247:public-movies-updated';
+
+function dispatchPublicMoviesUpdated() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent(PUBLIC_MOVIES_UPDATED_EVENT));
+  }, 0);
+}
 
 function canUsePersistentStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -124,6 +134,7 @@ function compactMovieForPersistentCache(movie: Movie): Movie {
     tags: movie.tags || [],
     cast: [],
     poster: movie.poster || '',
+    heroPoster: movie.heroPoster || '',
     overriddenBackdrop: movie.overriddenBackdrop || '',
     overriddenPlayerBackdrop: movie.overriddenPlayerBackdrop || '',
     playerBackdrop: movie.playerBackdrop || '',
@@ -160,6 +171,7 @@ function compactMovieForPersistentCache(movie: Movie): Movie {
         title: season.title || '',
         overview: season.overview || '',
         poster: season.poster || '',
+        overriddenBackdrop: season.overriddenBackdrop || '',
         tmdb_id: season.tmdb_id ?? null,
         episodes: season.episodes.map(compactEpisodeForPersistentCache),
       })) || [],
@@ -199,7 +211,7 @@ function persistCatalog(cache: CachedPublicMovieCatalog) {
     // Ignore persistent storage write failures and keep the in-memory cache.
   }
 
-  window.dispatchEvent(new CustomEvent(PUBLIC_MOVIES_UPDATED_EVENT));
+  dispatchPublicMoviesUpdated();
 }
 
 export function clearPublicMovieCache() {
@@ -216,6 +228,7 @@ export function clearPublicMovieCache() {
     window.localStorage?.removeItem('ugmovies247.public-movies.v4');
     window.localStorage?.removeItem('ugmovies247.public-movies.v5');
     window.localStorage?.removeItem('ugmovies247.public-movies.v6');
+    window.localStorage?.removeItem('ugmovies247.public-movies.v7');
     window.sessionStorage?.removeItem(PUBLIC_MOVIE_CACHE_KEY);
     window.sessionStorage?.removeItem('ugmovies247.public-movies.review.v1');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v1');
@@ -224,6 +237,7 @@ export function clearPublicMovieCache() {
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v4');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v5');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v6');
+    window.sessionStorage?.removeItem('ugmovies247.public-movies.v7');
   } catch {
     // Ignore persistent storage removal failures and keep the cache cleared in memory.
   }
