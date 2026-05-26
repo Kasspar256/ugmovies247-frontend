@@ -10,6 +10,12 @@ type FcmPayload = {
   link?: string;
 };
 
+type NotificationResult = {
+  ok: boolean;
+  skipped: boolean;
+  reason?: string;
+};
+
 function getBaseUrl() {
   return (
     process.env.APP_BASE_URL ||
@@ -106,7 +112,7 @@ function buildRequestEmailText(options: {
   ].join('\n');
 }
 
-export async function sendFcmNotification(options: FcmPayload) {
+export async function sendFcmNotification(options: FcmPayload): Promise<NotificationResult> {
   const token = String(options.token || '').trim();
 
   if (!token) {
@@ -152,15 +158,34 @@ export async function sendFcmNotification(options: FcmPayload) {
   }
 }
 
-export async function sendTelegramAdminMessage(message: string) {
-  const botToken = process.env.ADMIN_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
-  const chatId = process.env.ADMIN_TELEGRAM_CHAT_ID || '';
+export async function sendTelegramAdminMessage(message: string): Promise<NotificationResult> {
+  const botToken = String(
+    process.env.ADMIN_TELEGRAM_BOT_TOKEN ||
+      process.env.MOVIE_REQUESTS_TELEGRAM_BOT_TOKEN ||
+      process.env.REQUESTS_TELEGRAM_BOT_TOKEN ||
+      process.env.TELEGRAM_ADMIN_BOT_TOKEN ||
+      process.env.TELEGRAM_BOT_TOKEN ||
+      ''
+  ).trim();
+  const chatId = String(
+    process.env.ADMIN_TELEGRAM_CHAT_ID ||
+      process.env.MOVIE_REQUESTS_TELEGRAM_CHAT_ID ||
+      process.env.REQUESTS_TELEGRAM_CHAT_ID ||
+      process.env.TELEGRAM_REQUESTS_CHAT_ID ||
+      process.env.ADMIN_TELEGRAM_GROUP_ID ||
+      process.env.TELEGRAM_GROUP_ID ||
+      process.env.TELEGRAM_ADMIN_CHAT_ID ||
+      process.env.TELEGRAM_CHAT_ID ||
+      ''
+  ).trim();
 
   if (!botToken || !chatId) {
-    return { ok: false, skipped: true, reason: 'telegram_not_configured' };
+    const reason = !botToken ? 'missing_telegram_bot_token' : 'missing_telegram_chat_id';
+    console.warn(`[movie-requests] Telegram admin alert skipped: ${reason}`);
+    return { ok: false, skipped: true, reason };
   }
 
-  try {
+  const send = async () => {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -176,12 +201,26 @@ export async function sendTelegramAdminMessage(message: string) {
       const payload = await response.text().catch(() => '');
       throw new Error(payload || `Telegram responded with ${response.status}`);
     }
+  };
 
+  try {
+    await send();
     return { ok: true, skipped: false };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to send Telegram message.';
-    console.warn('[movie-requests] Telegram admin alert failed', message);
-    return { ok: false, skipped: false, reason: message };
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      await send();
+      return { ok: true, skipped: false };
+    } catch (retryError) {
+      const reason =
+        retryError instanceof Error
+          ? retryError.message
+          : error instanceof Error
+            ? error.message
+            : 'Failed to send Telegram message.';
+      console.warn('[movie-requests] Telegram admin alert failed', reason);
+      return { ok: false, skipped: false, reason };
+    }
   }
 }
 
@@ -192,7 +231,7 @@ export async function sendAdminMovieRequestAlert(request: AdminRequest) {
   const requestType = request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie';
   const body = `New ${requestType} request: ${title}`;
 
-  await Promise.allSettled([
+  const [fcmResult, telegramResult] = await Promise.all([
     sendFcmNotification({
       token: process.env.ADMIN_FCM_TOKEN || '',
       title: `New ${requestType} request`,
@@ -218,6 +257,32 @@ export async function sendAdminMovieRequestAlert(request: AdminRequest) {
         .join('\n')
     ),
   ]);
+
+  await adminDb
+    .collection('movie_requests')
+    .doc(request.id)
+    .set(
+      {
+        adminAlertUpdatedAt: new Date().toISOString(),
+        adminFcmAlertStatus: fcmResult.ok ? 'sent' : fcmResult.skipped ? 'skipped' : 'failed',
+        adminFcmAlertReason: fcmResult.reason || '',
+        adminTelegramAlertStatus: telegramResult.ok
+          ? 'sent'
+          : telegramResult.skipped
+            ? 'skipped'
+            : 'failed',
+        adminTelegramAlertReason: telegramResult.reason || '',
+      },
+      { merge: true }
+    )
+    .catch((error) => {
+      console.warn(
+        '[movie-requests] failed to store admin alert status',
+        error instanceof Error ? error.message : error
+      );
+    });
+
+  return { fcm: fcmResult, telegram: telegramResult };
 }
 
 export async function sendMovieRequestUserUpdate(options: {

@@ -84,6 +84,11 @@ export type AdminRequest = {
   queuedAt?: string;
   uploadedAt?: string;
   rejectedAt?: string;
+  adminAlertUpdatedAt?: string;
+  adminFcmAlertStatus?: string;
+  adminFcmAlertReason?: string;
+  adminTelegramAlertStatus?: string;
+  adminTelegramAlertReason?: string;
   timestamp?: string;
   adminNotes: string;
   createdAt: string;

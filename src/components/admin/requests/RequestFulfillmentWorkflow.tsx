@@ -1547,6 +1547,12 @@ export function AdminRequestsHubView() {
                 <div className="mt-4 grid gap-2 text-xs text-white/45">
                   <div>Preferred VJ: {request.preferredVj || 'Not specified'}</div>
                   <div>Stage: {request.currentStage || request.workerStatus || 'Waiting'}</div>
+                  {request.adminTelegramAlertStatus && request.adminTelegramAlertStatus !== 'sent' ? (
+                    <div className="text-amber-100">
+                      Telegram alert: {request.adminTelegramAlertStatus}
+                      {request.adminTelegramAlertReason ? ` - ${request.adminTelegramAlertReason}` : ''}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
                   <Link
