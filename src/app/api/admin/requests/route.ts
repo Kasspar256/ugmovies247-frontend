@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { listRequestsForAdmin, updateRequestForAdmin } from '@/lib/server/adminControlCenter';
 import {
+  deleteMovieRequestForAdmin,
+  notifyMovieRequestUploadedFromCatalog,
   queueAdvancedMovieRequestFulfillment,
   rejectMovieRequest,
   sendVjVarianceMovieRequest,
@@ -52,7 +54,7 @@ export async function PATCH(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as {
       id?: string;
-      action?: 'fulfill' | 'vjVariance' | 'reply' | 'reject' | 'status';
+      action?: 'fulfill' | 'vjVariance' | 'reply' | 'reject' | 'status' | 'notifyUploaded' | 'delete';
       status?: AdminRequestStatus;
       adminNotes?: string;
       sourceUrl?: string;
@@ -124,6 +126,10 @@ export async function PATCH(request: Request) {
       await sendVjVarianceMovieRequest(requestId, String(body.message || body.adminNotes || ''));
     } else if (body.action === 'reject') {
       await rejectMovieRequest(requestId, String(body.message || ''));
+    } else if (body.action === 'notifyUploaded') {
+      resultPayload = await notifyMovieRequestUploadedFromCatalog(requestId, String(body.movieId || ''));
+    } else if (body.action === 'delete') {
+      await deleteMovieRequestForAdmin(requestId);
     } else {
       await updateRequestForAdmin(requestId, {
         status: body.status,

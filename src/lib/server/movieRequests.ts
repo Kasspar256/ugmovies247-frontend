@@ -247,6 +247,209 @@ async function getMovieRequest(requestId: string) {
   };
 }
 
+function normalizeTitleForMatch(value: unknown) {
+  return normalizeString(value)
+    .toLowerCase()
+    .replace(/\s*-\s*vj\s+[a-z0-9\s.'-]+$/i, '')
+    .replace(/\s*\(\s*vj\s+[a-z0-9\s.'-]+\s*\)$/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getCatalogTitleCandidates(data: Record<string, unknown>) {
+  return [
+    data.title,
+    data.movieTitle,
+    data.original_title,
+    data.originalTitle,
+    data.name,
+    data.file_name,
+  ]
+    .map(normalizeString)
+    .filter(Boolean);
+}
+
+function hasPlayableSource(data: Record<string, unknown>) {
+  return Boolean(
+    normalizeString(data.video_url) ||
+      normalizeString(data.masterPlaylistUrl) ||
+      normalizeString(data.publicVideoUrl)
+  );
+}
+
+function hasPlayablePart(value: unknown) {
+  return Array.isArray(value)
+    ? value.some((part) => part && typeof part === 'object' && hasPlayableSource(part as Record<string, unknown>))
+    : false;
+}
+
+function hasPlayableSeriesEpisode(value: unknown) {
+  if (!Array.isArray(value)) return false;
+
+  return value.some((season) => {
+    if (!season || typeof season !== 'object') return false;
+    const episodes = (season as Record<string, unknown>).episodes;
+
+    return Array.isArray(episodes)
+      ? episodes.some(
+          (episode) => episode && typeof episode === 'object' && hasPlayableSource(episode as Record<string, unknown>)
+        )
+      : false;
+  });
+}
+
+function isCatalogEntryReady(data: Record<string, unknown>) {
+  const status = normalizeString(data.status).toLowerCase();
+  const jobStatus = normalizeString(data.jobStatus).toLowerCase();
+  const blockedStatuses = new Set([
+    'queued',
+    'claimed',
+    'downloading',
+    'inspecting',
+    'processing',
+    'uploading',
+    'failed',
+    'rejected',
+  ]);
+
+  if (data.is_for_review === true || blockedStatuses.has(status) || blockedStatuses.has(jobStatus)) {
+    return false;
+  }
+
+  if (
+    data.catalogReady === true ||
+    status === 'ready' ||
+    status === 'live' ||
+    status === 'published' ||
+    jobStatus === 'ready' ||
+    jobStatus === 'uploaded'
+  ) {
+    return true;
+  }
+
+  return hasPlayableSource(data) || hasPlayablePart(data.parts) || hasPlayableSeriesEpisode(data.seasons);
+}
+
+async function findUploadedCatalogMatchForRequest(request: AdminRequest, explicitMovieId?: string) {
+  const requestTitle = request.title || request.movieTitle || '';
+  const requestedTitleKey = normalizeTitleForMatch(requestTitle);
+
+  if (!requestedTitleKey) {
+    throw new Error('This request has no title to match against the catalog.');
+  }
+
+  if (explicitMovieId?.trim()) {
+    const snapshot = await adminDb.collection(MOVIES_COLLECTION).doc(explicitMovieId.trim()).get();
+
+    if (!snapshot.exists) {
+      throw new Error('The selected catalog title was not found.');
+    }
+
+    const data = snapshot.data() || {};
+
+    if (!isCatalogEntryReady(data)) {
+      throw new Error('The selected catalog title is not live yet.');
+    }
+
+    return {
+      movieId: snapshot.id,
+      title: normalizeString(data.title) || requestTitle,
+      contentType: data.contentType === 'series' ? 'series' : 'movie',
+    };
+  }
+
+  const requestType = request.requestType === 'series' || request.contentType === 'series' ? 'series' : 'movie';
+  const preferredVj = normalizeString(request.preferredVj).toLowerCase();
+  const snapshot = await adminDb.collection(MOVIES_COLLECTION).limit(5000).get();
+  let bestMatch:
+    | {
+        score: number;
+        movieId: string;
+        title: string;
+        contentType: 'movie' | 'series';
+      }
+    | null = null;
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data() || {};
+
+    if (!isCatalogEntryReady(data)) continue;
+
+    const contentType = data.contentType === 'series' ? 'series' : 'movie';
+    const titleCandidates = getCatalogTitleCandidates(data);
+    const normalizedTitles = titleCandidates.map(normalizeTitleForMatch).filter(Boolean);
+
+    if (!normalizedTitles.length) continue;
+
+    let score = 0;
+
+    if (normalizedTitles.includes(requestedTitleKey)) {
+      score = 100;
+    } else if (
+      requestedTitleKey.length >= 5 &&
+      normalizedTitles.some((title) => title.includes(requestedTitleKey) || requestedTitleKey.includes(title))
+    ) {
+      score = 70;
+    }
+
+    if (!score) continue;
+    if (contentType === requestType) score += 20;
+
+    const catalogVj = normalizeString(data.vj).toLowerCase();
+    if (preferredVj && catalogVj && catalogVj.includes(preferredVj)) {
+      score += 8;
+    }
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = {
+        score,
+        movieId: doc.id,
+        title: titleCandidates[0] || requestTitle,
+        contentType,
+      };
+    }
+  }
+
+  if (!bestMatch) {
+    throw new Error(
+      `No live catalog title matched "${requestTitle}". Open the request fulfillment page if this title still needs manual linking.`
+    );
+  }
+
+  return bestMatch;
+}
+
+async function deleteProcessingJobsForRequest(requestId: string, processingJobId?: string) {
+  const knownJobIds = new Set<string>();
+
+  if (processingJobId) {
+    knownJobIds.add(processingJobId);
+  }
+
+  const jobsSnapshot = await adminDb
+    .collection(REQUEST_PROCESSING_JOBS_COLLECTION)
+    .where('requestId', '==', requestId)
+    .limit(100)
+    .get()
+    .catch(() => null);
+
+  jobsSnapshot?.docs.forEach((jobDoc) => {
+    knownJobIds.add(jobDoc.id);
+  });
+
+  if (!knownJobIds.size) {
+    return;
+  }
+
+  const batch = adminDb.batch();
+  knownJobIds.forEach((jobId) => {
+    batch.delete(adminDb.collection(REQUEST_PROCESSING_JOBS_COLLECTION).doc(jobId));
+  });
+
+  await batch.commit();
+}
+
 type AdvancedMovieRequestFulfillmentInput = {
   sourceUrl: string;
   adminNotes?: string;
@@ -769,4 +972,66 @@ export async function markMovieRequestUploaded(requestId: string, movieId: strin
     message: `"${request.title}" is now ready to watch.`,
     movieId: cleanMovieId,
   });
+}
+
+export async function notifyMovieRequestUploadedFromCatalog(requestId: string, movieId?: string) {
+  const { ref, request } = await getMovieRequest(requestId);
+  const match = await findUploadedCatalogMatchForRequest(request, movieId);
+  const timestamp = nowIso();
+  const requestType = match.contentType === 'series' ? 'series' : 'movie';
+  const label = requestType === 'series' ? 'series' : 'movie';
+
+  await ref.set(
+    {
+      status: 'uploaded',
+      movieId: match.movieId,
+      contentType: requestType,
+      requestType,
+      uploadedAt: timestamp,
+      updatedAt: timestamp,
+      lastActionAt: timestamp,
+      workerStatus: 'done',
+      workerError: '',
+      progress: 100,
+      currentStage: 'Live and ready to watch',
+      adminNotes: `User notified that "${match.title}" is already live in the catalog.`,
+    },
+    { merge: true }
+  );
+
+  await deleteProcessingJobsForRequest(requestId, request.processingJobId);
+
+  await sendMovieRequestUserUpdate({
+    request: {
+      ...request,
+      movieId: match.movieId,
+      contentType: requestType,
+      requestType,
+      status: 'uploaded',
+    },
+    status: 'uploaded',
+    subject: `Your requested ${label} is ready`,
+    title: `Your requested ${label} is ready!`,
+    message: `"${match.title}" has been uploaded to UGMOVIES247 and is ready to watch now.`,
+    lines: [
+      `Requested title: ${request.title || request.movieTitle || match.title}`,
+      'Open the app and continue watching from your library.',
+    ],
+    movieId: match.movieId,
+  });
+
+  return {
+    movieId: match.movieId,
+    title: match.title,
+    contentType: requestType,
+  };
+}
+
+export async function deleteMovieRequestForAdmin(requestId: string) {
+  const { ref, request } = await getMovieRequest(requestId);
+  const batch = adminDb.batch();
+
+  batch.delete(ref);
+  await batch.commit();
+  await deleteProcessingJobsForRequest(requestId, request.processingJobId);
 }

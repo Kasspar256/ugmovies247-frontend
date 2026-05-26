@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ArrowLeft,
+  CheckCircle2,
   Film,
   Gauge,
   ImagePlus,
@@ -1166,11 +1167,12 @@ function RequestQuickActions({
   onComplete: () => void;
 }) {
   const [alternativeVj, setAlternativeVj] = useState('');
-  const [busyAction, setBusyAction] = useState<'vj' | 'unavailable' | ''>('');
+  const [busyAction, setBusyAction] = useState<'vj' | 'uploaded' | 'unavailable' | 'delete' | ''>('');
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const title = request.title || request.movieTitle || 'this title';
   const requestType = getRequestTypeLabel(request);
+  const requester = getRequester(request);
 
   const sendAlternativeVj = async () => {
     const cleanVj = alternativeVj.trim();
@@ -1221,6 +1223,60 @@ function RequestQuickActions({
     }
   };
 
+  const notifyUploaded = async () => {
+    if (
+      !window.confirm(
+        `Notify ${requester} that "${title}" is already uploaded and ready to watch? This will remove the request from the active request hub.`
+      )
+    ) {
+      return;
+    }
+
+    setBusyAction('uploaded');
+    setErrorMessage('');
+    setMessage('');
+
+    try {
+      await patchRequestAction({
+        id: request.id,
+        action: 'notifyUploaded',
+      });
+      setMessage('Ready notification sent and request cleared.');
+      onComplete();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to notify the requester.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const deleteRequest = async () => {
+    if (
+      !window.confirm(
+        `Delete the request for "${title}" from the admin hub? This only removes the request record and any request-worker queue card. It will not delete movies, series, or R2 files.`
+      )
+    ) {
+      return;
+    }
+
+    setBusyAction('delete');
+    setErrorMessage('');
+    setMessage('');
+
+    try {
+      await patchRequestAction({
+        id: request.id,
+        action: 'delete',
+      });
+      setMessage('Request deleted.');
+      onComplete();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete request.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   return (
     <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3">
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -1247,6 +1303,26 @@ function RequestQuickActions({
       >
         {busyAction === 'unavailable' ? 'Sending...' : 'Mark Unavailable'}
       </button>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          disabled={busyAction !== ''}
+          onClick={() => void notifyUploaded()}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-100 disabled:opacity-55"
+        >
+          <CheckCircle2 size={14} />
+          {busyAction === 'uploaded' ? 'Sending...' : 'Notify Uploaded'}
+        </button>
+        <button
+          type="button"
+          disabled={busyAction !== ''}
+          onClick={() => void deleteRequest()}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white/70 transition hover:border-red-300/25 hover:bg-red-500/10 hover:text-red-100 disabled:opacity-55"
+        >
+          <Trash2 size={14} />
+          {busyAction === 'delete' ? 'Deleting...' : 'Delete Request'}
+        </button>
+      </div>
       {message ? <div className="mt-3 text-xs font-semibold text-emerald-100">{message}</div> : null}
       {errorMessage ? <div className="mt-3 text-xs font-semibold text-amber-100">{errorMessage}</div> : null}
     </div>
