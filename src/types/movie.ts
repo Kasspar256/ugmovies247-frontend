@@ -80,6 +80,7 @@ export type Season = {
   title?: string;
   overview?: string;
   poster?: string;
+  overriddenBackdrop?: string;
   tmdb_id?: number | null;
   episodes: Episode[];
 };
@@ -121,6 +122,7 @@ export type Movie = {
   tags?: string[];
   cast?: string[];
   poster: string;
+  heroPoster?: string;
   overriddenBackdrop?: string;
   overriddenPlayerBackdrop?: string;
   playerBackdrop?: string;
@@ -332,6 +334,8 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
           title: typeof rawSeason.title === 'string' ? rawSeason.title : '',
           overview: typeof rawSeason.overview === 'string' ? rawSeason.overview : '',
           poster: typeof rawSeason.poster === 'string' ? rawSeason.poster : '',
+          overriddenBackdrop:
+            typeof rawSeason.overriddenBackdrop === 'string' ? rawSeason.overriddenBackdrop : '',
           tmdb_id: typeof rawSeason.tmdb_id === 'number' ? rawSeason.tmdb_id : null,
           episodes,
         };
@@ -384,6 +388,7 @@ export function normalizeMovie(id: string, data: Record<string, unknown>): Movie
       ? data.cast.filter((castMember): castMember is string => typeof castMember === 'string')
       : [],
     poster: typeof data.poster === 'string' ? data.poster : '',
+    heroPoster: typeof data.heroPoster === 'string' ? data.heroPoster : '',
     overriddenBackdrop:
       typeof data.overriddenBackdrop === 'string' ? data.overriddenBackdrop : '',
     overriddenPlayerBackdrop:
