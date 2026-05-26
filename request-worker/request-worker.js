@@ -467,24 +467,13 @@ function buildPublicUrl(key) {
 async function uploadToR2(s3, key, filePath, onProgress) {
   const stats = await fs.stat(filePath);
   const stream = createReadStream(filePath);
-  let uploadedBytes = 0;
-  let lastEmitAt = 0;
-
-  stream.on('data', (chunk) => {
-    uploadedBytes += chunk.length;
-    const now = Date.now();
-
-    if (now - lastEmitAt > 2000) {
-      lastEmitAt = now;
-      onProgress?.(uploadedBytes, stats.size);
-    }
-  });
 
   await s3.send(
     new PutObjectCommand({
       Bucket: requireEnv('R2_BUCKET'),
       Key: key,
       Body: stream,
+      ContentLength: stats.size,
       ContentType: 'video/mp4',
     })
   );
@@ -2506,6 +2495,8 @@ async function main() {
       secretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
     },
     forcePathStyle: true,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
   const db = admin.firestore();
   const pollIntervalMs = Number(process.env.POLL_INTERVAL_MS || 15000);
