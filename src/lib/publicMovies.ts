@@ -14,7 +14,7 @@ type CachedPublicMovieCatalog = {
 
 const PUBLIC_MOVIE_CACHE_KEY = isAppInReview
   ? 'ugmovies247.public-movies.review.v1'
-  : 'ugmovies247.public-movies.v8';
+  : 'ugmovies247.public-movies.v9';
 const PUBLIC_MOVIE_CACHE_READ_KEYS = isAppInReview
   ? ['ugmovies247.public-movies.review.v1']
   : [PUBLIC_MOVIE_CACHE_KEY];
@@ -229,6 +229,7 @@ export function clearPublicMovieCache() {
     window.localStorage?.removeItem('ugmovies247.public-movies.v5');
     window.localStorage?.removeItem('ugmovies247.public-movies.v6');
     window.localStorage?.removeItem('ugmovies247.public-movies.v7');
+    window.localStorage?.removeItem('ugmovies247.public-movies.v8');
     window.sessionStorage?.removeItem(PUBLIC_MOVIE_CACHE_KEY);
     window.sessionStorage?.removeItem('ugmovies247.public-movies.review.v1');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v1');
@@ -238,6 +239,7 @@ export function clearPublicMovieCache() {
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v5');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v6');
     window.sessionStorage?.removeItem('ugmovies247.public-movies.v7');
+    window.sessionStorage?.removeItem('ugmovies247.public-movies.v8');
   } catch {
     // Ignore persistent storage removal failures and keep the cache cleared in memory.
   }
@@ -466,6 +468,10 @@ function findCachedPublicMovie(movieId: string) {
 }
 
 async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
+  if (cache.partial) {
+    return fetchPublicMovies({ force: true });
+  }
+
   if (inFlightMovieDeltaRequest) {
     return inFlightMovieDeltaRequest;
   }
@@ -497,6 +503,7 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
         movies,
         cachedAt: Date.now(),
         lastSyncedAt: getCatalogSyncIso({ movies, cachedAt: Date.now() }),
+        partial: false,
       });
 
       return movies;
@@ -512,21 +519,28 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
   return inFlightMovieDeltaRequest;
 }
 
-export function refreshPublicMoviesInBackground(options?: { refreshEntitlement?: boolean }) {
+export function refreshPublicMoviesInBackground(options?: {
+  refreshEntitlement?: boolean;
+  forceFull?: boolean;
+}) {
   if (typeof window === 'undefined') {
     return;
   }
 
   const now = Date.now();
 
-  if (!options?.refreshEntitlement && now - lastBackgroundMovieRefreshAt < 1000 * 30) {
+  if (
+    !options?.forceFull &&
+    !options?.refreshEntitlement &&
+    now - lastBackgroundMovieRefreshAt < 1000 * 30
+  ) {
     return;
   }
 
   lastBackgroundMovieRefreshAt = now;
   const cache = getAnyAvailableCatalog();
 
-  if (options?.refreshEntitlement || !cache?.movies?.length) {
+  if (options?.forceFull || options?.refreshEntitlement || !cache?.movies?.length || cache.partial) {
     void fetchPublicMovies({ force: true, refreshEntitlement: options?.refreshEntitlement }).catch(() => undefined);
     return;
   }
@@ -557,6 +571,7 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     if (staleCatalog?.movies?.length) {
       refreshPublicMoviesInBackground({
         refreshEntitlement: shouldRefreshEntitlement,
+        forceFull: staleCatalog.partial === true,
       });
       return filterPublicReadyMovies(staleCatalog.movies);
     }
@@ -601,6 +616,7 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
         movies,
         cachedAt: Date.now(),
         lastSyncedAt: getCatalogSyncIso({ movies, cachedAt: Date.now() }),
+        partial: false,
       });
 
       return movies;

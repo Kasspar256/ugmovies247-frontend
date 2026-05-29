@@ -1,5 +1,9 @@
 import { isAppInReview } from '@/lib/appReview';
-import { DEFAULT_HOME_PAGE_CATEGORIES, type HomePageCategoryRecord } from '@/lib/homeRows';
+import {
+  buildHomeCollections,
+  DEFAULT_HOME_PAGE_CATEGORIES,
+  type HomePageCategoryRecord,
+} from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import { isPublicMovieReady, isPublicPlaybackAssetReady } from '@/lib/publicReadiness';
 import { normalizeMovie, type Movie } from '@/types/movie';
@@ -14,10 +18,12 @@ export type PublicCatalogBootstrapPayload = {
   source: 'memory' | 'disk' | 'empty';
 };
 
-const BOOTSTRAP_MOVIE_LIMIT = 96;
-const BOOTSTRAP_LATEST_LIMIT = 72;
+const BOOTSTRAP_MOVIE_LIMIT = 360;
+const BOOTSTRAP_LATEST_LIMIT = 96;
 const BOOTSTRAP_TRENDING_LIMIT = 24;
-const BOOTSTRAP_FEATURED_LIMIT = 24;
+const BOOTSTRAP_FEATURED_LIMIT = 48;
+const BOOTSTRAP_ROW_MOVIE_LIMIT = 18;
+const BOOTSTRAP_ROW_SERIES_LIMIT = 12;
 const BOOTSTRAP_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
 let inMemoryPublicBootstrapCatalog: PublicCatalogBootstrapPayload | null = null;
@@ -225,18 +231,36 @@ function pickBootstrapMovies(movieDocs: RawMovie[]) {
         : isPublicMovieReady(movie, BOOTSTRAP_READINESS_OPTIONS)
     )
   );
-  const latestMovies = visibleMovies.slice(0, BOOTSTRAP_LATEST_LIMIT);
-  const trendingMovies = visibleMovies
+  const compactVisibleMovies = visibleMovies
+    .map(compactMovieForPublicBootstrap)
+    .filter((movie) => movie.id);
+  const { homeRows, unmatchedMovies } = buildHomeCollections({
+    movies: compactVisibleMovies,
+    homePageCategories: DEFAULT_HOME_PAGE_CATEGORIES,
+    activeCategory: 'ALL',
+  });
+  const latestMovies = compactVisibleMovies.slice(0, BOOTSTRAP_LATEST_LIMIT);
+  const rowCoverageMovies = homeRows.flatMap((row) =>
+    row.movies.slice(
+      0,
+      row.usesSeriesBackdropCards ? BOOTSTRAP_ROW_SERIES_LIMIT : BOOTSTRAP_ROW_MOVIE_LIMIT
+    )
+  );
+  const trendingMovies = compactVisibleMovies
     .filter((movie) => movie.is_trending_tiktok === true)
     .slice(0, BOOTSTRAP_TRENDING_LIMIT);
-  const featuredMovies = visibleMovies
+  const featuredMovies = compactVisibleMovies
     .filter((movie) => Array.isArray(movie.category) && movie.category.length > 0)
     .slice(0, BOOTSTRAP_FEATURED_LIMIT);
 
   return dedupeSeriesMovies(
-    [...latestMovies, ...trendingMovies, ...featuredMovies]
-      .map(compactMovieForPublicBootstrap)
-      .filter((movie) => movie.id)
+    [
+      ...latestMovies,
+      ...rowCoverageMovies,
+      ...trendingMovies,
+      ...featuredMovies,
+      ...unmatchedMovies.slice(0, BOOTSTRAP_FEATURED_LIMIT),
+    ]
   ).slice(0, BOOTSTRAP_MOVIE_LIMIT);
 }
 
@@ -306,3 +330,4 @@ export function createEmptyPublicBootstrapPayload(): PublicCatalogBootstrapPaylo
     source: 'empty',
   };
 }
+
