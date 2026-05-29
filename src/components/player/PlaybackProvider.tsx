@@ -501,8 +501,10 @@ async function lockLandscapeOrientation() {
     return;
   }
 
-  await orientation.lock('landscape-primary').catch(async () => {
-    await orientation.lock?.('landscape').catch(() => {
+  await orientation.lock('landscape').catch(async (error) => {
+    console.log('Orientation lock rejected:', error);
+    await orientation.lock('landscape-primary').catch((fallbackError) => {
+      console.log('Orientation lock rejected:', fallbackError);
       // Some browsers/WebViews only allow orientation lock after fullscreen starts.
     });
   });

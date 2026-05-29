@@ -39,6 +39,7 @@ import {
   VIDEO_JOBS_COLLECTION,
   VIDEO_JOB_RUNTIME_COLLECTION,
 } from './firestoreNamespaces';
+import { sendLatestUploadPushNotification } from './uploadNotifications';
 
 const CLAIMING_STALE_MS = 30 * 1000;
 const DOWNLOAD_PROGRESS_PERCENT_WRITE_STEP = 5;
@@ -1033,6 +1034,12 @@ export async function processNextVideoJob() {
     await withControlPlaneRetry(`append completion log for job ${job.id}`, () =>
       appendJobLog(job.id!, 'Movie import completed and is ready for playback from R2.')
     );
+    await sendLatestUploadPushNotification(job.target.movieId).catch((error) => {
+      console.warn(
+        `[video-jobs] latest upload push notification failed for ${job.target.movieId}`,
+        error instanceof Error ? error.message : error
+      );
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown processing error.';
 

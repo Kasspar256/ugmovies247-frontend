@@ -7,8 +7,10 @@ import MobileBottomNav from '@/components/MobileBottomNav';
 import MovieRequestDeepLinkHandler from '@/components/MovieRequestDeepLinkHandler';
 import NavigationStateRetainer from '@/components/NavigationStateRetainer';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
+import PushNotificationRegistrar from '@/components/PushNotificationRegistrar';
 import PublicCatalogHydrator from '@/components/PublicCatalogHydrator';
 import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
+import StartupRecoveryScript from '@/components/StartupRecoveryScript';
 import { buildPageMetadata, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE } from '@/lib/seo';
 
 export const metadata = {
@@ -48,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        <StartupRecoveryScript />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
@@ -58,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavigationStateRetainer />
           <PublicCatalogHydrator />
           <ServiceWorkerRegistrar />
+          <PushNotificationRegistrar />
           <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
             <AuthGate>
               <AppChrome>{children}</AppChrome>
