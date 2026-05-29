@@ -43,3 +43,19 @@ export function getNativeFirebaseAuthentication() {
     null
   ) as NativeFirebaseAuthenticationPlugin | null;
 }
+
+export async function loadNativeFirebaseAuthentication() {
+  const registeredPlugin = getNativeFirebaseAuthentication();
+
+  if (registeredPlugin?.signInWithGoogle) {
+    return registeredPlugin;
+  }
+
+  try {
+    const module = await import('@capacitor-firebase/authentication');
+
+    return module.FirebaseAuthentication as NativeFirebaseAuthenticationPlugin;
+  } catch {
+    return registeredPlugin;
+  }
+}

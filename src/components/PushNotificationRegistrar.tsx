@@ -81,6 +81,20 @@ async function setBadgeCount(count: number) {
   const normalizedCount = Math.max(0, Math.floor(count));
   writeStoredBadgeCount(normalizedCount);
 
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Badge } = await import('@capawesome/capacitor-badge');
+
+      if (normalizedCount > 0) {
+        await Badge.set({ count: normalizedCount });
+      } else {
+        await Badge.clear();
+      }
+    } catch (error) {
+      console.warn('[push] native app badge update failed', error);
+    }
+  }
+
   if (typeof navigator === 'undefined') {
     return;
   }
@@ -184,7 +198,9 @@ function resolveNotificationRoute(payload: unknown) {
     ? (record.data as Record<string, unknown>)
     : notification.data && typeof notification.data === 'object'
       ? (notification.data as Record<string, unknown>)
-    : record;
+      : notification.extra && typeof notification.extra === 'object'
+        ? (notification.extra as Record<string, unknown>)
+        : record;
   const rawRoute = String(data.route || data.link || data.url || '').trim();
   const movieId = String(data.movieId || data.movie || '').trim();
 
@@ -214,6 +230,11 @@ function openNotificationRoute(payload: unknown) {
 }
 
 async function maybeShowForegroundNotification(payload: NativePushNotification) {
+  if (Capacitor.isNativePlatform()) {
+    await maybeShowNativeForegroundNotification(payload);
+    return;
+  }
+
   if (typeof window === 'undefined' || typeof Notification === 'undefined') {
     return;
   }
@@ -237,6 +258,50 @@ async function maybeShowForegroundNotification(payload: NativePushNotification) 
   };
 }
 
+async function maybeShowNativeForegroundNotification(payload: NativePushNotification) {
+  const data = payload.data || {};
+  const title = payload.title || String(data.title || data.notificationTitle || 'UGMOVIES247');
+  const body = payload.body || String(data.body || data.message || 'A new update is ready.');
+  const channelId = String(data.channelId || data.channel || 'latest_uploads');
+
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+    const permission = await LocalNotifications.requestPermissions().catch(() => null);
+
+    if (permission?.display && permission.display !== 'granted') {
+      return;
+    }
+
+    if (Capacitor.getPlatform() === 'android') {
+      await LocalNotifications.createChannel({
+        id: channelId,
+        name: channelId === 'movie_requests' ? 'Movie Requests' : 'Latest Uploads',
+        description:
+          channelId === 'movie_requests'
+            ? 'Request status and admin alerts'
+            : 'New movie and series upload alerts',
+        importance: 5,
+        visibility: 1,
+        sound: 'default',
+      }).catch(() => undefined);
+    }
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: Math.max(1, Math.floor(Date.now() % 2147483647)),
+          title,
+          body,
+          channelId,
+          extra: data,
+        },
+      ],
+    });
+  } catch (error) {
+    console.warn('[push] native foreground notification failed', error);
+  }
+}
+
 async function normalizeListenerHandle(
   handle: Promise<{ remove: () => Promise<void> }> | { remove: () => Promise<void> } | undefined
 ) {
@@ -245,6 +310,22 @@ async function normalizeListenerHandle(
   }
 
   return Promise.resolve(handle).catch(() => null);
+}
+
+async function registerNativeLocalNotificationActionListener() {
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications');
+
+    return normalizeListenerHandle(
+      LocalNotifications.addListener('localNotificationActionPerformed', (payload) => {
+        void setBadgeCount(Math.max(0, readStoredBadgeCount() - 1));
+        openNotificationRoute(payload);
+      })
+    );
+  } catch (error) {
+    console.warn('[push] native local notification action listener failed', error);
+    return null;
+  }
 }
 
 async function registerNativePush() {
@@ -308,6 +389,7 @@ async function registerNativePush() {
       openNotificationRoute(payload);
     })
   );
+  const localActionHandle = await registerNativeLocalNotificationActionListener();
 
   await plugin.register().catch((error) => {
     console.warn('[push] native registration failed', error);
@@ -317,6 +399,7 @@ async function registerNativePush() {
     void registrationHandle?.remove().catch(() => undefined);
     void receivedHandle?.remove().catch(() => undefined);
     void actionHandle?.remove().catch(() => undefined);
+    void localActionHandle?.remove().catch(() => undefined);
   };
 }
 

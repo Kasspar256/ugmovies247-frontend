@@ -510,12 +510,19 @@ async function lockLandscapeOrientation() {
   });
 }
 
-function unlockScreenOrientation() {
+async function unlockScreenOrientation(preferPortrait = false) {
   if (typeof window === 'undefined') {
     return;
   }
 
   const orientation = window.screen?.orientation as ScreenOrientationWithLock | undefined;
+
+  if (preferPortrait && typeof orientation?.lock === 'function') {
+    await orientation.lock('portrait').catch(async () => {
+      await orientation.lock?.('portrait-primary').catch(() => undefined);
+    });
+    return;
+  }
 
   if (typeof orientation?.unlock === 'function') {
     orientation.unlock();
@@ -789,7 +796,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       if ((nextIsFullscreen || softLandscapeFullscreen) && !isDesktop) {
         void lockLandscapeOrientation();
       } else if (!nextIsFullscreen && !softLandscapeFullscreen) {
-        unlockScreenOrientation();
+        void unlockScreenOrientation(true);
       }
     };
 
@@ -826,7 +833,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     return () => {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousDocumentOverflow;
-      unlockScreenOrientation();
+      void unlockScreenOrientation(true);
     };
   }, [softLandscapeFullscreen]);
 
@@ -1010,6 +1017,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setHoverPreviewRatio(null);
     setSettingsOpen(false);
     setSoftLandscapeFullscreen(false);
+    setIsFullscreen(false);
+    void unlockScreenOrientation(true);
     setPlaybackPhaseSafe('idle');
 
     const videoElement = videoRef.current;
@@ -1024,6 +1033,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!activeSource && softLandscapeFullscreen) {
       setSoftLandscapeFullscreen(false);
+      setIsFullscreen(false);
+      void unlockScreenOrientation(true);
     }
   }, [activeSource, softLandscapeFullscreen]);
 
@@ -1283,22 +1294,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     ) {
       if (softLandscapeFullscreen) {
         setSoftLandscapeFullscreen(false);
-        unlockScreenOrientation();
+        setIsFullscreen(false);
+        await unlockScreenOrientation(true);
         return;
       }
 
       if (videoElement.webkitExitFullscreen) {
         videoElement.webkitExitFullscreen();
+        setIsFullscreen(false);
+        await unlockScreenOrientation(true);
         return;
       }
 
       if (document.fullscreenElement && document.exitFullscreen) {
         await document.exitFullscreen();
+        setIsFullscreen(false);
+        await unlockScreenOrientation(true);
         return;
       }
 
       if (doc.webkitExitFullscreen) {
         await doc.webkitExitFullscreen();
+        setIsFullscreen(false);
+        await unlockScreenOrientation(true);
       }
 
       return;
@@ -1308,12 +1326,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       await lockLandscapeOrientation();
       try {
         videoElement.webkitEnterFullscreen();
+        setIsFullscreen(true);
         window.setTimeout(() => {
           void lockLandscapeOrientation();
         }, 250);
         return;
       } catch {
         setSoftLandscapeFullscreen(true);
+        setIsFullscreen(true);
       }
 
       window.setTimeout(() => {
@@ -1324,6 +1344,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     if (isNativeAndroidAppShell && !isDesktop) {
       await lockLandscapeOrientation();
+      setIsFullscreen(true);
       setSoftLandscapeFullscreen(true);
       scheduleMobileLandscapeFallback();
       return;
@@ -1332,6 +1353,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (shellElement && typeof shellElement.requestFullscreen === 'function') {
       try {
         await shellElement.requestFullscreen();
+        setIsFullscreen(true);
 
         if (!isDesktop) {
           await lockLandscapeOrientation();
@@ -1341,6 +1363,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       } catch {
         if (!isDesktop) {
+          setIsFullscreen(true);
           setSoftLandscapeFullscreen(true);
           scheduleMobileLandscapeFallback();
           return;
@@ -1351,6 +1374,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (typeof videoElement.requestFullscreen === 'function') {
       try {
         await videoElement.requestFullscreen();
+        setIsFullscreen(true);
 
         if (!isDesktop) {
           await lockLandscapeOrientation();
@@ -1358,6 +1382,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         if (!isDesktop) {
+          setIsFullscreen(true);
           setSoftLandscapeFullscreen(true);
           scheduleMobileLandscapeFallback();
         }
@@ -1366,6 +1391,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (!isDesktop) {
+      setIsFullscreen(true);
       setSoftLandscapeFullscreen(true);
       scheduleMobileLandscapeFallback();
     }
@@ -1376,6 +1402,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const pipDocument = document as PictureInPictureDocument;
 
     showControls(true);
+
+    if (isNativeAndroidAppShell) {
+      return;
+    }
 
     const canUseStandardPictureInPicture = Boolean(
       videoElement?.requestPictureInPicture &&
@@ -1392,14 +1422,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     if (!canUseStandardPictureInPicture && !canUseWebkitPictureInPicture) {
-      if (isNativeAndroidAppShell) {
-        showCastFeedback(
-          'Pop-up video needs an Android app update. Opening the landscape player instead.'
-        );
-        void tryEnterFullscreen();
-        return;
-      }
-
       if (isAndroidDevice) {
         showCastFeedback(
           'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
@@ -1430,14 +1452,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       videoElement.webkitSetPresentationMode?.('picture-in-picture');
     } catch (error) {
-      if (isNativeAndroidAppShell) {
-        showCastFeedback(
-          'Pop-up video needs an Android app update. Opening the landscape player instead.'
-        );
-        void tryEnterFullscreen();
-        return;
-      }
-
       if (isAndroidDevice) {
         showCastFeedback(
           'Opening fullscreen. Press Home to keep watching if your Android browser supports pop-up video.'
@@ -1718,10 +1732,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [activeSource, seekBy, seekTo]);
 
   const canOfferPictureInPictureControl =
-    pictureInPictureSupported || (isAndroidDevice && isTouchDevice);
+    !isNativeAndroidAppShell && pictureInPictureSupported;
 
   useEffect(() => {
-    if (!activeSource || !pictureInPictureSupported || typeof document === 'undefined') {
+    if (isNativeAndroidAppShell || !activeSource || !pictureInPictureSupported || typeof document === 'undefined') {
       return;
     }
 
@@ -1766,7 +1780,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [activeSource, pictureInPictureSupported]);
+  }, [activeSource, isNativeAndroidAppShell, pictureInPictureSupported]);
 
   useEffect(() => {
     if (

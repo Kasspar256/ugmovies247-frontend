@@ -6,6 +6,7 @@ import EnvironmentBadge from '@/components/EnvironmentBadge';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import MovieRequestDeepLinkHandler from '@/components/MovieRequestDeepLinkHandler';
 import NavigationStateRetainer from '@/components/NavigationStateRetainer';
+import NativeNetworkGuard from '@/components/NativeNetworkGuard';
 import { PlaybackProvider } from '@/components/player/PlaybackProvider';
 import PushNotificationRegistrar from '@/components/PushNotificationRegistrar';
 import PublicCatalogHydrator from '@/components/PublicCatalogHydrator';
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <PublicCatalogHydrator />
           <ServiceWorkerRegistrar />
           <PushNotificationRegistrar />
+          <NativeNetworkGuard />
           <main className="w-full mx-auto min-h-screen relative bg-[#0B0C10]">
             <AuthGate>
               <AppChrome>{children}</AppChrome>

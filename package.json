@@ -16,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.931.0",
     "@aws-sdk/s3-request-presigner": "^3.931.0",
+    "@capacitor-firebase/authentication": "^7.5.0",
     "@capacitor/android": "^7.4.4",
     "@capacitor/app": "^7.1.0",
     "@capacitor/browser": "^7.0.2",
@@ -23,6 +24,8 @@
     "@capacitor/core": "^7.4.4",
     "@capacitor/file-transfer": "^1.0.12",
     "@capacitor/filesystem": "^7.1.8",
+    "@capacitor/local-notifications": "^7.0.6",
+    "@capacitor/network": "^7.0.4",
     "@capacitor/push-notifications": "^7.0.6",
     "@capacitor/toast": "^7.0.2",
     "@capawesome/capacitor-badge": "^7.0.1",

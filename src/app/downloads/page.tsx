@@ -389,10 +389,12 @@ export default function DownloadsPage() {
               </button>
             </div>
             <video
+              key={activeOfflineMovie.fileUri || activeOfflineMovie.playbackUrl}
               src={activeOfflineMovie.playbackUrl}
               poster={activeOfflineMovie.poster}
               controls
               playsInline
+              preload="metadata"
               className="aspect-video w-full bg-black"
             />
           </div>

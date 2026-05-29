@@ -12,7 +12,11 @@ import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
-import { getNativeFirebaseAuthentication, isNativeAndroidApp } from '@/lib/mobile/nativeApp';
+import {
+  getNativeFirebaseAuthentication,
+  isNativeAndroidApp,
+  loadNativeFirebaseAuthentication,
+} from '@/lib/mobile/nativeApp';
 import {
   browserLocalPersistence,
   GoogleAuthProvider,
@@ -681,7 +685,7 @@ function buildNativeGoogleUnavailableError() {
 }
 
 async function continueWithNativeGoogle(rememberMe: boolean) {
-  const nativeFirebaseAuthentication = getNativeFirebaseAuthentication();
+  const nativeFirebaseAuthentication = await loadNativeFirebaseAuthentication();
 
   if (!nativeFirebaseAuthentication?.signInWithGoogle) {
     throw buildNativeGoogleUnavailableError();
@@ -879,7 +883,7 @@ export async function restoreServerSessionFromClientAuth() {
     });
   }
 
-  const nativeFirebaseAuthentication = getNativeFirebaseAuthentication();
+  const nativeFirebaseAuthentication = await loadNativeFirebaseAuthentication();
   const nativeTokenResult = await nativeFirebaseAuthentication?.getIdToken?.().catch(() => null);
   const nativeIdToken =
     typeof nativeTokenResult?.token === 'string' ? nativeTokenResult.token : '';

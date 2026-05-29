@@ -6,6 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'mobile-shell',
   server: {
     url: 'https://ugmovies247.com/browse',
+    errorPath: 'offline.html',
     cleartext: false,
   },
   appendUserAgent: ' Ugmovies247App',
@@ -14,12 +15,21 @@ const config: CapacitorConfig = {
     minWebViewVersion: 90,
   },
   plugins: {
+    Badge: {
+      persist: true,
+      autoClear: false,
+    },
     FirebaseAuthentication: {
       authDomain: 'ugmovies247k.firebaseapp.com',
       skipNativeAuth: false,
       providers: ['google.com'],
     },
+    LocalNotifications: {
+      smallIcon: 'ic_launcher',
+      iconColor: '#D90429',
+    },
   },
 };
 
 export default config;
+

@@ -65,7 +65,36 @@ function nowIso() {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error || 'Download failed.');
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    const data = record.data && typeof record.data === 'object'
+      ? (record.data as Record<string, unknown>)
+      : {};
+    const candidates = [
+      record.message,
+      record.errorMessage,
+      record.error,
+      record.code,
+      data.message,
+      data.errorMessage,
+      data.error,
+      data.code,
+    ];
+
+    for (const candidate of candidates) {
+      const message = String(candidate || '').trim();
+
+      if (message) {
+        return message;
+      }
+    }
+  }
+
+  return String(error || 'Download failed.');
 }
 
 function isAndroidStoragePermissionError(error: unknown) {
@@ -100,6 +129,20 @@ function safeFilePart(value: string) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 90) || 'video';
+}
+
+function isHttpUrl(value?: string | null) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+function isLikelyHlsUrl(value?: string | null) {
+  const normalizedValue = String(value || '').trim();
+
+  return Boolean(
+    normalizedValue &&
+      (/\.m3u8(?:[?#]|$)/i.test(normalizedValue) ||
+        /(?:^|[?&])format=hls(?:&|$)/i.test(normalizedValue))
+  );
 }
 
 function hashString(value: string) {
@@ -485,6 +528,11 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
   await ensureOfflineDirectory();
 
   const downloadInput = withOfflineDownloadKey(movie);
+
+  if (isLikelyHlsUrl(downloadInput.video_url)) {
+    throw new Error('Offline downloads need the original MP4 file. This title can stream online, but it cannot be saved to this device yet.');
+  }
+
   const existing = await findOfflineDownload(downloadInput.downloadKey);
 
   if (existing) {
@@ -534,7 +582,39 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
   });
 
   try {
-    const ticket = await requestDownloadTicket(downloadInput);
+    let ticket: DownloadTicket | null = null;
+    let ticketError: unknown = null;
+
+    try {
+      ticket = await requestDownloadTicket(downloadInput);
+    } catch (error) {
+      if (/unauthorized|subscription required/i.test(getErrorMessage(error))) {
+        throw error;
+      }
+
+      ticketError = error;
+      console.warn('[offline-downloads] protected ticket unavailable; trying direct source', {
+        downloadKey: downloadInput.downloadKey,
+        title: downloadInput.title,
+        error,
+      });
+    }
+
+    const candidateDownloadUrls = Array.from(
+      new Set(
+        [ticket?.downloadUrl, downloadInput.video_url]
+          .map((candidate) => String(candidate || '').trim())
+          .filter((candidate) => isHttpUrl(candidate) && !isLikelyHlsUrl(candidate))
+      )
+    );
+
+    if (!candidateDownloadUrls.length) {
+      throw (
+        ticketError ||
+        new Error('No downloadable MP4 source was found for offline playback.')
+      );
+    }
+
     const fileInfo = await Filesystem.getUri({
       directory: Directory.Data,
       path: tempStoragePath,
@@ -546,10 +626,10 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       const progressSource = String(
         (progress as { source?: string; url?: string }).source ||
           (progress as { source?: string; url?: string }).url ||
-          ''
+        ''
       );
 
-      if (progressSource && progressSource !== ticket.downloadUrl) return;
+      if (progressSource && !candidateDownloadUrls.includes(progressSource)) return;
 
       if (!progressSource) {
         const activeDownloadCount = Array.from(activeDownloads.values()).filter(
@@ -569,11 +649,37 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       }));
     });
 
-    await FileTransfer.downloadFile({
-      url: ticket.downloadUrl,
-      path: fileInfo.uri,
-      progress: true,
-    });
+    let transferError: unknown = null;
+    let downloaded = false;
+
+    for (const transferUrl of candidateDownloadUrls) {
+      await deleteDataFile(tempStoragePath).catch(() => undefined);
+
+      try {
+        await FileTransfer.downloadFile({
+          url: transferUrl,
+          path: fileInfo.uri,
+          progress: true,
+          headers: {
+            Accept: 'video/mp4,application/octet-stream,*/*',
+          },
+        });
+        downloaded = true;
+        break;
+      } catch (error) {
+        transferError = error;
+        console.warn('[offline-downloads] file transfer attempt failed', {
+          downloadKey: downloadInput.downloadKey,
+          title: downloadInput.title,
+          url: transferUrl,
+          error,
+        });
+      }
+    }
+
+    if (!downloaded) {
+      throw transferError || ticketError || new Error('The offline file transfer failed.');
+    }
 
     if (cancelledDownloadRunIds.has(runId)) {
       await deleteDataFile(tempStoragePath);

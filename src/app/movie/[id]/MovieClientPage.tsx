@@ -107,6 +107,24 @@ function hasPlaybackSource(asset?: {
   );
 }
 
+function isLikelyHlsUrl(value?: string | null) {
+  const normalizedValue = String(value || '').trim();
+
+  return Boolean(
+    normalizedValue &&
+      (/\.m3u8(?:[?#]|$)/i.test(normalizedValue) ||
+        /(?:^|[?&])format=hls(?:&|$)/i.test(normalizedValue))
+  );
+}
+
+function firstDownloadableVideoUrl(...candidates: Array<string | null | undefined>) {
+  return (
+    candidates
+      .map((candidate) => String(candidate || '').trim())
+      .find((candidate) => candidate && !isLikelyHlsUrl(candidate)) || ''
+  );
+}
+
 function movieHasAnyPlaybackSource(movie: Movie) {
   if (movie.contentType === 'series') {
     return Boolean(
@@ -794,6 +812,24 @@ const playbackFallbackUrl =
   movie?.contentType === 'series'
     ? seriesPlaybackFallbackUrl
     : moviePlaybackFallbackUrl;
+const seriesOfflineDownloadVideoUrl = firstDownloadableVideoUrl(
+  activeEpisode?.sourceUrl,
+  activeEpisode?.video_url,
+  seriesPlaybackFallbackUrl,
+  seriesPlaybackType === 'mp4' ? seriesPlaybackVideoUrl : ''
+);
+const movieOfflineDownloadVideoUrl = firstDownloadableVideoUrl(
+  selectedPart?.sourceUrl,
+  selectedPart?.video_url,
+  movie?.sourceUrl,
+  movie?.video_url,
+  moviePlaybackFallbackUrl,
+  moviePlaybackType === 'mp4' ? moviePlaybackVideoUrl : ''
+);
+const offlineDownloadVideoUrl =
+  movie?.contentType === 'series'
+    ? seriesOfflineDownloadVideoUrl
+    : movieOfflineDownloadVideoUrl;
 const playbackType =
   movie?.contentType === 'series'
     ? seriesPlaybackType
@@ -903,11 +939,11 @@ const playbackTitle = activeEpisode
   : selectedPart
     ? `${movie?.title || movie?.name} - ${selectedPart.title || selectedPart.label}`
   : (movie?.title || movie?.name || '');
-const downloadBaseInput = movie && playbackVideoUrl
+const downloadBaseInput = movie && offlineDownloadVideoUrl
   ? {
       movieId: movie.movieId || movie.id,
       title: playbackTitle || movie.title || movie.name || 'Untitled movie',
-      video_url: playbackVideoUrl,
+      video_url: offlineDownloadVideoUrl,
       poster: downloadArtwork,
       contentType: activeEpisode ? 'episode' as const : selectedPart ? 'part' as const : 'movie' as const,
       seriesId: activeEpisode ? movie.id || movie.movieId : undefined,
@@ -1118,6 +1154,11 @@ const handleDownload = async () => {
 
   if (!playbackVideoUrl) {
     setActionMessage('No in-app download data was found for this movie yet.');
+    return;
+  }
+
+  if (!offlineDownloadVideoUrl) {
+    setActionMessage('Offline download needs the original MP4 file. This title can still stream online, but it cannot be saved to this device yet.');
     return;
   }
 
