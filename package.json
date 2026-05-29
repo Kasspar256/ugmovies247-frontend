@@ -25,6 +25,7 @@
     "@capacitor/filesystem": "^7.1.8",
     "@capacitor/push-notifications": "^7.0.6",
     "@capacitor/toast": "^7.0.2",
+    "@capawesome/capacitor-badge": "^7.0.1",
     "firebase": "^12.4.0",
     "firebase-admin": "^13.5.0",
     "lucide-react": "^0.395.0",
