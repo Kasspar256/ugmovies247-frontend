@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getRequestAuthSession } from '@/lib/auth/server';
 import {
   getSubscriptionSnapshotFromData,
   getViewerEntitlement,
@@ -346,7 +346,7 @@ export async function GET(
       return NextResponse.json({ error: 'Missing movie ID.' }, { status: 400 });
     }
 
-    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+    const session = await getRequestAuthSession(request);
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
           email: session.email,

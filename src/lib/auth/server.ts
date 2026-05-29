@@ -377,7 +377,7 @@ export async function getRequestAuthSessionValidation(request: Request | NextReq
     });
   }
 
-  return resolveAuthSessionValidation({
+  const sessionValidation = await resolveAuthSessionValidation({
     sessionCookie,
     roleHint: roleCookie,
     deviceCookie,
@@ -385,6 +385,16 @@ export async function getRequestAuthSessionValidation(request: Request | NextReq
     hydrateUserRecord: false,
     requireManagedSession: true,
   });
+
+  if (!sessionValidation.session && deviceCookie && managedSessionCookie) {
+    return resolveManagedOnlyAuthSessionValidation({
+      deviceCookie,
+      managedSessionCookie,
+      hydrateUserRecord: false,
+    });
+  }
+
+  return sessionValidation;
 }
 
 export async function getRequestAuthSession(request: Request | NextRequest) {

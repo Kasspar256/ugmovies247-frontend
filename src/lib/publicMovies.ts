@@ -1,5 +1,6 @@
 import { normalizeMovie, type Movie } from '@/types/movie';
 import { isAppInReview } from '@/lib/appReview';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import {
   isPublicMovieReady,
   isPublicPlaybackAssetReady,
@@ -482,7 +483,10 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
     return fetchPublicMovies({ force: true });
   }
 
+  const headers = await getHydratedClientDeviceHeaders();
+
   inFlightMovieDeltaRequest = fetch(`/api/movies?compact=1&since=${encodeURIComponent(since)}`, {
+    headers,
     credentials: 'include',
     cache: 'no-store',
   })
@@ -592,8 +596,10 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
   }
 
   const moviesUrl = `/api/movies?${moviesParams.toString()}`;
+  const headers = await getHydratedClientDeviceHeaders();
 
   inFlightMovieCatalogRequest = fetch(moviesUrl, {
+    headers,
     credentials: 'include',
     cache: 'no-store',
   })
@@ -645,7 +651,9 @@ export async function fetchPublicMovieById(movieId: string): Promise<Movie | nul
   }
 
   const cachedMovie = findCachedPublicMovie(normalizedMovieId);
+  const headers = await getHydratedClientDeviceHeaders();
   const response = await fetch(`/api/movies/${encodeURIComponent(normalizedMovieId)}?fresh=1`, {
+    headers,
     credentials: 'include',
     cache: 'no-store',
   }).catch(() => null);

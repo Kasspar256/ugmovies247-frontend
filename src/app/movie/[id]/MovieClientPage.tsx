@@ -878,9 +878,12 @@ const playbackDescription =
         movie?.description ||
         ''
       );
+const selectedPlaybackAssetIsLocked = Boolean(
+  selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked
+);
 const isPlaybackLocked = isAppInReview
   ? false
-  : !hasLocalPremiumAccess && Boolean(selectedPart?.isLocked || activeEpisode?.isLocked || movie?.isLocked);
+  : selectedPlaybackAssetIsLocked && (!hasLocalPremiumAccess || !playbackVideoUrl);
 const playbackGenreLabel =
   movie?.genres?.find((genre) => genre.trim()) ||
   'Unknown';

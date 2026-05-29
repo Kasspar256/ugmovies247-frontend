@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getRequestAuthSession } from '@/lib/auth/server';
 import {
   getViewerEntitlement,
   getSubscriptionSnapshotFromData,
@@ -637,7 +637,7 @@ export async function GET(request: Request) {
     const shouldReturnCompactCatalog = requestUrl.searchParams.get('compact') === '1';
     const sinceTimestamp = sinceParam ? new Date(sinceParam).getTime() : 0;
     const shouldReturnDelta = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0;
-    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+    const session = await getRequestAuthSession(request);
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
           email: session.email,
