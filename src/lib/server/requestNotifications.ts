@@ -374,3 +374,14 @@ export async function sendMovieRequestUserUpdate(options: {
       link: movieLink,
       data: {
         type: 'movie_request_update',
+        requestType,
+        status: options.status,
+        requestId: options.request.id,
+        movieId,
+        route: movieId
+          ? `/movie/${movieId}?fresh=1&fromRequest=1&requestId=${options.request.id}`
+          : '/browse',
+      },
+    }),
+  ]);
+}
