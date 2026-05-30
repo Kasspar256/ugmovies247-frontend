@@ -321,8 +321,19 @@ export async function sendMovieRequestUserUpdate(options: {
 
   if (!fcmToken && userId) {
     const userSnapshot = await adminDb.collection('users').doc(userId).get().catch(() => null);
-    const userData = userSnapshot?.data() as { fcmToken?: string } | undefined;
-    fcmToken = userData?.fcmToken?.trim() || '';
+    const userData = userSnapshot?.data() as {
+      fcmToken?: string;
+      fcmTokenMap?: Record<string, { token?: string } | string>;
+    } | undefined;
+    const tokenMap = userData?.fcmTokenMap || {};
+    const mappedToken =
+      Object.values(tokenMap)
+        .map((entry) =>
+          typeof entry === 'string' ? entry : String(entry?.token || '')
+        )
+        .find((token) => token.trim()) || '';
+
+    fcmToken = mappedToken.trim() || userData?.fcmToken?.trim() || '';
   }
 
   // The fresh/fromRequest flags force the player page to fetch the exact movie doc
@@ -363,14 +374,3 @@ export async function sendMovieRequestUserUpdate(options: {
       link: movieLink,
       data: {
         type: 'movie_request_update',
-        requestType,
-        status: options.status,
-        requestId: options.request.id,
-        movieId,
-        route: movieId
-          ? `/movie/${movieId}?fresh=1&fromRequest=1&requestId=${options.request.id}`
-          : '/browse',
-      },
-    }),
-  ]);
-}

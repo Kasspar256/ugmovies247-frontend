@@ -8,6 +8,7 @@ const FCM_MULTICAST_LIMIT = 500;
 
 type Recipient = {
   token: string;
+  tokenHash?: string;
   userRef: FirebaseFirestore.DocumentReference;
 };
 
@@ -75,16 +76,40 @@ async function getFcmRecipients() {
   const recipients: Recipient[] = [];
 
   snapshot.docs.forEach((doc) => {
-    const token = readString(doc.data().fcmToken);
+    const data = doc.data();
+    const legacyToken = readString(data.fcmToken);
+    const tokenMap =
+      data.fcmTokenMap && typeof data.fcmTokenMap === 'object'
+        ? (data.fcmTokenMap as Record<string, unknown>)
+        : {};
+    const mappedRecipients = Object.entries(tokenMap)
+      .map(([tokenHash, entry]) => {
+        const token =
+          typeof entry === 'string'
+            ? readString(entry)
+            : entry && typeof entry === 'object'
+              ? readString((entry as Record<string, unknown>).token)
+              : '';
 
-    if (!token || seenTokens.has(token)) {
-      return;
-    }
+        return { token, tokenHash };
+      })
+      .filter((entry) => Boolean(entry.token));
+    const allTokens = [
+      ...mappedRecipients,
+      ...(legacyToken ? [{ token: legacyToken, tokenHash: undefined }] : []),
+    ];
 
-    seenTokens.add(token);
-    recipients.push({
-      token,
-      userRef: doc.ref,
+    allTokens.forEach(({ token, tokenHash }) => {
+      if (!token || seenTokens.has(token)) {
+        return;
+      }
+
+      seenTokens.add(token);
+      recipients.push({
+        token,
+        tokenHash,
+        userRef: doc.ref,
+      });
     });
   });
 
@@ -106,15 +131,18 @@ async function clearInvalidTokens(recipients: Recipient[], invalidIndexes: numbe
       return;
     }
 
-    batch.set(
-      recipient.userRef,
-      {
-        fcmToken: FieldValue.delete(),
-        fcmTokenInvalidatedAt: timestamp,
-        notificationsUpdatedAt: timestamp,
-      },
-      { merge: true }
-    );
+    const payload: Record<string, unknown> = {
+      fcmTokenInvalidatedAt: timestamp,
+      notificationsUpdatedAt: timestamp,
+    };
+
+    if (recipient.tokenHash) {
+      payload[`fcmTokenMap.${recipient.tokenHash}`] = FieldValue.delete();
+    } else {
+      payload.fcmToken = FieldValue.delete();
+    }
+
+    batch.update(recipient.userRef, payload);
   });
 
   await batch.commit().catch((error) => {

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging';
 import { Capacitor } from '@capacitor/core';
 import { app } from '@/lib/firebase';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 
 type BadgeNavigator = Navigator & {
   setAppBadge?: (count?: number) => Promise<void>;
@@ -177,7 +178,7 @@ async function registerTokenWithServer(token: string, platform: string) {
   try {
     const response = await fetch('/api/notifications/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
       credentials: 'include',
       body: JSON.stringify({ token: normalizedToken, platform }),
     });

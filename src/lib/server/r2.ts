@@ -113,6 +113,16 @@ export function getR2PublicUrl(key: string) {
   return `${getPublicR2BaseUrl()}/${key.replace(/^\/+/, '')}`;
 }
 
+function decodeR2ObjectKey(value: string) {
+  const normalizedValue = value.replace(/^\/+/, '');
+
+  try {
+    return decodeURIComponent(normalizedValue);
+  } catch {
+    return normalizedValue;
+  }
+}
+
 export function getR2ObjectKeyFromPublicUrl(url: string) {
   if (!url) {
     return '';
@@ -140,7 +150,7 @@ export function getR2ObjectKeyFromPublicUrl(url: string) {
     }
 
     if (normalizedUrl.startsWith(`${baseUrl}/`)) {
-      return normalizedUrl.slice(baseUrl.length + 1).replace(/^\/+/, '');
+      return decodeR2ObjectKey(normalizedUrl.slice(baseUrl.length + 1));
     }
   }
 
@@ -148,7 +158,7 @@ export function getR2ObjectKeyFromPublicUrl(url: string) {
     const parsedUrl = new URL(normalizedUrl);
 
     if (parsedUrl.hostname.endsWith('.r2.dev')) {
-      return parsedUrl.pathname.replace(/^\/+/, '');
+      return decodeR2ObjectKey(parsedUrl.pathname);
     }
   } catch {
     return '';

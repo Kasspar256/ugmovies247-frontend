@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 
 function resolveMovieIdFromUrl(rawUrl: string) {
   try {
@@ -42,7 +43,7 @@ async function registerFcmToken(token: string) {
 
   await fetch('/api/notifications/register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await getHydratedClientDeviceHeaders()) },
     credentials: 'include',
     body: JSON.stringify({
       token: normalizedToken,
