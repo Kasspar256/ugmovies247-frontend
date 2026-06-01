@@ -12,6 +12,7 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
+import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
 import {
   prepareMovieDocumentForDirectUploadProcessing,
   queuePreparedDirectUploadJobs,
@@ -21,6 +22,26 @@ import type { Episode, Movie, MoviePart, Season } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+async function applyMatureCategoryToMovieInput(
+  input: Record<string, unknown>,
+  existingMovie?: Partial<Movie>
+) {
+  const contentType =
+    input.contentType === 'series' || existingMovie?.contentType === 'series' ? 'series' : 'movie';
+  const category = await applyTmdbMatureExclusiveCategory({
+    categories: input.category ?? existingMovie?.category,
+    tmdbId: input.tmdb_id ?? existingMovie?.tmdb_id,
+    mediaType: contentType === 'series' ? 'tv' : 'movie',
+    tmdbPayload: input,
+    isKnownMatureExclusive: input.isMatureExclusive === true,
+  });
+
+  return {
+    ...input,
+    category,
+  };
+}
 
 export async function GET(
   _request: Request,
@@ -580,7 +601,9 @@ export async function PATCH(
       genres?: string[];
       tags?: string[];
       category?: string[];
+      isMatureExclusive?: boolean;
       is_trending_tiktok?: boolean;
+      contentType?: 'movie' | 'series';
       episode?: Record<string, unknown>;
       seasonTitle?: string;
       movie?: Record<string, unknown>;
@@ -775,8 +798,12 @@ export async function PATCH(
     }
 
     if (fullMoviePayload) {
+      const normalizedFullMoviePayload = await applyMatureCategoryToMovieInput(
+        fullMoviePayload,
+        movie
+      );
       const nextMovie = {
-        ...buildEditableMovieDocument(fullMoviePayload, movie),
+        ...buildEditableMovieDocument(normalizedFullMoviePayload, movie),
         movieId: movie.movieId || movie.id,
       };
 
@@ -957,36 +984,10 @@ export async function PATCH(
     }
 
     if (Array.isArray(body.category)) {
-      updates.category = body.category.filter((entry): entry is string => typeof entry === 'string');
-    }
+      updates.category = await applyTmdbMatureExclusiveCategory({
+        categories: body.category.filter((entry): entry is string => typeof entry === 'string'),
+        tmdbId: body.tmdb_id ?? movie.tmdb_id,
+        mediaType:
+          body.contentType === 'series' || movie.contentType === 'series' ? 'tv' : 'movie',
+        tmdbPayload: body,
 
-    if (typeof body.is_trending_tiktok === 'boolean') {
-      updates.is_trending_tiktok = body.is_trending_tiktok;
-    }
-
-    await movieRef.set(updates, { merge: true });
-
-    const updatedMovie = {
-      ...movie,
-      ...updates,
-    };
-
-    await upsertMovieInCatalogCache(updatedMovie);
-
-    return NextResponse.json({
-      success: true,
-      movie: {
-        id: movie.id,
-        ...updatedMovie,
-      },
-    });
-  } catch (error) {
-    console.error('[admin] failed to update movie metadata', error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Failed to update movie metadata.',
-      },
-      { status: 500 }
-    );
-  }
-}

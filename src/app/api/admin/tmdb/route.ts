@@ -1,7 +1,27 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
+import {
+  collectTmdbMaturityRatings,
+  isTmdbMatureExclusive,
+  MATURE_EXCLUSIVES_CATEGORY,
+} from '@/lib/matureContent';
 
 type SearchMediaType = 'movie' | 'tv';
+
+function attachMatureExclusiveMetadata(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const isMatureExclusive = isTmdbMatureExclusive(payload);
+
+  return {
+    ...(payload as Record<string, unknown>),
+    isMatureExclusive,
+    matureRatings: collectTmdbMaturityRatings(payload),
+    suggestedCategories: isMatureExclusive ? [MATURE_EXCLUSIVES_CATEGORY] : [],
+  };
+}
 
 async function fetchTmdbJson(path: string, params?: URLSearchParams) {
   const apiKey = process.env.TMDB_API_KEY;
@@ -58,11 +78,13 @@ export async function GET(req: Request) {
       const params = new URLSearchParams();
 
       if (mediaType === 'tv') {
-        params.set('append_to_response', 'keywords');
+        params.set('append_to_response', 'keywords,content_ratings');
+      } else {
+        params.set('append_to_response', 'release_dates,keywords');
       }
 
       const payload = await fetchTmdbJson(`/${mediaType}/${encodeURIComponent(tmdbId)}`, params);
-      return NextResponse.json(payload);
+      return NextResponse.json(attachMatureExclusiveMetadata(payload));
     }
 
     if (!title) {
@@ -73,13 +95,17 @@ export async function GET(req: Request) {
       `/search/${mediaType}`,
       new URLSearchParams({
         query: title,
-        include_adult: 'false',
+        include_adult: 'true',
       })
     );
 
     // Keep the original uploader contract: movie and series uploaders expect a raw array.
     // The request panel accepts this shape too, so one shared TMDB API can safely serve all admin flows.
-    return NextResponse.json(Array.isArray(payload.results) ? payload.results : []);
+    return NextResponse.json(
+      Array.isArray(payload.results)
+        ? payload.results.map(attachMatureExclusiveMetadata)
+        : []
+    );
   } catch (error) {
     return NextResponse.json(
       {

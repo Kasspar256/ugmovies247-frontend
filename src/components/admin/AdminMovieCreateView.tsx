@@ -18,6 +18,11 @@ import {
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
+import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import {
+  isTmdbMatureExclusive,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 import {
   isIndianCatalogMovie,
   mergeUniqueRegionalValues,
@@ -35,6 +40,9 @@ type TmdbResult = {
   backdrop_path?: string | null;
   release_date?: string;
   original_language?: string;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
 };
 
 type TmdbMovieDetails = {
@@ -59,20 +67,16 @@ type TmdbMovieDetails = {
     iso_639_1?: string;
     name?: string;
   }>;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
+  release_dates?: unknown;
+  certification?: string;
+  rating?: string;
 };
 
 const TRENDING_CATEGORY = 'Trending on tiktok';
-const MANUAL_CATEGORY_ORDER = [
-  'Trending on tiktok',
-  'Latest movies on UGMOVIES247',
-  'Ongoing Series',
-  'Recently added',
-  'Latest series',
-  'VJ JUNIOR SERIES',
-  'Asian series',
-  'Other vjs',
-  'Western series',
-] as const;
+const MANUAL_CATEGORY_ORDER = MANUAL_HOME_CATEGORIES;
 
 function buildTmdbPosterUrl(path?: string | null) {
   return path ? `https://image.tmdb.org/t/p/w780${path}` : '';
@@ -457,6 +461,12 @@ export function AdminMovieCreateView() {
     setDescription(details.overview || result?.overview || description);
     setReleaseYear(details.release_date?.slice(0, 4) || result?.release_date?.slice(0, 4) || releaseYear);
     setGenres(nextGenres.join(', ') || genres);
+    setSelectedCategories((current) =>
+      mergeMatureExclusiveCategory(
+        current,
+        isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
+      )
+    );
     setShowTmdbResults(false);
   };
 
@@ -558,9 +568,11 @@ export function AdminMovieCreateView() {
         category: selectedCategories,
       });
       const finalGenres = mergeUniqueRegionalValues(baseGenres, isIndianTitle ? ['Indian'] : []);
-      const finalCategories = mergeUniqueRegionalValues(
-        selectedCategories,
-        isIndianTitle ? ['Indian movies'] : []
+      const isMatureTitle =
+        isTmdbMatureExclusive(selectedTmdbDetails) || isTmdbMatureExclusive(selectedTmdb);
+      const finalCategories = mergeMatureExclusiveCategory(
+        mergeUniqueRegionalValues(selectedCategories, isIndianTitle ? ['Indian movies'] : []),
+        isMatureTitle
       );
       const metadata = {
         title: title.trim(),
@@ -577,6 +589,7 @@ export function AdminMovieCreateView() {
         language: tmdbLanguage,
         tmdbId: typeof selectedTmdb?.id === 'number' ? selectedTmdb.id : null,
         isTrendingTikTok,
+        isMatureExclusive: isMatureTitle,
         contentType: 'movie' as const,
       };
 

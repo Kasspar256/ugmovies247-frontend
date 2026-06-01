@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
 import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import {
+  MATURE_EXCLUSIVES_ADMIN_LABEL,
+  MATURE_EXCLUSIVES_CATEGORY,
+} from '@/lib/matureContent';
 import type { AdminCategory } from '@/types/admin';
 import type { Movie } from '@/types/movie';
 import {
@@ -549,7 +553,11 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                     categories={manualCategories}
                     selected={selectedHomeCategories}
                     onToggle={toggleCategory}
-                    getLabel={(category) => category.displayLabel || category.name}
+                    getLabel={(category) =>
+                      category.name === MATURE_EXCLUSIVES_CATEGORY
+                        ? MATURE_EXCLUSIVES_ADMIN_LABEL
+                        : category.displayLabel || category.name
+                    }
                   />
                   {preservedCategoriesLabel ? (
                     <div className="mt-3 text-xs leading-6 text-white/45">

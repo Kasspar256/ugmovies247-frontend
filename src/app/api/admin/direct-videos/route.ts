@@ -9,6 +9,11 @@ import {
 } from '@/lib/server/adminVideoProcessing';
 import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
+import {
+  isTmdbMatureExclusive,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 import { createVideoJob } from '@/lib/server/videoJobs';
 import type { MovieDocument, Season } from '@/types/movie';
 
@@ -20,6 +25,7 @@ type AdminMovieMetadata = {
   originalTitle?: string;
   description?: string;
   poster?: string;
+  heroPoster?: string;
   trailerUrl?: string;
   mainSeriesTrailerUrl?: string;
   overriddenPlayerBackdrop?: string;
@@ -32,6 +38,8 @@ type AdminMovieMetadata = {
   tmdbId?: number | null;
   status?: string;
   isTrendingTikTok?: boolean;
+  isMatureExclusive?: boolean;
+  adult?: boolean;
   contentType?: 'movie' | 'series';
 };
 
@@ -42,12 +50,15 @@ type SeriesEpisodeInput = {
   video_url: string;
   poster?: string;
   thumbnail?: string;
+  overriddenBackdrop?: string;
   episodeTrailerUrl?: string;
 };
 
 type SeriesSeasonInput = {
   seasonNumber: number;
   title?: string;
+  poster?: string;
+  overriddenBackdrop?: string;
   episodes: SeriesEpisodeInput[];
 };
 
@@ -66,7 +77,10 @@ function normalizeImportedSourceFileName(fileName: string, fallback: string) {
 }
 
 function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
-  const categories = input?.category || [];
+  const categories = mergeMatureExclusiveCategory(
+    input?.category || [],
+    input?.isMatureExclusive === true || isTmdbMatureExclusive(input)
+  );
   const isTrendingTikTok =
     Boolean(input?.isTrendingTikTok) ||
     categories.some((category) => category.toLowerCase() === 'trending on tiktok');
@@ -76,6 +90,7 @@ function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
     original_title: input?.originalTitle || input?.title || 'Untitled movie',
     description: input?.description || '',
     poster: input?.poster || '',
+    heroPoster: input?.heroPoster || '',
     trailerUrl: input?.trailerUrl || '',
     mainSeriesTrailerUrl: input?.mainSeriesTrailerUrl || '',
     overriddenPlayerBackdrop: input?.overriddenPlayerBackdrop || '',
@@ -104,6 +119,23 @@ function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
   };
 }
 
+async function prepareDirectMetadata(input?: AdminMovieMetadata): Promise<AdminMovieMetadata> {
+  const contentType = input?.contentType === 'series' ? 'series' : 'movie';
+  const category = await applyTmdbMatureExclusiveCategory({
+    categories: input?.category || [],
+    tmdbId: input?.tmdbId,
+    mediaType: contentType === 'series' ? 'tv' : 'movie',
+    tmdbPayload: input,
+    isKnownMatureExclusive: input?.isMatureExclusive === true,
+  });
+
+  return {
+    ...input,
+    category,
+    contentType,
+  };
+}
+
 async function queueDirectMovieImport(options: {
   metadata: AdminMovieMetadata;
   sourceUrl: string;
@@ -112,9 +144,10 @@ async function queueDirectMovieImport(options: {
 }) {
   const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
+  const metadata = await prepareDirectMetadata({ ...options.metadata, contentType: 'movie' });
   const moviePayload = {
     movieId: movieRef.id,
-    ...normalizeDirectMetadata(options.metadata),
+    ...normalizeDirectMetadata(metadata),
     sourceType: 'direct_url' as const,
     sourcePipeline: 'direct_url_import' as const,
     sourceFileName: options.sourceFileName,
@@ -157,15 +190,19 @@ async function createDirectSeriesDocument(options: {
 }) {
   const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
   const timestamp = isoNow();
+  const metadata = await prepareDirectMetadata({ ...options.metadata, contentType: 'series' });
   const normalizedSeasons: Season[] = options.seasons.map((season) => ({
     seasonNumber: season.seasonNumber,
     title: season.title || `Season ${season.seasonNumber}`,
+    poster: season.poster || '',
+    overriddenBackdrop: season.overriddenBackdrop || season.poster || '',
     episodes: season.episodes.map((episode, episodeIndex) => ({
       episodeNumber: Number(episode.episodeNumber) || episodeIndex + 1,
       title: episode.title || `Episode ${episodeIndex + 1}`,
       description: episode.description || '',
       poster: episode.poster || '',
       thumbnail: episode.thumbnail || '',
+      overriddenBackdrop: episode.overriddenBackdrop || season.overriddenBackdrop || season.poster || '',
       episodeTrailerUrl: episode.episodeTrailerUrl || '',
       video_url: episode.video_url,
       sourceType: 'direct_upload',
@@ -189,7 +226,7 @@ async function createDirectSeriesDocument(options: {
 
   const rawMoviePayload: MovieDocument = {
     movieId: movieRef.id,
-    ...normalizeDirectMetadata({ ...options.metadata, contentType: 'series' }),
+    ...normalizeDirectMetadata(metadata),
     sourceType: 'direct_upload',
     sourcePipeline: 'direct_upload',
     video_url: '',
@@ -237,7 +274,7 @@ export async function POST(request: Request) {
     const mode = String(body.mode || '');
 
     if (mode === 'local_upload') {
-      const metadata = body.metadata || {};
+      const metadata = await prepareDirectMetadata(body.metadata || {});
       const playbackUrl = String(body.playbackUrl || '');
       const sourceFileName = String(body.sourceFileName || '');
       const sourceUrl = String(body.sourceUrl || '');
@@ -312,7 +349,10 @@ export async function POST(request: Request) {
     }
 
     if (mode === 'series_links') {
-      const metadata = body.metadata || {};
+      const metadata = {
+        ...(body.metadata || {}),
+        contentType: 'series',
+      } as AdminMovieMetadata;
       const seasons: SeriesSeasonInput[] = Array.isArray(body.seasons) ? body.seasons : [];
       const warningMessages = new Set<string>();
 
@@ -374,3 +414,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

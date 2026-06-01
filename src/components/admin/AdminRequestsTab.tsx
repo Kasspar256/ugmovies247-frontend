@@ -29,6 +29,10 @@ import { db } from '@/lib/firebase';
 import { Card, FieldLabel, SelectInput, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 import { REQUEST_STATUS_OPTIONS, formatDate } from '@/components/admin/controlCenterUtils';
+import {
+  isTmdbMatureExclusive,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 
 type RequestConsoleTab = 'queue' | 'engine' | 'monitor';
 
@@ -69,10 +73,17 @@ type TmdbResult = {
   backdrop_path?: string | null;
   release_date?: string;
   first_air_date?: string;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
 };
 
 type TmdbDetails = TmdbResult & {
   genres?: Array<{ id: number; name: string }>;
+  release_dates?: unknown;
+  content_ratings?: unknown;
+  certification?: string;
+  rating?: string;
 };
 
 function buildImageUrl(path?: string | null, size = 'w780') {
@@ -320,6 +331,10 @@ export function AdminRequestsTab({
           .map((genre) => genre.name)
           .filter(Boolean)
           .join(', '),
+        category: mergeMatureExclusiveCategory(
+          selectedEdit.category,
+          isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
+        ),
       });
     } catch (error) {
       setTmdbError(error instanceof Error ? error.message : 'Failed to fetch TMDB details.');
@@ -992,18 +1007,3 @@ export function AdminRequestsTab({
               {job.publicVideoUrl && (
                 <div className="mt-4 rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-100">
                   Request worker video ready: {job.publicVideoUrl}
-                </div>
-              )}
-            </article>
-          ))}
-
-          {!workerJobs.length && (
-            <div className="rounded-3xl border border-white/10 bg-black/20 p-8 text-center text-sm text-white/55">
-              No request worker jobs yet. Once an admin queues a request, the secondary VPS progress will appear here.
-            </div>
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}

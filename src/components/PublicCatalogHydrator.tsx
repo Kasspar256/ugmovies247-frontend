@@ -10,33 +10,50 @@ import {
 
 export default function PublicCatalogHydrator() {
   useEffect(() => {
-    const hasCachedCatalog = readCachedPublicMovies().length > 0;
+    let cancelled = false;
+    let removeListeners: (() => void) | null = null;
 
-    if (hasCachedCatalog) {
-      refreshPublicMoviesInBackground();
-    } else {
-      void fetchPublicMovies({ refreshEntitlement: true }).catch(() => undefined);
-    }
-
-    void fetchHomePageCategories().catch(() => undefined);
-
-    const refresh = () => {
-      if (document.visibilityState && document.visibilityState !== 'visible') {
+    const startHydration = () => {
+      if (cancelled) {
         return;
       }
 
-      refreshPublicMoviesInBackground();
+      const hasCachedCatalog = readCachedPublicMovies().length > 0;
+
+      if (hasCachedCatalog) {
+        refreshPublicMoviesInBackground();
+      } else {
+        void fetchPublicMovies({ refreshEntitlement: true }).catch(() => undefined);
+      }
+
       void fetchHomePageCategories().catch(() => undefined);
+
+      const refresh = () => {
+        if (document.visibilityState && document.visibilityState !== 'visible') {
+          return;
+        }
+
+        refreshPublicMoviesInBackground();
+        void fetchHomePageCategories().catch(() => undefined);
+      };
+
+      window.addEventListener('focus', refresh);
+      window.addEventListener('pageshow', refresh);
+      document.addEventListener('visibilitychange', refresh);
+
+      removeListeners = () => {
+        window.removeEventListener('focus', refresh);
+        window.removeEventListener('pageshow', refresh);
+        document.removeEventListener('visibilitychange', refresh);
+      };
     };
 
-    window.addEventListener('focus', refresh);
-    window.addEventListener('pageshow', refresh);
-    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setTimeout(startHydration, 900);
 
     return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('pageshow', refresh);
-      document.removeEventListener('visibilitychange', refresh);
+      cancelled = true;
+      window.clearTimeout(timer);
+      removeListeners?.();
     };
   }, []);
 

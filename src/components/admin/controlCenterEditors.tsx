@@ -3,6 +3,16 @@ import type {
   DraftVideoSource,
 } from '@/components/admin/controlCenterUtils';
 import { FieldLabel, PillButton, SelectInput, TextInput } from '@/components/admin/controlCenterFields';
+import {
+  MATURE_EXCLUSIVES_ADMIN_LABEL,
+  MATURE_EXCLUSIVES_CATEGORY,
+} from '@/lib/matureContent';
+
+function getDefaultCategoryLabel(category: AdminCategory) {
+  return category.name === MATURE_EXCLUSIVES_CATEGORY
+    ? MATURE_EXCLUSIVES_ADMIN_LABEL
+    : category.name;
+}
 
 export function CategoryChecklist({
   categories,
@@ -62,7 +72,7 @@ export function CategoryChecklist({
               </svg>
             </span>
             <span className="min-w-0 text-[13px] font-semibold leading-5 text-inherit">
-              {getLabel ? getLabel(category) : category.name}
+              {getLabel ? getLabel(category) : getDefaultCategoryLabel(category)}
             </span>
           </label>
         );

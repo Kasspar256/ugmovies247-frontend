@@ -44,6 +44,10 @@ import {
   seriesToDraft,
   splitCommaList,
 } from '@/components/admin/controlCenterUtils';
+import {
+  MATURE_EXCLUSIVES_ADMIN_LABEL,
+  MATURE_EXCLUSIVES_CATEGORY,
+} from '@/lib/matureContent';
 
 const SERIES_CATEGORY_OPTIONS = [
   { name: 'Latest series', label: 'Latest series' },
@@ -53,6 +57,7 @@ const SERIES_CATEGORY_OPTIONS = [
   { name: 'Western series', label: 'Western series' },
   { name: 'Other vjs', label: 'Other vjs' },
   { name: 'Trending on tiktok', label: 'Tag as Trending on TikTok' },
+  { name: MATURE_EXCLUSIVES_CATEGORY, label: MATURE_EXCLUSIVES_ADMIN_LABEL },
 ] as const;
 
 function sortSeasons(seasons: DraftSeason[]) {
@@ -499,6 +504,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
             description: episode.description.trim(),
             poster: episodePoster || episodeThumbnail || seasonPoster || posterUrl,
             thumbnail: episodeThumbnail || episodePoster || seasonPoster || posterUrl,
+            overriddenBackdrop: episode.overriddenBackdrop || '',
             ...episodeSource,
           });
         }
@@ -508,6 +514,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
           title: season.title.trim() || `Season ${seasonIndex + 1}`,
           overview: season.overview.trim(),
           poster: seasonPoster || posterUrl,
+          overriddenBackdrop: season.overriddenBackdrop || seasonPoster || posterUrl,
           tmdb_id: season.tmdbId ?? null,
           episodes,
         });
@@ -522,6 +529,7 @@ export function AdminSeriesEditView({ seriesId }: { seriesId: string }) {
             title: draft.title.trim(),
             description: draft.description.trim(),
             poster: posterUrl,
+            overriddenBackdrop: draft.overriddenBackdrop || '',
             releaseYear: parseReleaseYear(draft.releaseYear),
             language: draft.language.trim(),
             vj: draft.vj.trim() || 'Unknown',

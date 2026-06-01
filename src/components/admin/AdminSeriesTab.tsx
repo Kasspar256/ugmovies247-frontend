@@ -22,6 +22,10 @@ import {
   PosterUploadField,
   SourceEditor,
 } from '@/components/admin/controlCenterEditors';
+import {
+  isTmdbMatureExclusive,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 
 type TmdbTvResult = {
   id: number;
@@ -30,6 +34,9 @@ type TmdbTvResult = {
   poster_path?: string | null;
   first_air_date?: string;
   original_language?: string;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
 };
 
 type TmdbTvDetails = TmdbTvResult & {
@@ -54,6 +61,12 @@ type TmdbTvDetails = TmdbTvResult & {
     overview?: string;
     poster_path?: string | null;
   }>;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
+  content_ratings?: unknown;
+  certification?: string;
+  rating?: string;
 };
 
 function buildTmdbPosterUrl(path?: string | null) {
@@ -138,6 +151,10 @@ export function AdminSeriesTab({
       language: getTmdbLanguageLabel(details) || draft.language,
       genres: details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || draft.genres,
       tags: getTmdbKeywordList(details).join(', ') || draft.tags,
+      categories: mergeMatureExclusiveCategory(
+        draft.categories,
+        isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
+      ),
       seasons: seasons.map((season, index) =>
         index === 0
           ? {
