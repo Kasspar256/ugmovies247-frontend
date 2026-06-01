@@ -31,12 +31,6 @@ import {
   TextInput,
 } from '@/components/admin/controlCenterFields';
 import type { DraftVideoSource } from '@/components/admin/controlCenterUtils';
-import {
-  isTmdbMatureExclusive,
-  MATURE_EXCLUSIVES_ADMIN_LABEL,
-  MATURE_EXCLUSIVES_CATEGORY,
-  mergeMatureExclusiveCategory,
-} from '@/lib/matureContent';
 
 const SERIES_CATEGORY_OPTIONS = [
   { name: 'Latest series', label: 'Latest series' },
@@ -46,7 +40,6 @@ const SERIES_CATEGORY_OPTIONS = [
   { name: 'Western series', label: 'Western series' },
   { name: 'Other vjs', label: 'Other vjs' },
   { name: 'Trending on tiktok', label: 'Tag as Trending on TikTok' },
-  { name: MATURE_EXCLUSIVES_CATEGORY, label: MATURE_EXCLUSIVES_ADMIN_LABEL },
 ] as const;
 
 type SeriesFormState = {
@@ -88,9 +81,6 @@ type TmdbTvResult = {
   backdrop_path?: string | null;
   first_air_date?: string;
   original_language?: string;
-  adult?: boolean;
-  isMatureExclusive?: boolean;
-  matureRatings?: string[];
 };
 
 type TmdbTvDetails = TmdbTvResult & {
@@ -108,12 +98,6 @@ type TmdbTvDetails = TmdbTvResult & {
       name: string;
     }>;
   };
-  adult?: boolean;
-  isMatureExclusive?: boolean;
-  matureRatings?: string[];
-  content_ratings?: unknown;
-  certification?: string;
-  rating?: string;
 };
 
 function splitCommaList(value: string) {
@@ -760,10 +744,6 @@ function TmdbSeriesLookup({
         language: getTmdbLanguageLabel(details) || current.language,
         genres: details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || current.genres,
         tags: getTmdbKeywordList(details).join(', ') || current.tags,
-        categories: mergeMatureExclusiveCategory(
-          current.categories,
-          isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
-        ),
         nativeBackdrop: nativeBackdrop || current.nativeBackdrop,
       }));
       setQuery(details.name || result.name || '');

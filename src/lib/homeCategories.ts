@@ -1,8 +1,3 @@
-import {
-  MATURE_EXCLUSIVES_CATEGORY,
-  MATURE_EXCLUSIVES_DISPLAY_LABEL,
-} from '@/lib/matureContent';
-
 export const HOME_PAGE_CATEGORY_CONFIG = [
   {
     name: 'Latest movies on UGMOVIES247',
@@ -28,11 +23,6 @@ export const HOME_PAGE_CATEGORY_CONFIG = [
     name: 'Trending on tiktok',
     displayLabel: 'TRENDING ON TIKTOK',
     homeOrder: 50,
-  },
-  {
-    name: MATURE_EXCLUSIVES_CATEGORY,
-    displayLabel: MATURE_EXCLUSIVES_DISPLAY_LABEL,
-    homeOrder: 55,
   },
   {
     name: 'VJ JUNIOR SERIES',

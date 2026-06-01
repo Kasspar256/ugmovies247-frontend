@@ -169,9 +169,7 @@ export function notifyLocalPremiumAccessUpdated() {
     return;
   }
 
-  window.setTimeout(() => {
-    window.dispatchEvent(new CustomEvent(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT));
-  }, 0);
+  window.dispatchEvent(new CustomEvent(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT));
 }
 
 function unlockMovieEntry<T extends { isLocked?: boolean; subscriptionRequired?: boolean }>(entry: T): T {

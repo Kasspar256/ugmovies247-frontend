@@ -31,12 +31,6 @@ import {
   TextInput,
 } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
-import {
-  isTmdbMatureExclusive,
-  MATURE_EXCLUSIVES_ADMIN_LABEL,
-  MATURE_EXCLUSIVES_CATEGORY,
-  mergeMatureExclusiveCategory,
-} from '@/lib/matureContent';
 
 type SeriesMode = 'upload-episode' | 'add-season' | 'create-series';
 type SourceMode = 'upload' | 'link';
@@ -49,9 +43,6 @@ type TmdbTvResult = {
   poster_path?: string | null;
   first_air_date?: string;
   original_language?: string;
-  adult?: boolean;
-  isMatureExclusive?: boolean;
-  matureRatings?: string[];
 };
 
 type TmdbTvDetails = {
@@ -83,12 +74,6 @@ type TmdbTvDetails = {
     overview?: string;
     poster_path?: string | null;
   }>;
-  adult?: boolean;
-  isMatureExclusive?: boolean;
-  matureRatings?: string[];
-  content_ratings?: unknown;
-  certification?: string;
-  rating?: string;
 };
 
 type TmdbSeasonDetails = {
@@ -153,7 +138,6 @@ const SERIES_CATEGORY_OPTIONS = [
   { name: 'Western series', label: 'Western series' },
   { name: 'Other vjs', label: 'Other vjs' },
   { name: 'Trending on tiktok', label: 'Tag as Trending on TikTok' },
-  { name: MATURE_EXCLUSIVES_CATEGORY, label: MATURE_EXCLUSIVES_ADMIN_LABEL },
 ] as const;
 
 const MODE_CONFIG: Array<{
@@ -162,12 +146,6 @@ const MODE_CONFIG: Array<{
   description: string;
   icon: typeof Clapperboard;
 }> = [
-  {
-    id: 'create-series',
-    label: 'Create New Series',
-    description: 'Search TMDb, set up a brand new series, and upload Season 1 Episode 1.',
-    icon: Sparkles,
-  },
   {
     id: 'upload-episode',
     label: 'Upload Episode',
@@ -179,6 +157,12 @@ const MODE_CONFIG: Array<{
     label: 'Add New Season',
     description: 'Open an existing series, create the next season, and upload its first episode.',
     icon: FolderPlus,
+  },
+  {
+    id: 'create-series',
+    label: 'Create New Series',
+    description: 'Set up a brand new series, create Season 1, and upload Episode 1.',
+    icon: Sparkles,
   },
 ];
 
@@ -335,18 +319,7 @@ function getStoredSeasonPoster(season: Season | null) {
     return '';
   }
 
-  const firstEpisode = [...(season.episodes || [])].sort(
-    (left, right) => left.episodeNumber - right.episodeNumber
-  )[0];
-
-  return (
-    season.overriddenBackdrop ||
-    season.poster ||
-    firstEpisode?.poster ||
-    firstEpisode?.thumbnail ||
-    firstEpisode?.overriddenBackdrop ||
-    ''
-  );
+  return season.poster || season.episodes?.[0]?.poster || '';
 }
 
 function getNextEpisodeNumber(season: Season | null) {
@@ -426,7 +399,7 @@ export function AdminSeriesUploadView() {
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [mode, setMode] = useState<SeriesMode>('create-series');
+  const [mode, setMode] = useState<SeriesMode>('upload-episode');
   const [createSeriesEntryMode, setCreateSeriesEntryMode] = useState<'tmdb' | 'manual'>('tmdb');
   const [seriesSearch, setSeriesSearch] = useState('');
   const [selectedSeriesId, setSelectedSeriesId] = useState('');
@@ -607,7 +580,6 @@ export function AdminSeriesUploadView() {
     result?: TmdbTvResult | null
   ) => {
     const firstSeason = (details.seasons || []).find((season) => season.season_number === 1) || null;
-    const isMatureSeries = isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result);
 
     setSelectedSeriesTmdb(result || null);
     setSelectedSeriesTmdbDetails(details);
@@ -624,7 +596,6 @@ export function AdminSeriesUploadView() {
       genres:
         details.genres?.map((genre) => genre.name).filter(Boolean).join(', ') || current.genres,
       tags: getTmdbKeywordList(details).join(', ') || current.tags,
-      categories: mergeMatureExclusiveCategory(current.categories, isMatureSeries),
       seasonTitle: firstSeason?.name || current.seasonTitle || 'Season 1',
       seasonOverview: firstSeason?.overview || current.seasonOverview,
       seasonPosterUrl: buildTmdbPosterUrl(firstSeason?.poster_path) || current.seasonPosterUrl,
@@ -650,9 +621,7 @@ export function AdminSeriesUploadView() {
           cache: 'no-store',
         }
       );
-      const payload = (await response.json()) as
-        | TmdbTvResult[]
-        | { results?: TmdbTvResult[]; error?: string };
+      const payload = (await response.json()) as TmdbTvResult[] | { error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -660,7 +629,7 @@ export function AdminSeriesUploadView() {
         );
       }
 
-      setSeriesTmdbResults(Array.isArray(payload) ? payload : payload.results || []);
+      setSeriesTmdbResults(Array.isArray(payload) ? payload : []);
       setShowSeriesTmdbResults(true);
       setCreateSeriesEntryMode('tmdb');
     } catch (error) {
@@ -1016,7 +985,6 @@ export function AdminSeriesUploadView() {
       description: options.episodeDescription.trim(),
       poster: options.fallbackPoster,
       thumbnail: options.fallbackPoster,
-      overriddenBackdrop: options.fallbackPoster,
       ...resolvedSource,
     };
   };
@@ -1116,7 +1084,7 @@ export function AdminSeriesUploadView() {
           episodeTitle: uploadEpisodeDraft.episodeTitle,
           episodeDescription: uploadEpisodeDraft.episodeDescription,
           source: uploadEpisodeDraft.source,
-          fallbackPoster: seasonPosterUrl || targetSeason.episodes?.[0]?.poster || selectedSeries.poster || '',
+          fallbackPoster: seasonPosterUrl || targetSeason.episodes[0]?.poster || selectedSeries.poster || '',
         });
 
         const nextSeasons = sortSeasons(selectedSeries.seasons || []).map((season) =>
@@ -1125,7 +1093,6 @@ export function AdminSeriesUploadView() {
             : {
                 ...season,
                 poster: seasonPosterUrl,
-                overriddenBackdrop: seasonPosterUrl,
                 overview: season.overview || uploadEpisodeSeasonTmdb?.overview || '',
                 tmdb_id: season.tmdb_id ?? uploadEpisodeSeasonTmdb?.id ?? null,
                 episodes: [...(season.episodes || []), episodePayload].sort(
@@ -1191,7 +1158,6 @@ export function AdminSeriesUploadView() {
           title: addSeasonDraft.seasonTitle.trim() || `Season ${seasonNumber}`,
           overview: addSeasonDraft.seasonOverview.trim() || addSeasonTmdb?.overview || '',
           poster: seasonPosterUrl,
-          overriddenBackdrop: seasonPosterUrl,
           tmdb_id: addSeasonTmdb?.id ?? null,
           episodes: [episodePayload],
         };
@@ -1237,13 +1203,6 @@ export function AdminSeriesUploadView() {
           source: createSeriesDraft.source,
           fallbackPoster: firstSeasonPosterUrl || posterUrl,
         });
-        const isMatureSeries =
-          isTmdbMatureExclusive(selectedSeriesTmdbDetails) ||
-          isTmdbMatureExclusive(selectedSeriesTmdb);
-        const seriesCategories = mergeMatureExclusiveCategory(
-          createSeriesDraft.categories,
-          isMatureSeries
-        );
 
         const response = await fetch('/api/admin/movies', {
           method: 'POST',
@@ -1254,16 +1213,14 @@ export function AdminSeriesUploadView() {
               title: createSeriesDraft.title.trim(),
               description: createSeriesDraft.description.trim(),
               poster: posterUrl,
-              heroPoster: posterUrl,
               releaseYear: parseReleaseYear(createSeriesDraft.releaseYear),
               language: createSeriesDraft.language.trim(),
               vj: createSeriesDraft.vj.trim() || 'Unknown',
               genres: splitCommaList(createSeriesDraft.genres),
               tags: splitCommaList(createSeriesDraft.tags),
               accessTier: 'premium',
-              is_trending_tiktok: seriesCategories.includes('Trending on tiktok'),
-              isMatureExclusive: isMatureSeries,
-              category: seriesCategories,
+              is_trending_tiktok: createSeriesDraft.categories.includes('Trending on tiktok'),
+              category: createSeriesDraft.categories,
               tmdb_id: createSeriesDraft.tmdbId,
               seasons: [
                 {
@@ -1271,7 +1228,6 @@ export function AdminSeriesUploadView() {
                   title: createSeriesDraft.seasonTitle.trim() || 'Season 1',
                   overview: createSeriesDraft.seasonOverview.trim(),
                   poster: firstSeasonPosterUrl,
-                  overriddenBackdrop: firstSeasonPosterUrl,
                   tmdb_id: firstSeasonTmdb?.id ?? null,
                   episodes: [episodePayload],
                 },
@@ -1349,7 +1305,8 @@ export function AdminSeriesUploadView() {
     : null;
   const selectedCreateSeasonOneTmdb =
     selectedSeriesTmdbDetails?.seasons?.find((season) => season.season_number === 1) || null;
-  const createSeriesFormVisible = mode === 'create-series';
+  const createSeriesFormVisible =
+    createSeriesEntryMode === 'manual' || Boolean(selectedSeriesTmdbDetails || selectedSeriesTmdb);
   const uploadEpisodePosterPreviewUrl =
     uploadEpisodeSeasonPosterPreview ||
     uploadEpisodeDraft.seasonPosterUrl ||
@@ -1417,7 +1374,7 @@ export function AdminSeriesUploadView() {
           <div className="space-y-6">
             <Card
               title="Choose Workflow"
-              description="Create New Series opens first with TMDb search; switch only when adding episodes to an existing series."
+              description="Keep the page focused. Only the fields for the workflow you are using stay visible."
               className="border-[#D90429]/14 bg-[linear-gradient(180deg,rgba(20,10,14,0.94),rgba(17,20,28,0.9))]"
             >
               <div className="space-y-3">
@@ -1603,11 +1560,7 @@ export function AdminSeriesUploadView() {
                               seasonNumber: event.target.value,
                               episodeNumber: String(nextEpisodeNumber),
                               episodeTitle: `Episode ${nextEpisodeNumber}`,
-                              seasonPosterUrl: getStoredSeasonPoster(nextSeason),
                             }));
-                            setUploadEpisodeSeasonPosterFile(null);
-                            setUploadEpisodeSeasonPosterPreview('');
-                            setEpisodeSeasonPosterFileKey((current) => current + 1);
                           }}
                         >
                           {selectedSeriesSeasons.map((season) => (

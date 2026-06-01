@@ -859,7 +859,6 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           title: season.title.trim() || `Season ${seasonIndex + 1}`,
           overview: season.overview.trim(),
           poster: seasonPoster || posterUrl,
-          overriddenBackdrop: season.overriddenBackdrop || seasonPoster || posterUrl,
           tmdb_id: season.tmdbId ?? null,
           episodes,
         });

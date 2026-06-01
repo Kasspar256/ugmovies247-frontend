@@ -23,10 +23,6 @@ import type { AdminCategory, AdminRequest, RequestProcessingJob } from '@/types/
 import { parseApiResponse, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
-import {
-  isTmdbMatureExclusive,
-  mergeMatureExclusiveCategory,
-} from '@/lib/matureContent';
 
 type RequestDraft = {
   contentType: 'movie' | 'series';
@@ -66,17 +62,10 @@ type TmdbResult = {
   backdrop_path?: string | null;
   release_date?: string;
   first_air_date?: string;
-  adult?: boolean;
-  isMatureExclusive?: boolean;
-  matureRatings?: string[];
 };
 
 type TmdbDetails = TmdbResult & {
   genres?: Array<{ id: number; name: string }>;
-  release_dates?: unknown;
-  content_ratings?: unknown;
-  certification?: string;
-  rating?: string;
 };
 
 type TmdbSeasonEpisode = {
@@ -601,10 +590,6 @@ function TmdbLookup({
         releaseDate,
         releaseYear: getYearFromDate(releaseDate) || current.releaseYear,
         tmdbId: String(details.id || result.id),
-        categories: mergeMatureExclusiveCategory(
-          current.categories,
-          isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
-        ),
         nativeBackdrop: backdrop || current.nativeBackdrop,
         nativePoster: poster || current.nativePoster,
       }));

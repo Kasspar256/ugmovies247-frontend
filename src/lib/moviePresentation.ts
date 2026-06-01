@@ -160,7 +160,6 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
           title: season.title,
           overview: season.overview,
           poster: season.poster,
-          overriddenBackdrop: season.overriddenBackdrop,
           tmdb_id: season.tmdb_id ?? null,
           episodes: [...season.episodes].sort((first, second) => first.episodeNumber - second.episodeNumber),
         });
@@ -182,8 +181,6 @@ export function mergeSeriesMovies<T extends Movie>(movies: T[]) {
         title: existingSeason.title || season.title,
         overview: existingSeason.overview || season.overview,
         poster: existingSeason.poster || season.poster,
-        overriddenBackdrop:
-          existingSeason.overriddenBackdrop || season.overriddenBackdrop || '',
         tmdb_id: existingSeason.tmdb_id ?? season.tmdb_id ?? null,
         episodes: Array.from(episodesByNumber.values()).sort(
           (first, second) => first.episodeNumber - second.episodeNumber

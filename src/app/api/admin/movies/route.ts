@@ -15,7 +15,6 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
-import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
 import {
   prepareMovieDocumentForDirectUploadProcessing,
   queuePreparedDirectUploadJobs,
@@ -25,22 +24,6 @@ import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const ADMIN_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
-
-async function applyMatureCategoryToMovieInput(input: Record<string, unknown>) {
-  const contentType = input.contentType === 'series' ? 'series' : 'movie';
-  const category = await applyTmdbMatureExclusiveCategory({
-    categories: input.category,
-    tmdbId: input.tmdb_id,
-    mediaType: contentType === 'series' ? 'tv' : 'movie',
-    tmdbPayload: input,
-    isKnownMatureExclusive: input.isMatureExclusive === true,
-  });
-
-  return {
-    ...input,
-    category,
-  };
-}
 
 function getAdminCatalogCache(cache: CachedMovieCatalog | null) {
   return cache?.reviewOnly === true ? null : cache;
@@ -208,7 +191,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       movie?: Record<string, unknown>;
     };
-    const incomingMovie = await applyMatureCategoryToMovieInput(body.movie || {});
+    const incomingMovie = body.movie || {};
     const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
     const moviePayload = buildEditableMovieDocument(incomingMovie);
     const createdMovie = {
@@ -238,3 +221,20 @@ export async function POST(request: Request) {
     await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
 
     return NextResponse.json({
+      success: true,
+      queuedNormalizationCount: preparedMovie.queuedJobs.length,
+      movie: {
+        id: movieRef.id,
+        ...preparedMovie.movie,
+      },
+    });
+  } catch (error) {
+    console.error('[admin] failed to create admin movie', error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Failed to create admin movie.',
+      },
+      { status: 500 }
+    );
+  }
+}

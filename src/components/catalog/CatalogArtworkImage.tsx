@@ -43,8 +43,13 @@ const CatalogArtworkImage = memo(function CatalogArtworkImage({
 }: CatalogArtworkImageProps) {
   const candidates = useMemo(() => normalizeArtworkCandidates(src, variant), [src, variant]);
   const candidateKey = candidates.join('\n');
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [candidateIndex, setCandidateIndex] = useState(() => {
+    const loadedIndex = candidates.findIndex((candidate) => hasLoadedArtworkUrl(candidate));
+    return loadedIndex >= 0 ? loadedIndex : 0;
+  });
+  const [isLoaded, setIsLoaded] = useState(() =>
+    Boolean(candidates[candidateIndex] && hasLoadedArtworkUrl(candidates[candidateIndex]))
+  );
   const [hasError, setHasError] = useState(false);
   const normalizedSrc = candidates[candidateIndex] || '';
 
