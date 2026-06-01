@@ -4,6 +4,12 @@ import type {
 } from '@/components/admin/controlCenterUtils';
 import { FieldLabel, PillButton, SelectInput, TextInput } from '@/components/admin/controlCenterFields';
 
+function getDefaultCategoryLabel(category) {
+  return category.name === 'Mature Exclusives (18+)'
+    ? 'Mature Exclusives (18+) - strict erotic 18+ only'
+    : category.name;
+}
+
 export function CategoryChecklist({
   categories,
   selected,
@@ -62,7 +68,7 @@ export function CategoryChecklist({
               </svg>
             </span>
             <span className="min-w-0 text-[13px] font-semibold leading-5 text-inherit">
-              {getLabel ? getLabel(category) : category.name}
+              {getLabel ? getLabel(category) : getDefaultCategoryLabel(category)}
             </span>
           </label>
         );

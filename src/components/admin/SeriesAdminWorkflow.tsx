@@ -40,6 +40,7 @@ const SERIES_CATEGORY_OPTIONS = [
   { name: 'Western series', label: 'Western series' },
   { name: 'Other vjs', label: 'Other vjs' },
   { name: 'Trending on tiktok', label: 'Tag as Trending on TikTok' },
+  { name: 'Mature Exclusives (18+)', label: 'Mature Exclusives (18+) - strict erotic 18+ only' },
 ] as const;
 
 type SeriesFormState = {

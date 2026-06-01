@@ -549,7 +549,11 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                     categories={manualCategories}
                     selected={selectedHomeCategories}
                     onToggle={toggleCategory}
-                    getLabel={(category) => category.displayLabel || category.name}
+                    getLabel={(category) =>
+                      category.name === 'Mature Exclusives (18+)'
+                        ? 'Mature Exclusives (18+) - strict erotic 18+ only'
+                        : category.displayLabel || category.name
+                    }
                   />
                   {preservedCategoriesLabel ? (
                     <div className="mt-3 text-xs leading-6 text-white/45">

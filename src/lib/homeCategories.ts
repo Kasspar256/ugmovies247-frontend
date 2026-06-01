@@ -25,6 +25,11 @@ export const HOME_PAGE_CATEGORY_CONFIG = [
     homeOrder: 50,
   },
   {
+    name: 'Mature Exclusives (18+)',
+    displayLabel: 'MATURE EXCLUSIVES (18+)',
+    homeOrder: 55,
+  },
+  {
     name: 'VJ JUNIOR SERIES',
     displayLabel: 'VJ JUNIOR SERIES',
     homeOrder: 130,
