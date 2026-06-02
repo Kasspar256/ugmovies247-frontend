@@ -117,3 +117,16 @@ export function countUnreadLatestUploads(movies: Movie[]) {
 
   return latestUploads.filter((movie) => getMovieTimestamp(movie) > seenAt).length;
 }
+
+export function clearLatestUploadBadgeCount() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem('ugmovies247.notification.unread-count.v1');
+    navigator.serviceWorker?.controller?.postMessage?.({ type: 'ugmovies247:clear-badge' });
+  } catch {
+    // Badge clearing is best-effort only.
+  }
+}

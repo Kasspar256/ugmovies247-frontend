@@ -25,9 +25,7 @@ const config: CapacitorConfig = {
       providers: ['google.com'],
     },
     PushNotifications: {
-      smallIcon: 'ic_notification',
-      iconColor: '#D90429',
-      presentationOptions: ['badge', 'sound', 'alert', 'banner', 'list'],
+      presentationOptions: ['badge', 'sound', 'alert'],
     },
     LocalNotifications: {
       smallIcon: 'ic_notification',

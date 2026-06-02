@@ -109,3 +109,14 @@ export function formatNotificationTime(value?: string) {
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? '' : 's'}`;
 }
+
+export async function fetchUserNotification(notificationId: string) {
+  const payload = await fetchUserNotifications();
+  const notification = payload.notifications.find((item) => item.id === notificationId);
+
+  if (!notification) {
+    throw new Error('Notification not found.');
+  }
+
+  return { notification };
+}
