@@ -130,10 +130,24 @@ type MiniPlayerSize = {
   height: number;
 };
 
+type PlaybackResumeSnapshot = {
+  position: number;
+  duration: number;
+  paused: boolean;
+  updatedAt: number;
+};
+
 const PlaybackContext = createContext<PlaybackContextValue | null>(null);
 
 const STARTUP_ERROR_GRACE_MS = 2200;
 const FATAL_ERROR_DELAY_MS = 1600;
+const SOURCE_RETRY_BASE_DELAY_MS = 850;
+const SOURCE_RETRY_MAX_DELAY_MS = 7500;
+const SOURCE_RETRY_MAX_ATTEMPTS = 5;
+const STALL_RECOVERY_DELAY_MS = 6500;
+const HARD_STALL_RECOVERY_DELAY_MS = 14000;
+const STALL_PROGRESS_EPSILON_SECONDS = 0.15;
+const SEEK_BUMP_SECONDS = 0.22;
 const CONTROL_HIDE_DELAY_MS = 2600;
 const DESKTOP_MINI_PLAYER_WIDTH = 360;
 const MOBILE_MINI_PLAYER_MIN_WIDTH = 220;
@@ -147,6 +161,7 @@ const MUTE_STORAGE_KEY = 'ugmovies247.player.muted';
 const PLAYBACK_RATE_STORAGE_KEY = 'ugmovies247.player.rate';
 const BRIGHTNESS_STORAGE_KEY = 'ugmovies247.player.brightness';
 const PIP_HINT_STORAGE_KEY = 'ugmovies247.player.pip-hint-seen';
+const SESSION_PROGRESS_STORAGE_KEY = 'ugmovies247.player.session-progress.v1';
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -213,6 +228,10 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
   );
 }
 
+function getPlaybackSourceKey(source: PlaybackSource | null) {
+  return source ? `${source.sessionKey}|${source.sourceUrl}` : '';
+}
+
 function getBufferedUntil(video: HTMLVideoElement | null) {
   if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
     return 0;
@@ -267,6 +286,45 @@ function readStoredBoolean(key: string, fallback: boolean) {
   }
 
   return fallback;
+}
+
+function readSessionProgress(movieId: string): PlaybackResumeSnapshot | null {
+  if (typeof window === 'undefined' || !movieId) {
+    return null;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(`${SESSION_PROGRESS_STORAGE_KEY}:${movieId}`);
+    const parsedValue = rawValue ? (JSON.parse(rawValue) as Partial<PlaybackResumeSnapshot>) : null;
+
+    if (!parsedValue || typeof parsedValue.position !== 'number' || parsedValue.position < 1) {
+      return null;
+    }
+
+    return {
+      position: parsedValue.position,
+      duration: typeof parsedValue.duration === 'number' ? parsedValue.duration : 0,
+      paused: Boolean(parsedValue.paused),
+      updatedAt: typeof parsedValue.updatedAt === 'number' ? parsedValue.updatedAt : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionProgress(movieId: string, snapshot: PlaybackResumeSnapshot) {
+  if (typeof window === 'undefined' || !movieId || snapshot.position < 1) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      `${SESSION_PROGRESS_STORAGE_KEY}:${movieId}`,
+      JSON.stringify(snapshot)
+    );
+  } catch {
+    // Storage can be unavailable in restricted WebViews. The in-memory snapshot still works.
+  }
 }
 
 function resolveMiniPlayerSize(isDesktop: boolean, viewportWidth: number): MiniPlayerSize {
@@ -545,13 +603,21 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const castFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sourceRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hardStallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipHintShownRef = useRef(false);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
+  const sourceRetryCountRef = useRef(0);
   const startupGraceUntilRef = useRef(0);
   const lastAssignedSourceKeyRef = useRef('');
   const fallbackSourceRef = useRef('');
   const pendingResumeRef = useRef<{ sourceKey: string; position: number; applied: boolean } | null>(null);
+  const lastProgressAtRef = useRef(Date.now());
+  const lastProgressTimeRef = useRef(0);
+  const lastKnownPlaybackRef = useRef<Record<string, PlaybackResumeSnapshot>>({});
+  const lastSessionProgressPersistAtRef = useRef(0);
   const lastVolumeBeforeMuteRef = useRef(1);
   const playbackPhaseRef = useRef<PlaybackPhase>('idle');
   const castSnapshotRef = useRef<CastStateSnapshot>(getCastStateSnapshot());
@@ -650,6 +716,25 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearSourceRetryTimer = useCallback(() => {
+    if (sourceRetryTimerRef.current) {
+      clearTimeout(sourceRetryTimerRef.current);
+      sourceRetryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearStallRecoveryTimers = useCallback(() => {
+    if (stallRecoveryTimerRef.current) {
+      clearTimeout(stallRecoveryTimerRef.current);
+      stallRecoveryTimerRef.current = null;
+    }
+
+    if (hardStallRecoveryTimerRef.current) {
+      clearTimeout(hardStallRecoveryTimerRef.current);
+      hardStallRecoveryTimerRef.current = null;
+    }
+  }, []);
+
   const clearFatalError = useCallback(() => {
     clearFatalErrorTimer();
     setFatalErrorMessage('');
@@ -669,6 +754,64 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const syncBufferedProgress = useCallback(() => {
     setBufferedUntil(getBufferedUntil(videoRef.current));
   }, []);
+
+  const rememberPlaybackPosition = useCallback(
+    (sourceOverride?: PlaybackSource | null) => {
+      const source = sourceOverride === undefined ? activeSource : sourceOverride;
+
+      if (!source?.movieId) {
+        return;
+      }
+
+      const videoElement = videoRef.current;
+      const position = Number.isFinite(videoElement?.currentTime)
+        ? videoElement?.currentTime || 0
+        : currentTime;
+      const totalDuration = Number.isFinite(videoElement?.duration)
+        ? videoElement?.duration || 0
+        : duration;
+
+      if (!Number.isFinite(position) || position < 1) {
+        return;
+      }
+
+      const snapshot: PlaybackResumeSnapshot = {
+        position,
+        duration: Number.isFinite(totalDuration) ? totalDuration : 0,
+        paused: videoElement ? videoElement.paused : playbackPhaseRef.current !== 'playing',
+        updatedAt: Date.now(),
+      };
+      const sourceKey = getPlaybackSourceKey(source);
+
+      if (sourceKey) {
+        lastKnownPlaybackRef.current[sourceKey] = snapshot;
+      }
+
+      lastKnownPlaybackRef.current[`movie:${source.movieId}`] = snapshot;
+      writeSessionProgress(source.movieId, snapshot);
+    },
+    [activeSource, currentTime, duration]
+  );
+
+  const resolveResumePosition = useCallback(
+    (source: PlaybackSource, sourceKey: string) => {
+      const sourceSnapshot = lastKnownPlaybackRef.current[sourceKey];
+      const movieSnapshot = lastKnownPlaybackRef.current[`movie:${source.movieId}`];
+      const sessionSnapshot = readSessionProgress(source.movieId);
+      const cachedProgress = getCachedPlaybackProgress(source.movieId);
+      const candidates = [
+        sourceSnapshot?.position,
+        movieSnapshot?.position,
+        sessionSnapshot?.position,
+        cachedProgress && !cachedProgress.isFinished ? cachedProgress.lastPosition : 0,
+      ]
+        .filter((position): position is number => Number.isFinite(position) && position >= 1)
+        .sort((left, right) => right - left);
+
+      return candidates[0] || 0;
+    },
+    []
+  );
 
   const updateVolumeState = useCallback((nextVolume: number, nextMuted?: boolean) => {
     const normalizedVolume = clamp(nextVolume, 0, 1);
@@ -707,7 +850,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }, CONTROL_HIDE_DELAY_MS);
       }
     },
-    [activeSource, clearHideControlsTimer, inlineHost, isDraggingMiniPlayer, settingsOpen]
+    [activeSource, clearHideControlsTimer, isDraggingMiniPlayer, settingsOpen]
   );
 
   const setVideoElement = useCallback(
@@ -938,6 +1081,22 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const persistBeforeExit = () => rememberPlaybackPosition();
+
+    window.addEventListener('pagehide', persistBeforeExit);
+    window.addEventListener('beforeunload', persistBeforeExit);
+
+    return () => {
+      window.removeEventListener('pagehide', persistBeforeExit);
+      window.removeEventListener('beforeunload', persistBeforeExit);
+    };
+  }, [rememberPlaybackPosition]);
+
+  useEffect(() => {
     return bindCastVideoElement(videoElementState);
   }, [videoElementState]);
 
@@ -991,17 +1150,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     });
   }, [activeSource?.sourceUrl, clearFatalError, setPlaybackPhaseSafe]);
 
-  const setPlaybackSource = useCallback((nextSource: PlaybackSource | null) => {
-    setActiveSourceState((currentSource) =>
-      areSourcesEqual(currentSource, nextSource) ? currentSource : nextSource
-    );
-  }, []);
+  const setPlaybackSource = useCallback(
+    (nextSource: PlaybackSource | null) => {
+      setActiveSourceState((currentSource) => {
+        if (areSourcesEqual(currentSource, nextSource)) {
+          return currentSource;
+        }
+
+        rememberPlaybackPosition(currentSource);
+        return nextSource;
+      });
+    },
+    [rememberPlaybackPosition]
+  );
 
   const clearPlayback = useCallback(() => {
+    rememberPlaybackPosition();
     clearClickIntentTimer();
     clearFatalError();
+    clearSourceRetryTimer();
+    clearStallRecoveryTimers();
     pendingAutoplayRef.current = false;
     retriedCurrentSourceRef.current = false;
+    sourceRetryCountRef.current = 0;
     fallbackSourceRef.current = '';
     startupGraceUntilRef.current = 0;
     lastAssignedSourceKeyRef.current = '';
@@ -1028,7 +1199,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.removeAttribute('src');
       videoElement.load();
     }
-  }, [clearClickIntentTimer, clearFatalError, setPlaybackPhaseSafe]);
+  }, [
+    clearClickIntentTimer,
+    clearFatalError,
+    clearSourceRetryTimer,
+    clearStallRecoveryTimers,
+    rememberPlaybackPosition,
+    setPlaybackPhaseSafe,
+  ]);
 
   useEffect(() => {
     if (!activeSource && softLandscapeFullscreen) {
@@ -1037,6 +1215,168 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       void unlockScreenOrientation(true);
     }
   }, [activeSource, softLandscapeFullscreen]);
+
+  const attemptSourceReload = useCallback(
+    (reason: string) => {
+      const videoElement = videoRef.current;
+
+      if (!videoElement || !activeSource?.sourceUrl) {
+        return;
+      }
+
+      const activeUrl = fallbackSourceRef.current || activeSource.sourceUrl;
+      const activeSourceKey = `${activeSource.sessionKey}|${activeUrl}`;
+      const currentPosition = Number.isFinite(videoElement.currentTime)
+        ? videoElement.currentTime
+        : currentTime;
+
+      rememberPlaybackPosition();
+      clearFatalError();
+      clearStallRecoveryTimers();
+
+      if (currentPosition >= 1) {
+        pendingResumeRef.current = {
+          sourceKey: activeSourceKey,
+          position: currentPosition,
+          applied: false,
+        };
+      }
+
+      lastAssignedSourceKeyRef.current = activeSourceKey;
+      startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
+      pendingAutoplayRef.current = Boolean(activeSource.autoplay) || !videoElement.paused;
+      setPlaybackPhaseSafe(currentPosition > 0 ? 'buffering' : 'loading');
+
+      try {
+        videoElement.pause();
+        videoElement.removeAttribute('src');
+        videoElement.load();
+        videoElement.src = activeUrl;
+        videoElement.load();
+      } catch (error) {
+        console.warn('[player] source reload failed', {
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [
+      activeSource,
+      clearFatalError,
+      clearStallRecoveryTimers,
+      currentTime,
+      rememberPlaybackPosition,
+      setPlaybackPhaseSafe,
+    ]
+  );
+
+  const scheduleSourceRetry = useCallback(
+    (reason: string) => {
+      clearSourceRetryTimer();
+
+      if (!activeSource?.sourceUrl) {
+        return;
+      }
+
+      const nextAttempt = sourceRetryCountRef.current + 1;
+
+      if (nextAttempt > SOURCE_RETRY_MAX_ATTEMPTS) {
+        setFatalErrorMessage(
+          'Video is taking too long to connect. Please check your network and try again.'
+        );
+        setPlaybackPhaseSafe('error');
+        return;
+      }
+
+      const retryDelay = clamp(
+        SOURCE_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, nextAttempt - 1),
+        SOURCE_RETRY_BASE_DELAY_MS,
+        SOURCE_RETRY_MAX_DELAY_MS
+      );
+
+      sourceRetryTimerRef.current = setTimeout(() => {
+        sourceRetryTimerRef.current = null;
+        sourceRetryCountRef.current = nextAttempt;
+        attemptSourceReload(reason);
+      }, retryDelay);
+    },
+    [activeSource?.sourceUrl, attemptSourceReload, clearSourceRetryTimer, setPlaybackPhaseSafe]
+  );
+
+  const recoverStalledPlayback = useCallback(
+    (reason: string, forceReload = false) => {
+      const videoElement = videoRef.current;
+
+      if (
+        !videoElement ||
+        !activeSource?.sourceUrl ||
+        videoElement.ended ||
+        castSnapshotRef.current.transport === 'google-cast'
+      ) {
+        return;
+      }
+
+      const currentPosition = Number.isFinite(videoElement.currentTime)
+        ? videoElement.currentTime
+        : currentTime;
+      const hasRecentProgress =
+        Date.now() - lastProgressAtRef.current < STALL_RECOVERY_DELAY_MS &&
+        Math.abs(currentPosition - lastProgressTimeRef.current) >= STALL_PROGRESS_EPSILON_SECONDS;
+
+      if (!forceReload && hasRecentProgress) {
+        return;
+      }
+
+      rememberPlaybackPosition();
+      clearFatalError();
+      setPlaybackPhaseSafe(currentPosition > 0 ? 'buffering' : 'loading');
+
+      const safeDuration = Number.isFinite(videoElement.duration) && videoElement.duration > 0
+        ? videoElement.duration
+        : 0;
+      const canSeekBump =
+        !forceReload &&
+        currentPosition > 0 &&
+        (!safeDuration || currentPosition + SEEK_BUMP_SECONDS < safeDuration - 1);
+
+      if (canSeekBump) {
+        try {
+          videoElement.currentTime = currentPosition + SEEK_BUMP_SECONDS;
+          void videoElement.play().catch(() => undefined);
+          return;
+        } catch {
+          // Fall through to a source reload if the WebView refuses the kick seek.
+        }
+      }
+
+      scheduleSourceRetry(reason);
+    },
+    [
+      activeSource?.sourceUrl,
+      clearFatalError,
+      currentTime,
+      rememberPlaybackPosition,
+      scheduleSourceRetry,
+      setPlaybackPhaseSafe,
+    ]
+  );
+
+  const scheduleStallRecovery = useCallback(
+    (reason: string) => {
+      clearStallRecoveryTimers();
+
+      stallRecoveryTimerRef.current = setTimeout(() => {
+        stallRecoveryTimerRef.current = null;
+        recoverStalledPlayback(reason);
+      }, STALL_RECOVERY_DELAY_MS);
+
+      hardStallRecoveryTimerRef.current = setTimeout(() => {
+        hardStallRecoveryTimerRef.current = null;
+        recoverStalledPlayback(reason, true);
+      }, HARD_STALL_RECOVERY_DELAY_MS);
+    },
+    [clearStallRecoveryTimers, recoverStalledPlayback]
+  );
 
   const scheduleFatalError = useCallback(
     (message: string) => {
@@ -1055,14 +1395,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (isMediaRecovering(videoElement, playbackPhaseRef.current)) {
+        const hasRecentProgress =
+          Date.now() - lastProgressAtRef.current < HARD_STALL_RECOVERY_DELAY_MS;
+
+        if (isMediaRecovering(videoElement, playbackPhaseRef.current) && hasRecentProgress) {
           return;
         }
 
-        if (!retriedCurrentSourceRef.current) {
+        if (
+          !retriedCurrentSourceRef.current ||
+          sourceRetryCountRef.current < SOURCE_RETRY_MAX_ATTEMPTS
+        ) {
           retriedCurrentSourceRef.current = true;
           setPlaybackPhaseSafe('loading');
-          videoElement.load();
+          scheduleSourceRetry('fatal-error-delay');
           scheduleFatalError(message);
           return;
         }
@@ -1071,7 +1417,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         setPlaybackPhaseSafe('error');
       }, Math.max(350, initialDelay));
     },
-    [clearFatalErrorTimer, setPlaybackPhaseSafe]
+    [clearFatalErrorTimer, scheduleSourceRetry, setPlaybackPhaseSafe]
   );
 
   const applyPendingResume = useCallback(() => {
@@ -1096,7 +1442,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       : pendingResume.position;
     const resumePosition = clamp(pendingResume.position, 0, maxResumePosition);
 
-    if (resumePosition < 10 || (videoElement.currentTime || 0) > 5) {
+    const currentPosition = Number.isFinite(videoElement.currentTime)
+      ? videoElement.currentTime || 0
+      : 0;
+
+    if (resumePosition < 1 || currentPosition >= Math.max(1, resumePosition - 1)) {
       pendingResumeRef.current = { ...pendingResume, applied: true };
       return;
     }
@@ -1104,6 +1454,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     try {
       videoElement.currentTime = resumePosition;
       setCurrentTime(resumePosition);
+      lastProgressTimeRef.current = resumePosition;
+      lastProgressAtRef.current = Date.now();
       pendingResumeRef.current = { ...pendingResume, applied: true };
     } catch {
       // Some mobile WebViews reject early seeks until canplay; canplay will retry.
@@ -1127,24 +1479,36 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       Boolean(activeSource.autoplay) ||
       playbackPhaseRef.current === 'playing' ||
       playbackPhaseRef.current === 'buffering';
+    const resumePosition = resolveResumePosition(activeSource, nextSourceKey);
 
     clearFatalError();
+    clearSourceRetryTimer();
+    clearStallRecoveryTimers();
     startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
     pendingAutoplayRef.current = shouldResumePlayback;
     retriedCurrentSourceRef.current = false;
+    sourceRetryCountRef.current = 0;
     fallbackSourceRef.current = '';
     lastAssignedSourceKeyRef.current = nextSourceKey;
     const cachedProgress = getCachedPlaybackProgress(activeSource.movieId);
     pendingResumeRef.current =
-      cachedProgress && !cachedProgress.isFinished && cachedProgress.lastPosition >= 10
+      resumePosition >= 1
         ? {
+            sourceKey: nextSourceKey,
+            position: resumePosition,
+            applied: false,
+          }
+        : cachedProgress && !cachedProgress.isFinished && cachedProgress.lastPosition >= 10
+          ? {
             sourceKey: nextSourceKey,
             position: cachedProgress.lastPosition,
             applied: false,
           }
-        : null;
+          : null;
+    lastProgressAtRef.current = Date.now();
+    lastProgressTimeRef.current = resumePosition;
     setHasStartedPlayback(false);
-    setCurrentTime(0);
+    setCurrentTime(resumePosition);
     setDuration(0);
     setBufferedUntil(0);
     setPlaybackPhaseSafe('loading');
@@ -1158,6 +1522,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     activeSource?.sessionKey,
     activeSource?.sourceUrl,
     clearFatalError,
+    clearSourceRetryTimer,
+    clearStallRecoveryTimers,
+    resolveResumePosition,
     setPlaybackPhaseSafe,
   ]);
 
@@ -1235,6 +1602,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalErrorTimer();
       clearHideControlsTimer();
       clearSeekFeedbackTimer();
+      clearSourceRetryTimer();
+      clearStallRecoveryTimers();
     };
   }, [
     clearCastFeedbackTimer,
@@ -1242,15 +1611,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalErrorTimer,
     clearHideControlsTimer,
     clearSeekFeedbackTimer,
+    clearSourceRetryTimer,
+    clearStallRecoveryTimers,
   ]);
 
   useEffect(() => {
+    clearHideControlsTimer();
+
     if (!activeSource || settingsOpen || playbackPhase !== 'playing' || isDraggingMiniPlayer) {
-      clearHideControlsTimer();
       setControlsVisible(true);
       return;
     }
 
+    setControlsVisible(true);
     hideControlsTimerRef.current = setTimeout(() => {
       setControlsVisible(false);
     }, CONTROL_HIDE_DELAY_MS);
@@ -1987,7 +2360,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setPlaybackPhaseSafe('loading');
     setBufferedUntil(0);
     showControls(true);
-  }, [clearFatalError, setPlaybackPhaseSafe, showControls]);
+    scheduleStallRecovery('load-start');
+  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, showControls]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2014,6 +2388,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const videoElement = videoRef.current;
 
     clearFatalError();
+    clearSourceRetryTimer();
+    clearStallRecoveryTimers();
+    sourceRetryCountRef.current = 0;
 
     if (!videoElement) {
       return;
@@ -2032,7 +2409,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setPlaybackPhaseSafe(videoElement.paused ? 'paused' : 'playing');
-  }, [applyPendingResume, clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
+  }, [
+    applyPendingResume,
+    clearFatalError,
+    clearSourceRetryTimer,
+    clearStallRecoveryTimers,
+    setPlaybackPhaseSafe,
+    syncBufferedProgress,
+  ]);
 
   const syncWatchHistory = useCallback(
     (completed = false, force = false) => {
@@ -2130,9 +2514,21 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     clearFatalError();
+    clearSourceRetryTimer();
+    clearStallRecoveryTimers();
+    sourceRetryCountRef.current = 0;
+    lastProgressAtRef.current = Date.now();
+    lastProgressTimeRef.current = videoRef.current?.currentTime || 0;
     setHasStartedPlayback(true);
     setPlaybackPhaseSafe('playing');
-  }, [clearFatalError, setPlaybackPhaseSafe]);
+    showControls();
+  }, [
+    clearFatalError,
+    clearSourceRetryTimer,
+    clearStallRecoveryTimers,
+    setPlaybackPhaseSafe,
+    showControls,
+  ]);
 
   const handlePause = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2147,8 +2543,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     setPlaybackPhaseSafe('paused');
     setControlsVisible(true);
+    rememberPlaybackPosition();
     syncWatchHistory(false, true);
-  }, [setPlaybackPhaseSafe, syncWatchHistory]);
+  }, [rememberPlaybackPosition, setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleEnded = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2156,9 +2553,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     syncWatchHistory(true, true);
+    rememberPlaybackPosition();
     setPlaybackPhaseSafe('ended');
     setControlsVisible(true);
-  }, [setPlaybackPhaseSafe, syncWatchHistory]);
+  }, [rememberPlaybackPosition, setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleWaiting = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2174,7 +2572,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalError();
     setPlaybackPhaseSafe(videoElement.currentTime > 0 ? 'buffering' : 'loading');
     syncBufferedProgress();
-  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
+    scheduleStallRecovery('media-waiting');
+  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, syncBufferedProgress]);
 
   const handleTimeUpdate = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2187,7 +2586,39 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setCurrentTime(videoElement.currentTime || 0);
+    const nextCurrentTime = videoElement.currentTime || 0;
+    const didAdvance =
+      Math.abs(nextCurrentTime - lastProgressTimeRef.current) >= STALL_PROGRESS_EPSILON_SECONDS;
+
+    setCurrentTime(nextCurrentTime);
+
+    if (didAdvance) {
+      lastProgressAtRef.current = Date.now();
+      lastProgressTimeRef.current = nextCurrentTime;
+      clearStallRecoveryTimers();
+    }
+
+    if (activeSource?.movieId) {
+      const sourceKey = getPlaybackSourceKey(activeSource);
+      const snapshot: PlaybackResumeSnapshot = {
+        position: nextCurrentTime,
+        duration: Number.isFinite(videoElement.duration) ? videoElement.duration || 0 : duration,
+        paused: videoElement.paused,
+        updatedAt: Date.now(),
+      };
+
+      if (sourceKey) {
+        lastKnownPlaybackRef.current[sourceKey] = snapshot;
+      }
+
+      lastKnownPlaybackRef.current[`movie:${activeSource.movieId}`] = snapshot;
+
+      if (Date.now() - lastSessionProgressPersistAtRef.current > 4000) {
+        lastSessionProgressPersistAtRef.current = Date.now();
+        writeSessionProgress(activeSource.movieId, snapshot);
+      }
+    }
+
     syncBufferedProgress();
     syncWatchHistory(false);
 
@@ -2199,7 +2630,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalError();
       setPlaybackPhaseSafe('playing');
     }
-  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress, syncWatchHistory]);
+  }, [
+    activeSource,
+    clearFatalError,
+    clearStallRecoveryTimers,
+    duration,
+    setPlaybackPhaseSafe,
+    syncBufferedProgress,
+    syncWatchHistory,
+  ]);
 
   const handleVideoError = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2213,6 +2652,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    rememberPlaybackPosition();
+    clearStallRecoveryTimers();
+
     if (
       fallbackUrl &&
       fallbackUrl !== activeSource.sourceUrl &&
@@ -2221,26 +2663,44 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalError();
       fallbackSourceRef.current = fallbackUrl;
       retriedCurrentSourceRef.current = false;
+      sourceRetryCountRef.current = 0;
       startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
       lastAssignedSourceKeyRef.current = `${activeSource.sessionKey}|${fallbackUrl}`;
-      if (pendingResumeRef.current) {
+      const fallbackResumePosition = Number.isFinite(videoElement.currentTime)
+        ? videoElement.currentTime || currentTime
+        : currentTime;
+
+      if (pendingResumeRef.current || fallbackResumePosition >= 1) {
         pendingResumeRef.current = {
-          ...pendingResumeRef.current,
           sourceKey: `${activeSource.sessionKey}|${fallbackUrl}`,
+          position: pendingResumeRef.current?.position || fallbackResumePosition,
           applied: false,
         };
       }
       setPlaybackPhaseSafe('loading');
       videoElement.pause();
+      videoElement.removeAttribute('src');
+      videoElement.load();
       videoElement.src = fallbackUrl;
       videoElement.load();
       return;
     }
 
+    setPlaybackPhaseSafe(videoElement.currentTime > 0 ? 'buffering' : 'loading');
+    scheduleSourceRetry('video-error');
     scheduleFatalError(
       'Video failed to load. Please try again in a moment or switch to another source.'
     );
-  }, [activeSource, clearFatalError, scheduleFatalError, setPlaybackPhaseSafe]);
+  }, [
+    activeSource,
+    clearFatalError,
+    clearStallRecoveryTimers,
+    currentTime,
+    rememberPlaybackPosition,
+    scheduleFatalError,
+    scheduleSourceRetry,
+    setPlaybackPhaseSafe,
+  ]);
 
   const handleShellKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
