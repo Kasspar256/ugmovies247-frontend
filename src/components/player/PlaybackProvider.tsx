@@ -130,24 +130,10 @@ type MiniPlayerSize = {
   height: number;
 };
 
-type PlaybackResumeSnapshot = {
-  position: number;
-  duration: number;
-  paused: boolean;
-  updatedAt: number;
-};
-
 const PlaybackContext = createContext<PlaybackContextValue | null>(null);
 
 const STARTUP_ERROR_GRACE_MS = 2200;
 const FATAL_ERROR_DELAY_MS = 1600;
-const SOURCE_RETRY_BASE_DELAY_MS = 850;
-const SOURCE_RETRY_MAX_DELAY_MS = 7500;
-const SOURCE_RETRY_MAX_ATTEMPTS = 5;
-const STALL_RECOVERY_DELAY_MS = 6500;
-const HARD_STALL_RECOVERY_DELAY_MS = 14000;
-const STALL_PROGRESS_EPSILON_SECONDS = 0.15;
-const SEEK_BUMP_SECONDS = 0.22;
 const CONTROL_HIDE_DELAY_MS = 2600;
 const DESKTOP_MINI_PLAYER_WIDTH = 360;
 const MOBILE_MINI_PLAYER_MIN_WIDTH = 220;
@@ -161,7 +147,6 @@ const MUTE_STORAGE_KEY = 'ugmovies247.player.muted';
 const PLAYBACK_RATE_STORAGE_KEY = 'ugmovies247.player.rate';
 const BRIGHTNESS_STORAGE_KEY = 'ugmovies247.player.brightness';
 const PIP_HINT_STORAGE_KEY = 'ugmovies247.player.pip-hint-seen';
-const SESSION_PROGRESS_STORAGE_KEY = 'ugmovies247.player.session-progress.v1';
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -228,10 +213,6 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
   );
 }
 
-function getPlaybackSourceKey(source: PlaybackSource | null) {
-  return source ? `${source.sessionKey}|${source.sourceUrl}` : '';
-}
-
 function getBufferedUntil(video: HTMLVideoElement | null) {
   if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
     return 0;
@@ -286,45 +267,6 @@ function readStoredBoolean(key: string, fallback: boolean) {
   }
 
   return fallback;
-}
-
-function readSessionProgress(movieId: string): PlaybackResumeSnapshot | null {
-  if (typeof window === 'undefined' || !movieId) {
-    return null;
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(`${SESSION_PROGRESS_STORAGE_KEY}:${movieId}`);
-    const parsedValue = rawValue ? (JSON.parse(rawValue) as Partial<PlaybackResumeSnapshot>) : null;
-
-    if (!parsedValue || typeof parsedValue.position !== 'number' || parsedValue.position < 1) {
-      return null;
-    }
-
-    return {
-      position: parsedValue.position,
-      duration: typeof parsedValue.duration === 'number' ? parsedValue.duration : 0,
-      paused: Boolean(parsedValue.paused),
-      updatedAt: typeof parsedValue.updatedAt === 'number' ? parsedValue.updatedAt : 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionProgress(movieId: string, snapshot: PlaybackResumeSnapshot) {
-  if (typeof window === 'undefined' || !movieId || snapshot.position < 1) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(
-      `${SESSION_PROGRESS_STORAGE_KEY}:${movieId}`,
-      JSON.stringify(snapshot)
-    );
-  } catch {
-    // Storage can be unavailable in restricted WebViews. The in-memory snapshot still works.
-  }
 }
 
 function resolveMiniPlayerSize(isDesktop: boolean, viewportWidth: number): MiniPlayerSize {
@@ -603,21 +545,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const castFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sourceRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hardStallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipHintShownRef = useRef(false);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
-  const sourceRetryCountRef = useRef(0);
   const startupGraceUntilRef = useRef(0);
   const lastAssignedSourceKeyRef = useRef('');
   const fallbackSourceRef = useRef('');
   const pendingResumeRef = useRef<{ sourceKey: string; position: number; applied: boolean } | null>(null);
-  const lastProgressAtRef = useRef(Date.now());
-  const lastProgressTimeRef = useRef(0);
-  const lastKnownPlaybackRef = useRef<Record<string, PlaybackResumeSnapshot>>({});
-  const lastSessionProgressPersistAtRef = useRef(0);
   const lastVolumeBeforeMuteRef = useRef(1);
   const playbackPhaseRef = useRef<PlaybackPhase>('idle');
   const castSnapshotRef = useRef<CastStateSnapshot>(getCastStateSnapshot());
@@ -716,25 +650,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const clearSourceRetryTimer = useCallback(() => {
-    if (sourceRetryTimerRef.current) {
-      clearTimeout(sourceRetryTimerRef.current);
-      sourceRetryTimerRef.current = null;
-    }
-  }, []);
-
-  const clearStallRecoveryTimers = useCallback(() => {
-    if (stallRecoveryTimerRef.current) {
-      clearTimeout(stallRecoveryTimerRef.current);
-      stallRecoveryTimerRef.current = null;
-    }
-
-    if (hardStallRecoveryTimerRef.current) {
-      clearTimeout(hardStallRecoveryTimerRef.current);
-      hardStallRecoveryTimerRef.current = null;
-    }
-  }, []);
-
   const clearFatalError = useCallback(() => {
     clearFatalErrorTimer();
     setFatalErrorMessage('');
@@ -754,64 +669,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const syncBufferedProgress = useCallback(() => {
     setBufferedUntil(getBufferedUntil(videoRef.current));
   }, []);
-
-  const rememberPlaybackPosition = useCallback(
-    (sourceOverride?: PlaybackSource | null) => {
-      const source = sourceOverride === undefined ? activeSource : sourceOverride;
-
-      if (!source?.movieId) {
-        return;
-      }
-
-      const videoElement = videoRef.current;
-      const position = Number.isFinite(videoElement?.currentTime)
-        ? videoElement?.currentTime || 0
-        : currentTime;
-      const totalDuration = Number.isFinite(videoElement?.duration)
-        ? videoElement?.duration || 0
-        : duration;
-
-      if (!Number.isFinite(position) || position < 1) {
-        return;
-      }
-
-      const snapshot: PlaybackResumeSnapshot = {
-        position,
-        duration: Number.isFinite(totalDuration) ? totalDuration : 0,
-        paused: videoElement ? videoElement.paused : playbackPhaseRef.current !== 'playing',
-        updatedAt: Date.now(),
-      };
-      const sourceKey = getPlaybackSourceKey(source);
-
-      if (sourceKey) {
-        lastKnownPlaybackRef.current[sourceKey] = snapshot;
-      }
-
-      lastKnownPlaybackRef.current[`movie:${source.movieId}`] = snapshot;
-      writeSessionProgress(source.movieId, snapshot);
-    },
-    [activeSource, currentTime, duration]
-  );
-
-  const resolveResumePosition = useCallback(
-    (source: PlaybackSource, sourceKey: string) => {
-      const sourceSnapshot = lastKnownPlaybackRef.current[sourceKey];
-      const movieSnapshot = lastKnownPlaybackRef.current[`movie:${source.movieId}`];
-      const sessionSnapshot = readSessionProgress(source.movieId);
-      const cachedProgress = getCachedPlaybackProgress(source.movieId);
-      const candidates = [
-        sourceSnapshot?.position,
-        movieSnapshot?.position,
-        sessionSnapshot?.position,
-        cachedProgress && !cachedProgress.isFinished ? cachedProgress.lastPosition : 0,
-      ]
-        .filter((position): position is number => Number.isFinite(position) && position >= 1)
-        .sort((left, right) => right - left);
-
-      return candidates[0] || 0;
-    },
-    []
-  );
 
   const updateVolumeState = useCallback((nextVolume: number, nextMuted?: boolean) => {
     const normalizedVolume = clamp(nextVolume, 0, 1);
@@ -850,7 +707,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }, CONTROL_HIDE_DELAY_MS);
       }
     },
-    [activeSource, clearHideControlsTimer, isDraggingMiniPlayer, settingsOpen]
+    [activeSource, clearHideControlsTimer, inlineHost, isDraggingMiniPlayer, settingsOpen]
   );
 
   const setVideoElement = useCallback(
@@ -1081,22 +938,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const persistBeforeExit = () => rememberPlaybackPosition();
-
-    window.addEventListener('pagehide', persistBeforeExit);
-    window.addEventListener('beforeunload', persistBeforeExit);
-
-    return () => {
-      window.removeEventListener('pagehide', persistBeforeExit);
-      window.removeEventListener('beforeunload', persistBeforeExit);
-    };
-  }, [rememberPlaybackPosition]);
-
-  useEffect(() => {
     return bindCastVideoElement(videoElementState);
   }, [videoElementState]);
 
@@ -1150,29 +991,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     });
   }, [activeSource?.sourceUrl, clearFatalError, setPlaybackPhaseSafe]);
 
-  const setPlaybackSource = useCallback(
-    (nextSource: PlaybackSource | null) => {
-      setActiveSourceState((currentSource) => {
-        if (areSourcesEqual(currentSource, nextSource)) {
-          return currentSource;
-        }
-
-        rememberPlaybackPosition(currentSource);
-        return nextSource;
-      });
-    },
-    [rememberPlaybackPosition]
-  );
+  const setPlaybackSource = useCallback((nextSource: PlaybackSource | null) => {
+    setActiveSourceState((currentSource) =>
+      areSourcesEqual(currentSource, nextSource) ? currentSource : nextSource
+    );
+  }, []);
 
   const clearPlayback = useCallback(() => {
-    rememberPlaybackPosition();
     clearClickIntentTimer();
     clearFatalError();
-    clearSourceRetryTimer();
-    clearStallRecoveryTimers();
     pendingAutoplayRef.current = false;
     retriedCurrentSourceRef.current = false;
-    sourceRetryCountRef.current = 0;
     fallbackSourceRef.current = '';
     startupGraceUntilRef.current = 0;
     lastAssignedSourceKeyRef.current = '';
@@ -1199,14 +1028,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.removeAttribute('src');
       videoElement.load();
     }
-  }, [
-    clearClickIntentTimer,
-    clearFatalError,
-    clearSourceRetryTimer,
-    clearStallRecoveryTimers,
-    rememberPlaybackPosition,
-    setPlaybackPhaseSafe,
-  ]);
+  }, [clearClickIntentTimer, clearFatalError, setPlaybackPhaseSafe]);
 
   useEffect(() => {
     if (!activeSource && softLandscapeFullscreen) {
@@ -1215,168 +1037,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       void unlockScreenOrientation(true);
     }
   }, [activeSource, softLandscapeFullscreen]);
-
-  const attemptSourceReload = useCallback(
-    (reason: string) => {
-      const videoElement = videoRef.current;
-
-      if (!videoElement || !activeSource?.sourceUrl) {
-        return;
-      }
-
-      const activeUrl = fallbackSourceRef.current || activeSource.sourceUrl;
-      const activeSourceKey = `${activeSource.sessionKey}|${activeUrl}`;
-      const currentPosition = Number.isFinite(videoElement.currentTime)
-        ? videoElement.currentTime
-        : currentTime;
-
-      rememberPlaybackPosition();
-      clearFatalError();
-      clearStallRecoveryTimers();
-
-      if (currentPosition >= 1) {
-        pendingResumeRef.current = {
-          sourceKey: activeSourceKey,
-          position: currentPosition,
-          applied: false,
-        };
-      }
-
-      lastAssignedSourceKeyRef.current = activeSourceKey;
-      startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
-      pendingAutoplayRef.current = Boolean(activeSource.autoplay) || !videoElement.paused;
-      setPlaybackPhaseSafe(currentPosition > 0 ? 'buffering' : 'loading');
-
-      try {
-        videoElement.pause();
-        videoElement.removeAttribute('src');
-        videoElement.load();
-        videoElement.src = activeUrl;
-        videoElement.load();
-      } catch (error) {
-        console.warn('[player] source reload failed', {
-          reason,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-    [
-      activeSource,
-      clearFatalError,
-      clearStallRecoveryTimers,
-      currentTime,
-      rememberPlaybackPosition,
-      setPlaybackPhaseSafe,
-    ]
-  );
-
-  const scheduleSourceRetry = useCallback(
-    (reason: string) => {
-      clearSourceRetryTimer();
-
-      if (!activeSource?.sourceUrl) {
-        return;
-      }
-
-      const nextAttempt = sourceRetryCountRef.current + 1;
-
-      if (nextAttempt > SOURCE_RETRY_MAX_ATTEMPTS) {
-        setFatalErrorMessage(
-          'Video is taking too long to connect. Please check your network and try again.'
-        );
-        setPlaybackPhaseSafe('error');
-        return;
-      }
-
-      const retryDelay = clamp(
-        SOURCE_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, nextAttempt - 1),
-        SOURCE_RETRY_BASE_DELAY_MS,
-        SOURCE_RETRY_MAX_DELAY_MS
-      );
-
-      sourceRetryTimerRef.current = setTimeout(() => {
-        sourceRetryTimerRef.current = null;
-        sourceRetryCountRef.current = nextAttempt;
-        attemptSourceReload(reason);
-      }, retryDelay);
-    },
-    [activeSource?.sourceUrl, attemptSourceReload, clearSourceRetryTimer, setPlaybackPhaseSafe]
-  );
-
-  const recoverStalledPlayback = useCallback(
-    (reason: string, forceReload = false) => {
-      const videoElement = videoRef.current;
-
-      if (
-        !videoElement ||
-        !activeSource?.sourceUrl ||
-        videoElement.ended ||
-        castSnapshotRef.current.transport === 'google-cast'
-      ) {
-        return;
-      }
-
-      const currentPosition = Number.isFinite(videoElement.currentTime)
-        ? videoElement.currentTime
-        : currentTime;
-      const hasRecentProgress =
-        Date.now() - lastProgressAtRef.current < STALL_RECOVERY_DELAY_MS &&
-        Math.abs(currentPosition - lastProgressTimeRef.current) >= STALL_PROGRESS_EPSILON_SECONDS;
-
-      if (!forceReload && hasRecentProgress) {
-        return;
-      }
-
-      rememberPlaybackPosition();
-      clearFatalError();
-      setPlaybackPhaseSafe(currentPosition > 0 ? 'buffering' : 'loading');
-
-      const safeDuration = Number.isFinite(videoElement.duration) && videoElement.duration > 0
-        ? videoElement.duration
-        : 0;
-      const canSeekBump =
-        !forceReload &&
-        currentPosition > 0 &&
-        (!safeDuration || currentPosition + SEEK_BUMP_SECONDS < safeDuration - 1);
-
-      if (canSeekBump) {
-        try {
-          videoElement.currentTime = currentPosition + SEEK_BUMP_SECONDS;
-          void videoElement.play().catch(() => undefined);
-          return;
-        } catch {
-          // Fall through to a source reload if the WebView refuses the kick seek.
-        }
-      }
-
-      scheduleSourceRetry(reason);
-    },
-    [
-      activeSource?.sourceUrl,
-      clearFatalError,
-      currentTime,
-      rememberPlaybackPosition,
-      scheduleSourceRetry,
-      setPlaybackPhaseSafe,
-    ]
-  );
-
-  const scheduleStallRecovery = useCallback(
-    (reason: string) => {
-      clearStallRecoveryTimers();
-
-      stallRecoveryTimerRef.current = setTimeout(() => {
-        stallRecoveryTimerRef.current = null;
-        recoverStalledPlayback(reason);
-      }, STALL_RECOVERY_DELAY_MS);
-
-      hardStallRecoveryTimerRef.current = setTimeout(() => {
-        hardStallRecoveryTimerRef.current = null;
-        recoverStalledPlayback(reason, true);
-      }, HARD_STALL_RECOVERY_DELAY_MS);
-    },
-    [clearStallRecoveryTimers, recoverStalledPlayback]
-  );
 
   const scheduleFatalError = useCallback(
     (message: string) => {
@@ -1395,20 +1055,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const hasRecentProgress =
-          Date.now() - lastProgressAtRef.current < HARD_STALL_RECOVERY_DELAY_MS;
-
-        if (isMediaRecovering(videoElement, playbackPhaseRef.current) && hasRecentProgress) {
+        if (isMediaRecovering(videoElement, playbackPhaseRef.current)) {
           return;
         }
 
-        if (
-          !retriedCurrentSourceRef.current ||
-          sourceRetryCountRef.current < SOURCE_RETRY_MAX_ATTEMPTS
-        ) {
+        if (!retriedCurrentSourceRef.current) {
           retriedCurrentSourceRef.current = true;
           setPlaybackPhaseSafe('loading');
-          scheduleSourceRetry('fatal-error-delay');
+          videoElement.load();
           scheduleFatalError(message);
           return;
         }
@@ -1417,7 +1071,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         setPlaybackPhaseSafe('error');
       }, Math.max(350, initialDelay));
     },
-    [clearFatalErrorTimer, scheduleSourceRetry, setPlaybackPhaseSafe]
+    [clearFatalErrorTimer, setPlaybackPhaseSafe]
   );
 
   const applyPendingResume = useCallback(() => {
@@ -1442,11 +1096,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       : pendingResume.position;
     const resumePosition = clamp(pendingResume.position, 0, maxResumePosition);
 
-    const currentPosition = Number.isFinite(videoElement.currentTime)
-      ? videoElement.currentTime || 0
-      : 0;
-
-    if (resumePosition < 1 || currentPosition >= Math.max(1, resumePosition - 1)) {
+    if (resumePosition < 10 || (videoElement.currentTime || 0) > 5) {
       pendingResumeRef.current = { ...pendingResume, applied: true };
       return;
     }
@@ -1454,8 +1104,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     try {
       videoElement.currentTime = resumePosition;
       setCurrentTime(resumePosition);
-      lastProgressTimeRef.current = resumePosition;
-      lastProgressAtRef.current = Date.now();
       pendingResumeRef.current = { ...pendingResume, applied: true };
     } catch {
       // Some mobile WebViews reject early seeks until canplay; canplay will retry.
@@ -1479,36 +1127,24 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       Boolean(activeSource.autoplay) ||
       playbackPhaseRef.current === 'playing' ||
       playbackPhaseRef.current === 'buffering';
-    const resumePosition = resolveResumePosition(activeSource, nextSourceKey);
 
     clearFatalError();
-    clearSourceRetryTimer();
-    clearStallRecoveryTimers();
     startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
     pendingAutoplayRef.current = shouldResumePlayback;
     retriedCurrentSourceRef.current = false;
-    sourceRetryCountRef.current = 0;
     fallbackSourceRef.current = '';
     lastAssignedSourceKeyRef.current = nextSourceKey;
     const cachedProgress = getCachedPlaybackProgress(activeSource.movieId);
     pendingResumeRef.current =
-      resumePosition >= 1
+      cachedProgress && !cachedProgress.isFinished && cachedProgress.lastPosition >= 10
         ? {
-            sourceKey: nextSourceKey,
-            position: resumePosition,
-            applied: false,
-          }
-        : cachedProgress && !cachedProgress.isFinished && cachedProgress.lastPosition >= 10
-          ? {
             sourceKey: nextSourceKey,
             position: cachedProgress.lastPosition,
             applied: false,
           }
-          : null;
-    lastProgressAtRef.current = Date.now();
-    lastProgressTimeRef.current = resumePosition;
+        : null;
     setHasStartedPlayback(false);
-    setCurrentTime(resumePosition);
+    setCurrentTime(0);
     setDuration(0);
     setBufferedUntil(0);
     setPlaybackPhaseSafe('loading');
@@ -1522,9 +1158,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     activeSource?.sessionKey,
     activeSource?.sourceUrl,
     clearFatalError,
-    clearSourceRetryTimer,
-    clearStallRecoveryTimers,
-    resolveResumePosition,
     setPlaybackPhaseSafe,
   ]);
 
@@ -1602,8 +1235,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalErrorTimer();
       clearHideControlsTimer();
       clearSeekFeedbackTimer();
-      clearSourceRetryTimer();
-      clearStallRecoveryTimers();
     };
   }, [
     clearCastFeedbackTimer,
@@ -1611,19 +1242,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalErrorTimer,
     clearHideControlsTimer,
     clearSeekFeedbackTimer,
-    clearSourceRetryTimer,
-    clearStallRecoveryTimers,
   ]);
 
   useEffect(() => {
-    clearHideControlsTimer();
-
     if (!activeSource || settingsOpen || playbackPhase !== 'playing' || isDraggingMiniPlayer) {
+      clearHideControlsTimer();
       setControlsVisible(true);
       return;
     }
 
-    setControlsVisible(true);
     hideControlsTimerRef.current = setTimeout(() => {
       setControlsVisible(false);
     }, CONTROL_HIDE_DELAY_MS);
@@ -2360,8 +1987,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setPlaybackPhaseSafe('loading');
     setBufferedUntil(0);
     showControls(true);
-    scheduleStallRecovery('load-start');
-  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, showControls]);
+  }, [clearFatalError, setPlaybackPhaseSafe, showControls]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2388,9 +2014,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const videoElement = videoRef.current;
 
     clearFatalError();
-    clearSourceRetryTimer();
-    clearStallRecoveryTimers();
-    sourceRetryCountRef.current = 0;
 
     if (!videoElement) {
       return;
@@ -2409,14 +2032,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setPlaybackPhaseSafe(videoElement.paused ? 'paused' : 'playing');
-  }, [
-    applyPendingResume,
-    clearFatalError,
-    clearSourceRetryTimer,
-    clearStallRecoveryTimers,
-    setPlaybackPhaseSafe,
-    syncBufferedProgress,
-  ]);
+  }, [applyPendingResume, clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
 
   const syncWatchHistory = useCallback(
     (completed = false, force = false) => {
@@ -2514,21 +2130,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     clearFatalError();
-    clearSourceRetryTimer();
-    clearStallRecoveryTimers();
-    sourceRetryCountRef.current = 0;
-    lastProgressAtRef.current = Date.now();
-    lastProgressTimeRef.current = videoRef.current?.currentTime || 0;
     setHasStartedPlayback(true);
     setPlaybackPhaseSafe('playing');
-    showControls();
-  }, [
-    clearFatalError,
-    clearSourceRetryTimer,
-    clearStallRecoveryTimers,
-    setPlaybackPhaseSafe,
-    showControls,
-  ]);
+  }, [clearFatalError, setPlaybackPhaseSafe]);
 
   const handlePause = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2543,9 +2147,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     setPlaybackPhaseSafe('paused');
     setControlsVisible(true);
-    rememberPlaybackPosition();
     syncWatchHistory(false, true);
-  }, [rememberPlaybackPosition, setPlaybackPhaseSafe, syncWatchHistory]);
+  }, [setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleEnded = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2553,10 +2156,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     syncWatchHistory(true, true);
-    rememberPlaybackPosition();
     setPlaybackPhaseSafe('ended');
     setControlsVisible(true);
-  }, [rememberPlaybackPosition, setPlaybackPhaseSafe, syncWatchHistory]);
+  }, [setPlaybackPhaseSafe, syncWatchHistory]);
 
   const handleWaiting = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2572,8 +2174,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalError();
     setPlaybackPhaseSafe(videoElement.currentTime > 0 ? 'buffering' : 'loading');
     syncBufferedProgress();
-    scheduleStallRecovery('media-waiting');
-  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, syncBufferedProgress]);
+  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress]);
 
   const handleTimeUpdate = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2586,39 +2187,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const nextCurrentTime = videoElement.currentTime || 0;
-    const didAdvance =
-      Math.abs(nextCurrentTime - lastProgressTimeRef.current) >= STALL_PROGRESS_EPSILON_SECONDS;
-
-    setCurrentTime(nextCurrentTime);
-
-    if (didAdvance) {
-      lastProgressAtRef.current = Date.now();
-      lastProgressTimeRef.current = nextCurrentTime;
-      clearStallRecoveryTimers();
-    }
-
-    if (activeSource?.movieId) {
-      const sourceKey = getPlaybackSourceKey(activeSource);
-      const snapshot: PlaybackResumeSnapshot = {
-        position: nextCurrentTime,
-        duration: Number.isFinite(videoElement.duration) ? videoElement.duration || 0 : duration,
-        paused: videoElement.paused,
-        updatedAt: Date.now(),
-      };
-
-      if (sourceKey) {
-        lastKnownPlaybackRef.current[sourceKey] = snapshot;
-      }
-
-      lastKnownPlaybackRef.current[`movie:${activeSource.movieId}`] = snapshot;
-
-      if (Date.now() - lastSessionProgressPersistAtRef.current > 4000) {
-        lastSessionProgressPersistAtRef.current = Date.now();
-        writeSessionProgress(activeSource.movieId, snapshot);
-      }
-    }
-
+    setCurrentTime(videoElement.currentTime || 0);
     syncBufferedProgress();
     syncWatchHistory(false);
 
@@ -2630,15 +2199,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalError();
       setPlaybackPhaseSafe('playing');
     }
-  }, [
-    activeSource,
-    clearFatalError,
-    clearStallRecoveryTimers,
-    duration,
-    setPlaybackPhaseSafe,
-    syncBufferedProgress,
-    syncWatchHistory,
-  ]);
+  }, [clearFatalError, setPlaybackPhaseSafe, syncBufferedProgress, syncWatchHistory]);
 
   const handleVideoError = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2652,9 +2213,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    rememberPlaybackPosition();
-    clearStallRecoveryTimers();
-
     if (
       fallbackUrl &&
       fallbackUrl !== activeSource.sourceUrl &&
@@ -2663,44 +2221,26 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearFatalError();
       fallbackSourceRef.current = fallbackUrl;
       retriedCurrentSourceRef.current = false;
-      sourceRetryCountRef.current = 0;
       startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
       lastAssignedSourceKeyRef.current = `${activeSource.sessionKey}|${fallbackUrl}`;
-      const fallbackResumePosition = Number.isFinite(videoElement.currentTime)
-        ? videoElement.currentTime || currentTime
-        : currentTime;
-
-      if (pendingResumeRef.current || fallbackResumePosition >= 1) {
+      if (pendingResumeRef.current) {
         pendingResumeRef.current = {
+          ...pendingResumeRef.current,
           sourceKey: `${activeSource.sessionKey}|${fallbackUrl}`,
-          position: pendingResumeRef.current?.position || fallbackResumePosition,
           applied: false,
         };
       }
       setPlaybackPhaseSafe('loading');
       videoElement.pause();
-      videoElement.removeAttribute('src');
-      videoElement.load();
       videoElement.src = fallbackUrl;
       videoElement.load();
       return;
     }
 
-    setPlaybackPhaseSafe(videoElement.currentTime > 0 ? 'buffering' : 'loading');
-    scheduleSourceRetry('video-error');
     scheduleFatalError(
       'Video failed to load. Please try again in a moment or switch to another source.'
     );
-  }, [
-    activeSource,
-    clearFatalError,
-    clearStallRecoveryTimers,
-    currentTime,
-    rememberPlaybackPosition,
-    scheduleFatalError,
-    scheduleSourceRetry,
-    setPlaybackPhaseSafe,
-  ]);
+  }, [activeSource, clearFatalError, scheduleFatalError, setPlaybackPhaseSafe]);
 
   const handleShellKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -3488,3 +3028,463 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                           {hoverPreviewTime !== null && hoverPreviewRatio !== null && duration > 0 ? (
                             <div
                               className="pointer-events-none absolute -top-8 -translate-x-1/2 rounded-full border border-white/10 bg-black/84 px-2 py-1 text-[9px] font-black tracking-[0.18em] text-white/86 backdrop-blur-xl"
+                              style={{ left: `${hoverPreviewRatio * 100}%` }}
+                            >
+                              {formatTime(hoverPreviewTime)}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              aria-label="Rewind 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(-10);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                            >
+                              <SkipBack size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={playbackPhase === 'playing' ? 'Pause video' : 'Play video'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                togglePlayPause();
+                              }}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
+                            >
+                              {playbackPhase === 'playing' ? (
+                                <Pause size={18} />
+                              ) : (
+                                <Play size={18} className="translate-x-[1px]" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Forward 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(10);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                            >
+                              <SkipForward size={16} />
+                            </button>
+                          </div>
+
+                          <div className="min-w-0 flex-1 text-center text-[10px] font-black tabular-nums tracking-[0.12em] text-white/86">
+                            {activeTimeLabel}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleMute();
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+                            >
+                              {volumeIcon}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSettingsOpen((currentState) => !currentState);
+                                showControls(true);
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label="Player settings"
+                            >
+                              <Settings2 size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void tryEnterFullscreen();
+                              }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/42 text-white"
+                              aria-label={effectiveFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                            >
+                              {effectiveFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
+                  {isDesktopInlineMode ? (
+                  <div
+                    className={`pointer-events-auto absolute inset-x-0 bottom-0 z-20 px-3 pb-3 transition-all duration-300 md:px-4 md:pb-4 ${
+                      controlsVisible || playbackPhase !== 'playing'
+                        ? 'translate-y-0 opacity-100'
+                        : 'translate-y-5 opacity-0'
+                    }`}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="px-1 py-2 md:px-1">
+                      <div
+                        ref={scrubberRef}
+                        className="relative mb-3"
+                        onPointerMove={handleScrubberPointerMove}
+                        onPointerLeave={handleScrubberPointerLeave}
+                      >
+                        <div className="relative h-2.5 rounded-full bg-white/10">
+                          <div
+                            className="absolute inset-y-0 left-0 rounded-full bg-white/25"
+                            style={{ width: `${bufferedPercent}%` }}
+                          />
+                          <div
+                            className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                            style={{ width: `${playedPercent}%` }}
+                          />
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(duration, 0)}
+                            step={0.1}
+                            value={Math.min(currentTime, duration || 0)}
+                            className="player-range absolute inset-0 z-10 h-full w-full"
+                            onChange={(event) => {
+                              seekTo(Number(event.target.value));
+                            }}
+                            onInput={() => showControls(true)}
+                          />
+                        </div>
+
+                        {hoverPreviewTime !== null && hoverPreviewRatio !== null && duration > 0 ? (
+                          <div
+                            className="pointer-events-none absolute -top-9 -translate-x-1/2 rounded-full border border-white/10 bg-black/84 px-2.5 py-1 text-[10px] font-black tracking-[0.18em] text-white/86 backdrop-blur-xl"
+                            style={{ left: `${hoverPreviewRatio * 100}%` }}
+                          >
+                            {formatTime(hoverPreviewTime)}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex items-center gap-2 md:gap-3">
+                          <PlayerShellButton
+                            ariaLabel="Rewind 10 seconds"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              seekBy(-10);
+                            }}
+                          >
+                            <SkipBack size={18} />
+                          </PlayerShellButton>
+                          <PlayerShellButton
+                            ariaLabel={playbackPhase === 'playing' ? 'Pause video' : 'Play video'}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              togglePlayPause();
+                            }}
+                            className="h-12 w-12 md:h-14 md:w-14"
+                          >
+                            {playbackPhase === 'playing' ? (
+                              <Pause size={20} />
+                            ) : (
+                              <Play size={20} className="translate-x-[1px]" />
+                            )}
+                          </PlayerShellButton>
+                          <PlayerShellButton
+                            ariaLabel="Forward 10 seconds"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              seekBy(10);
+                            }}
+                          >
+                            <SkipForward size={18} />
+                          </PlayerShellButton>
+
+                          <div className="ml-1 rounded-full border border-white/10 bg-black/38 px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-white/80">
+                            {activeTimeLabel}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleMute();
+                            }}
+                            className="inline-flex h-11 items-center gap-2 rounded-full border border-white/10 bg-black/36 px-3 text-white transition-colors hover:border-white/20 hover:bg-black/54"
+                            aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+                          >
+                            {volumeIcon}
+                            <span className="hidden text-[11px] font-black uppercase tracking-[0.16em] text-white/76 md:inline">
+                              Audio
+                            </span>
+                          </button>
+
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={isMuted ? 0 : volume}
+                            className="player-volume-range hidden w-24 md:block"
+                            aria-label="Volume"
+                            onChange={(event) => {
+                              updateVolumeState(Number(event.target.value), false);
+                              showControls(true);
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              cyclePlaybackRate();
+                            }}
+                            className="rounded-full border border-white/10 bg-black/36 px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-white/78 transition-colors hover:border-white/20 hover:bg-black/54"
+                          >
+                            Speed {formatPlaybackRate(playbackRate)}
+                          </button>
+
+                          <PlayerShellButton
+                            ariaLabel={effectiveFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void tryEnterFullscreen();
+                            }}
+                          >
+                            {effectiveFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+                          </PlayerShellButton>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  ) : null}
+                </>
+              ) : null}
+
+              {isMiniMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      showControls();
+                    }}
+                    className="pointer-events-auto absolute inset-0"
+                    aria-label={`Show controls for ${activeSource.title}`}
+                  />
+
+                  <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
+                    <button
+                      type="button"
+                      aria-label="Move mini player"
+                      onPointerDown={handleMiniDragStart}
+                      className="pointer-events-auto inline-flex h-8 w-8 touch-none items-center justify-center rounded-full border border-white/10 bg-black/54 text-white/80 backdrop-blur-xl"
+                    >
+                      <GripHorizontal size={15} />
+                    </button>
+
+                    <div className="pointer-events-auto flex items-center gap-2">
+                      <PlayerShellButton
+                        ariaLabel="Return to full player"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openWatchView();
+                        }}
+                        className="h-8 w-8"
+                      >
+                        <Maximize size={14} />
+                      </PlayerShellButton>
+                      {canOfferPictureInPictureControl ? (
+                        <PlayerShellButton
+                          ariaLabel={
+                            isPictureInPicture
+                              ? 'Exit picture-in-picture'
+                              : 'Watch in picture-in-picture'
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void tryTogglePictureInPicture();
+                          }}
+                          className={`h-8 w-8 ${
+                            isPictureInPicture ? 'border-[#D90429]/45 bg-[#D90429]/18 text-[#FFD7DF]' : ''
+                          }`}
+                        >
+                          <PictureInPictureIcon size={14} />
+                        </PlayerShellButton>
+                      ) : null}
+                      <PlayerShellButton
+                        ariaLabel="Close mini player"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          clearPlayback();
+                        }}
+                        className="h-8 w-8 text-white/80"
+                      >
+                        <X size={14} />
+                      </PlayerShellButton>
+                    </div>
+                  </div>
+
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3">
+                    <div className="p-1">
+                      <div className="pointer-events-auto flex items-center justify-center gap-4">
+                        <PlayerShellButton
+                          ariaLabel="Rewind 10 seconds"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            seekBy(-10);
+                          }}
+                          className="h-9 w-9 bg-black/42"
+                        >
+                          <SkipBack size={15} />
+                        </PlayerShellButton>
+
+                        <PlayerShellButton
+                          ariaLabel={playbackPhase === 'playing' ? 'Pause video' : 'Play video'}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            togglePlayPause();
+                          }}
+                          className="h-11 w-11 bg-black/52"
+                        >
+                          {playbackPhase === 'playing' ? (
+                            <Pause size={18} />
+                          ) : (
+                            <Play size={18} className="translate-x-[1px]" />
+                          )}
+                        </PlayerShellButton>
+
+                        <PlayerShellButton
+                          ariaLabel="Forward 10 seconds"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            seekBy(10);
+                          }}
+                          className="h-9 w-9 bg-black/42"
+                        >
+                          <SkipForward size={15} />
+                        </PlayerShellButton>
+                      </div>
+
+                      <div className="relative mt-3 h-2 rounded-full bg-white/10">
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full bg-white/25"
+                          style={{ width: `${bufferedPercent}%` }}
+                        />
+                        <div
+                          className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                          style={{ width: `${playedPercent}%` }}
+                        />
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between text-[9px] font-black uppercase tracking-[0.16em] text-white/70">
+                        <span>{formatTime(currentTime)}</span>
+                        <span>{formatTime(duration)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {isCasting ? (
+              <div className="pointer-events-none absolute left-3 top-3 z-30 flex max-w-[78%] items-center gap-2 rounded-full border border-white/10 bg-black/58 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/84 backdrop-blur-xl md:left-4 md:top-4 md:text-[11px]">
+                <Cast size={14} className="text-[#FFD7DF]" />
+                <span className="truncate">
+                  {isGoogleCasting
+                    ? `Casting to ${castSnapshot.deviceName || 'Chromecast'}`
+                    : 'AirPlay Active'}
+                </span>
+              </div>
+            ) : null}
+
+            {castFeedbackMessage ? (
+              <div className="pointer-events-none absolute left-1/2 top-4 z-30 w-[min(92%,420px)] -translate-x-1/2 rounded-full border border-white/10 bg-black/68 px-4 py-2 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/86 backdrop-blur-xl md:text-[11px]">
+                {castFeedbackMessage}
+              </div>
+            ) : null}
+
+            {fatalErrorMessage ? (
+              <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/78 px-5 text-center">
+                <div className="rounded-full border border-[#D90429]/28 bg-[#D90429]/12 px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-[#FFB3C1]">
+                  Playback Error
+                </div>
+                <p className="mt-4 inline-flex items-center gap-2 text-sm font-bold uppercase tracking-[0.18em] text-white">
+                  <AlertTriangle size={16} className="text-[#FFB3C1]" />
+                  Video failed to load
+                </p>
+                <p className="mt-3 max-w-md text-xs leading-6 text-white/70 md:text-sm">
+                  {fatalErrorMessage}
+                </p>
+              </div>
+            ) : null}
+
+            {desktopSeekFeedback ? (
+              <div
+                className={`pointer-events-none absolute inset-y-0 z-30 flex items-center ${
+                  desktopSeekFeedbackSide === 'left'
+                    ? 'left-0 justify-start pl-[8%]'
+                    : 'right-0 justify-end pr-[8%]'
+                }`}
+              >
+                <div
+                  className={`rounded-full border border-white/12 bg-black/62 font-black uppercase tracking-[0.22em] text-white shadow-[0_16px_40px_rgba(0,0,0,0.45)] ${
+                    isDesktop ? 'px-6 py-3 text-lg' : 'px-4 py-2 text-sm'
+                  }`}
+                >
+                  {desktopSeekFeedback}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </PlaybackContext.Provider>
+  );
+}
+
+export function usePlayback() {
+  const context = useContext(PlaybackContext);
+
+  if (!context) {
+    throw new Error('usePlayback must be used within PlaybackProvider.');
+  }
+
+  return context;
+}
+
+export function PersistentPlaybackHost({
+  active,
+  className,
+}: {
+  active: boolean;
+  className?: string;
+}) {
+  const { registerInlineHost } = usePlayback();
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    const node = hostRef.current;
+
+    if (active && node) {
+      registerInlineHost(node);
+
+      return () => {
+        registerInlineHost(null);
+      };
+    }
+
+    registerInlineHost(null);
+
+    return undefined;
+  }, [active, registerInlineHost]);
+
+  return <div ref={hostRef} className={className} />;
+}
