@@ -1,6 +1,13 @@
 import { adminDb, adminMessaging } from '@/lib/firebaseAdmin';
 import { getSupportEmail, sendTransactionalEmailSafely } from '@/lib/server/emailSender';
+import {
+  getFcmRecipients,
+  getNotificationImageUrl,
+  sendPushNotificationToRecipients,
+} from '@/lib/server/uploadNotifications';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import type { AdminRequest } from '@/types/admin';
+import type { Movie } from '@/types/movie';
 
 type FcmPayload = {
   token?: string;
@@ -23,6 +30,26 @@ function getBaseUrl() {
     process.env.NEXT_PUBLIC_APP_URL ||
     'https://ugmovies247.com'
   ).replace(/\/$/, '');
+}
+
+async function getMovieNotificationImage(movieId: string) {
+  const normalizedMovieId = String(movieId || '').trim();
+
+  if (!normalizedMovieId) {
+    return '';
+  }
+
+  const snapshot = await adminDb
+    .collection(MOVIES_COLLECTION)
+    .doc(normalizedMovieId)
+    .get()
+    .catch(() => null);
+
+  if (!snapshot?.exists) {
+    return '';
+  }
+
+  return getNotificationImageUrl(snapshot.data() as Partial<Movie>);
 }
 
 function escapeHtml(value: string) {
@@ -131,6 +158,7 @@ export async function sendFcmNotification(options: FcmPayload): Promise<Notifica
         priority: 'high',
         notification: {
           channelId: 'movie_requests',
+          icon: 'ic_notification',
           sound: 'default',
         },
       },
@@ -343,6 +371,71 @@ export async function sendMovieRequestUserUpdate(options: {
         options.request.id
       )}`
     : `${getBaseUrl()}/browse`;
+  const route = movieId
+    ? `/movie/${encodeURIComponent(movieId)}?fresh=1&fromRequest=1&requestId=${encodeURIComponent(
+        options.request.id
+      )}`
+    : '/browse';
+  const sendUserPush = async (): Promise<NotificationResult> => {
+    const recipients = await getFcmRecipients({
+      tokens: fcmToken ? [fcmToken] : [],
+      userIds: userId ? [userId] : [],
+      emails: email ? [email] : [],
+    });
+
+    if (!recipients.length) {
+      return { ok: false, skipped: true, reason: 'missing_user_push_tokens' };
+    }
+
+    const image = await getMovieNotificationImage(movieId);
+
+    const delivery = await sendPushNotificationToRecipients(recipients, {
+      title: options.title,
+      body: options.message,
+      link: movieLink,
+      route,
+      image,
+      channelId: 'movie_requests',
+      data: {
+        type: 'movie_request_update',
+        requestType,
+        status: options.status,
+        requestId: options.request.id,
+        movieId,
+        route,
+        image,
+      },
+    });
+
+    return {
+      ok: delivery.successCount > 0,
+      skipped: false,
+      reason:
+        delivery.successCount > 0
+          ? undefined
+          : `fcm_failed_for_${delivery.failureCount}_of_${delivery.recipientCount}_tokens`,
+    };
+  };
+  const writeInboxNotification = async () => {
+    if (!userId) {
+      return { ok: false, skipped: true, reason: 'missing_user_id' } satisfies NotificationResult;
+    }
+
+    const now = new Date().toISOString();
+    await adminDb.collection('user_notifications').doc().set({
+      userId,
+      title: options.title,
+      body: options.message,
+      path: route,
+      movieId,
+      source: 'movie_request_update',
+      readAt: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { ok: true, skipped: false } satisfies NotificationResult;
+  };
 
   await Promise.allSettled([
     email
@@ -367,21 +460,7 @@ export async function sendMovieRequestUserUpdate(options: {
           }),
         })
       : Promise.resolve({ ok: false, skipped: true }),
-    sendFcmNotification({
-      token: fcmToken,
-      title: options.title,
-      body: options.message,
-      link: movieLink,
-      data: {
-        type: 'movie_request_update',
-        requestType,
-        status: options.status,
-        requestId: options.request.id,
-        movieId,
-        route: movieId
-          ? `/movie/${movieId}?fresh=1&fromRequest=1&requestId=${options.request.id}`
-          : '/browse',
-      },
-    }),
+    sendUserPush(),
+    writeInboxNotification(),
   ]);
 }

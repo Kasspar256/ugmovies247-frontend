@@ -173,6 +173,22 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function buildAdminSubscriptionSnapshot(): SubscriptionSnapshot {
+  return {
+    planType: null,
+    planName: 'Admin Access',
+    status: 'active',
+    isActive: true,
+    startsAt: '',
+    expiresAt: '',
+    paymentProvider: '',
+    source: 'admin_role',
+    accessType: 'admin_override',
+    autoRenewEnabled: false,
+    updatedAt: nowIso(),
+  };
+}
+
 async function readExistingUserState(uid: string) {
   try {
     const snapshot = await adminDb.collection('users').doc(uid).get();
@@ -267,12 +283,10 @@ export async function createAuthSessionResponse(options: {
     typeof existing?.avatarPresetId === 'string' && existing.avatarPresetId
       ? existing.avatarPresetId
       : getDefaultAvatarPresetId(decoded.uid || email);
-  const storedEffectiveSubscriptionSnapshot =
-    existing?.subscription && typeof existing.subscription === 'object'
-      ? getSubscriptionSnapshotFromData(
-          existing.subscription as Partial<SubscriptionSnapshot>
-        )
-      : null;
+  const effectiveSubscriptionSnapshotPromise =
+    role === 'admin'
+      ? Promise.resolve(buildAdminSubscriptionSnapshot())
+      : resolveEffectiveSubscriptionState(decoded.uid).then((state) => state.effectiveSnapshot);
   const sessionCookiePromise = adminAuth.createSessionCookie(options.idToken, {
     expiresIn: AUTH_SESSION_MAX_AGE_MS,
   });
@@ -308,7 +322,7 @@ export async function createAuthSessionResponse(options: {
         },
         subscription:
           existing?.subscription && typeof existing.subscription === 'object'
-            ? existing.subscription
+            ? getSubscriptionSnapshotFromData(existing.subscription as Partial<SubscriptionSnapshot>)
             : getSubscriptionSnapshotFromData(null),
       },
       { merge: true }
@@ -327,10 +341,20 @@ export async function createAuthSessionResponse(options: {
 
   const [sessionCookie, effectiveSubscriptionSnapshot] = await Promise.all([
     sessionCookiePromise,
-    storedEffectiveSubscriptionSnapshot
-      ? Promise.resolve(storedEffectiveSubscriptionSnapshot)
-      : resolveEffectiveSubscriptionState(decoded.uid).then((state) => state.effectiveSnapshot),
+    effectiveSubscriptionSnapshotPromise,
   ]);
+
+  try {
+    await userRef.set(
+      {
+        subscription: effectiveSubscriptionSnapshot,
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
+  } catch (subscriptionSyncError) {
+    console.warn('[auth] failed to sync fresh subscription snapshot during login', subscriptionSyncError);
+  }
   let managedSession: Awaited<ReturnType<typeof createManagedAuthSession>>;
 
   try {

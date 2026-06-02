@@ -6,6 +6,7 @@ import {
   AUTH_SESSION_COOKIE,
   getAuthCookieConfig,
   getCurrentAuthSession,
+  getRequestAuthSession,
 } from '@/lib/auth/server';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
 import { isAppInReview } from '@/lib/appReview';
@@ -19,8 +20,10 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+export async function GET(request: Request) {
+  const session =
+    (await getCurrentAuthSession({ hydrateUserRecord: true })) ||
+    (await getRequestAuthSession(request));
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

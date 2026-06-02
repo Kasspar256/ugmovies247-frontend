@@ -24,12 +24,16 @@ const config: CapacitorConfig = {
       skipNativeAuth: false,
       providers: ['google.com'],
     },
+    PushNotifications: {
+      smallIcon: 'ic_notification',
+      iconColor: '#D90429',
+      presentationOptions: ['badge', 'sound', 'alert', 'banner', 'list'],
+    },
     LocalNotifications: {
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_notification',
       iconColor: '#D90429',
     },
   },
 };
 
 export default config;
-

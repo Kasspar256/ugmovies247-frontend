@@ -1,6 +1,8 @@
 import { readCachedAccountProfile } from '@/lib/accountProfile';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import { readCachedAuthStatus } from '@/lib/auth/status-client';
 import type { Movie } from '@/types/movie';
+import type { SubscriptionEntitlement } from '@/types/subscriptions';
 
 const SUBSCRIPTION_DATA_CACHE_KEY = 'ugmovies247.subscribe-data.v1';
 export const LOCAL_PREMIUM_ACCESS_UPDATED_EVENT = 'ugmovies247:local-premium-access-updated';
@@ -11,6 +13,8 @@ export type LocalPremiumAccessSnapshot = {
     | 'admin_profile'
     | 'admin_auth'
     | 'subscription_profile'
+    | 'subscription_auth'
+    | 'subscription_refresh'
     | 'subscription_cache'
     | 'raw_local_snapshot'
     | 'none';
@@ -44,6 +48,31 @@ function readSubscriptionDataCache() {
     };
   } catch {
     return null;
+  }
+}
+
+function hasPremiumEntitlement(entitlement?: Partial<SubscriptionEntitlement> | null) {
+  return Boolean(
+    entitlement?.hasPremiumAccess === true ||
+      entitlement?.subscription?.isActive === true
+  );
+}
+
+function persistSubscriptionDataCache(value: unknown) {
+  if (!canUseBrowserStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      SUBSCRIPTION_DATA_CACHE_KEY,
+      JSON.stringify({
+        value,
+        cachedAt: Date.now(),
+      })
+    );
+  } catch {
+    // Local entitlement is an optimization; the server remains authoritative.
   }
 }
 
@@ -147,6 +176,10 @@ export function readLocalPremiumAccessSnapshot(): LocalPremiumAccessSnapshot {
     return { hasPremiumAccess: true, source: 'admin_auth' };
   }
 
+  if (cachedAuthStatus?.authenticated && cachedAuthStatus.user?.subscription?.isActive === true) {
+    return { hasPremiumAccess: true, source: 'subscription_auth' };
+  }
+
   const subscriptionCache = readSubscriptionDataCache();
   const cachedEntitlement = subscriptionCache?.value?.entitlement;
 
@@ -164,12 +197,45 @@ export function readLocalPremiumAccessSnapshot(): LocalPremiumAccessSnapshot {
   return { hasPremiumAccess: false, source: 'none' };
 }
 
+export async function refreshLocalPremiumAccessSnapshot(): Promise<LocalPremiumAccessSnapshot> {
+  const beforeRefresh = readLocalPremiumAccessSnapshot();
+
+  try {
+    const response = await fetch('/api/subscriptions/me', {
+      headers: await getHydratedClientDeviceHeaders(),
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      entitlement?: SubscriptionEntitlement;
+    };
+
+    if (!response.ok) {
+      return beforeRefresh;
+    }
+
+    persistSubscriptionDataCache(payload);
+
+    if (hasPremiumEntitlement(payload.entitlement)) {
+      notifyLocalPremiumAccessUpdated();
+      return { hasPremiumAccess: true, source: 'subscription_refresh' };
+    }
+
+    notifyLocalPremiumAccessUpdated();
+    return { hasPremiumAccess: false, source: 'none' };
+  } catch {
+    return beforeRefresh;
+  }
+}
+
 export function notifyLocalPremiumAccessUpdated() {
   if (typeof window === 'undefined') {
     return;
   }
 
-  window.dispatchEvent(new CustomEvent(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT));
+  window.setTimeout(() => {
+    window.dispatchEvent(new CustomEvent(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT));
+  }, 0);
 }
 
 function unlockMovieEntry<T extends { isLocked?: boolean; subscriptionRequired?: boolean }>(entry: T): T {

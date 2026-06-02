@@ -15,15 +15,33 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
+import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
 import {
   prepareMovieDocumentForDirectUploadProcessing,
   queuePreparedDirectUploadJobs,
 } from '@/lib/server/adminVideoProcessing';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { sendLatestUploadPushNotification } from '@/lib/server/uploadNotifications';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const ADMIN_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
+
+async function applyMatureCategoryToMovieInput(input: Record<string, unknown>) {
+  const contentType = input.contentType === 'series' ? 'series' : 'movie';
+  const category = await applyTmdbMatureExclusiveCategory({
+    categories: input.category,
+    tmdbId: input.tmdb_id,
+    mediaType: contentType === 'series' ? 'tv' : 'movie',
+    tmdbPayload: input,
+    isKnownMatureExclusive: input.isMatureExclusive === true,
+  });
+
+  return {
+    ...input,
+    category,
+  };
+}
 
 function getAdminCatalogCache(cache: CachedMovieCatalog | null) {
   return cache?.reviewOnly === true ? null : cache;
@@ -191,7 +209,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       movie?: Record<string, unknown>;
     };
-    const incomingMovie = body.movie || {};
+    const incomingMovie = await applyMatureCategoryToMovieInput(body.movie || {});
     const movieRef = adminDb.collection(MOVIES_COLLECTION).doc();
     const moviePayload = buildEditableMovieDocument(incomingMovie);
     const createdMovie = {
@@ -219,6 +237,12 @@ export async function POST(request: Request) {
       ...preparedMovie.movie,
     });
     await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+    void sendLatestUploadPushNotification(movieRef.id).catch((error) => {
+      console.warn(
+        `[admin-movies] latest upload push notification failed for ${movieRef.id}`,
+        error instanceof Error ? error.message : error
+      );
+    });
 
     return NextResponse.json({
       success: true,

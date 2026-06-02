@@ -20,7 +20,9 @@ import {
 import { fetchPublicMovies } from '@/lib/publicMovies';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import { readCachedAccountProfile } from '@/lib/accountProfile';
+import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
 import { readCachedAuthStatus } from '@/lib/auth/status-client';
+import { notifyLocalPremiumAccessUpdated } from '@/lib/clientAccessState';
 import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
 import { openExternalCheckout } from '@/lib/mobile/externalCheckout';
 import type {
@@ -325,6 +327,7 @@ function persistSubscriptionData(value: SubscriptionResponse) {
         cachedAt: Date.now(),
       })
     );
+    notifyLocalPremiumAccessUpdated();
   } catch {
     // Checkout can continue without persistent plan data.
   }
@@ -461,6 +464,7 @@ export function SubscribeFlowProvider({ children }: { children: ReactNode }) {
 
   const loadSubscriptionData = useCallback(async () => {
     const response = await fetch('/api/subscriptions/me', {
+      headers: await getHydratedClientDeviceHeaders(),
       credentials: 'include',
       cache: 'no-store',
     });

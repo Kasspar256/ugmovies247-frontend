@@ -12,15 +12,46 @@ import {
   upsertMovieInCatalogCache,
 } from '@/lib/server/movieCatalogCache';
 import { buildEditableMovieDocument } from '@/lib/server/adminMovieMutations';
+import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
 import {
   prepareMovieDocumentForDirectUploadProcessing,
   queuePreparedDirectUploadJobs,
 } from '@/lib/server/adminVideoProcessing';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import { sendLatestUploadPushNotification } from '@/lib/server/uploadNotifications';
 import type { Episode, Movie, MoviePart, Season } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+function queueLatestUploadPush(movieId: string) {
+  void sendLatestUploadPushNotification(movieId).catch((error) => {
+    console.warn(
+      `[admin-movie] latest upload push notification failed for ${movieId}`,
+      error instanceof Error ? error.message : error
+    );
+  });
+}
+
+async function applyMatureCategoryToMovieInput(
+  input: Record<string, unknown>,
+  existingMovie?: Partial<Movie>
+) {
+  const contentType =
+    input.contentType === 'series' || existingMovie?.contentType === 'series' ? 'series' : 'movie';
+  const category = await applyTmdbMatureExclusiveCategory({
+    categories: input.category ?? existingMovie?.category,
+    tmdbId: input.tmdb_id ?? existingMovie?.tmdb_id,
+    mediaType: contentType === 'series' ? 'tv' : 'movie',
+    tmdbPayload: input,
+    isKnownMatureExclusive: input.isMatureExclusive === true,
+  });
+
+  return {
+    ...input,
+    category,
+  };
+}
 
 export async function GET(
   _request: Request,
@@ -580,7 +611,9 @@ export async function PATCH(
       genres?: string[];
       tags?: string[];
       category?: string[];
+      isMatureExclusive?: boolean;
       is_trending_tiktok?: boolean;
+      contentType?: 'movie' | 'series';
       episode?: Record<string, unknown>;
       seasonTitle?: string;
       movie?: Record<string, unknown>;
@@ -763,6 +796,7 @@ export async function PATCH(
 
       await upsertMovieInCatalogCache(updatedMovie);
       await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+      queueLatestUploadPush(movieId);
 
       return NextResponse.json({
         success: true,
@@ -775,8 +809,12 @@ export async function PATCH(
     }
 
     if (fullMoviePayload) {
+      const normalizedFullMoviePayload = await applyMatureCategoryToMovieInput(
+        fullMoviePayload,
+        movie
+      );
       const nextMovie = {
-        ...buildEditableMovieDocument(fullMoviePayload, movie),
+        ...buildEditableMovieDocument(normalizedFullMoviePayload, movie),
         movieId: movie.movieId || movie.id,
       };
 
@@ -800,6 +838,7 @@ export async function PATCH(
         ...preparedMovie.movie,
       });
       await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+      queueLatestUploadPush(movieId);
 
       return NextResponse.json({
         success: true,
@@ -870,6 +909,7 @@ export async function PATCH(
         },
         { merge: true }
       );
+      queueLatestUploadPush(movieId);
 
       const updatedMovie = {
         ...movie,
@@ -957,7 +997,14 @@ export async function PATCH(
     }
 
     if (Array.isArray(body.category)) {
-      updates.category = body.category.filter((entry): entry is string => typeof entry === 'string');
+      updates.category = await applyTmdbMatureExclusiveCategory({
+        categories: body.category.filter((entry): entry is string => typeof entry === 'string'),
+        tmdbId: body.tmdb_id ?? movie.tmdb_id,
+        mediaType:
+          body.contentType === 'series' || movie.contentType === 'series' ? 'tv' : 'movie',
+        tmdbPayload: body,
+        isKnownMatureExclusive: body.isMatureExclusive === true,
+      });
     }
 
     if (typeof body.is_trending_tiktok === 'boolean') {

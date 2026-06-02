@@ -31,8 +31,12 @@ export async function POST(request: Request) {
     const timestamp = new Date().toISOString();
     const platform = String(body.platform || 'android');
     const tokenHash = hashFcmToken(token);
+    const userRef = adminDb.collection('users').doc(session.uid);
+    const tokenRef = adminDb.collection('notification_tokens').doc(tokenHash);
+    const batch = adminDb.batch();
 
-    await adminDb.collection('users').doc(session.uid).set(
+    batch.set(
+      userRef,
       {
         fcmToken: token,
         fcmTokenPlatform: platform,
@@ -45,10 +49,29 @@ export async function POST(request: Request) {
         },
         fcmTokenUpdatedAt: timestamp,
         notificationsUpdatedAt: timestamp,
+        emailLower: session.email.toLowerCase(),
         updatedAt: timestamp,
       },
       { merge: true }
     );
+    batch.set(
+      tokenRef,
+      {
+        tokenHash,
+        token,
+        userId: session.uid,
+        userEmail: session.email,
+        userEmailLower: session.email.toLowerCase(),
+        platform,
+        active: true,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        lastRegisteredAt: timestamp,
+      },
+      { merge: true }
+    );
+
+    await batch.commit();
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -35,6 +35,9 @@ type NativePushPlugin = {
 };
 
 const FCM_TOKEN_STORAGE_KEYS = ['ugmovies247.fcmToken', 'fcmToken'];
+const FCM_PLATFORM_STORAGE_KEY = 'ugmovies247.fcmPlatform';
+const FCM_REGISTERED_AT_STORAGE_KEY = 'ugmovies247.fcmRegisteredAt';
+const FCM_REGISTRATION_REFRESH_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const BADGE_COUNT_STORAGE_KEY = 'ugmovies247.notification.unread-count.v1';
 
 function getNativePushPlugin() {
@@ -154,15 +157,57 @@ async function applyBadgeFromPayload(payload: unknown) {
   await setBadgeCount(readStoredBadgeCount() + 1);
 }
 
-function storeToken(token: string) {
+function storeToken(token: string, platform?: string) {
   if (typeof window === 'undefined') {
     return;
   }
 
   try {
     FCM_TOKEN_STORAGE_KEYS.forEach((key) => window.localStorage.setItem(key, token));
+
+    if (platform) {
+      window.localStorage.setItem(FCM_PLATFORM_STORAGE_KEY, platform);
+    }
   } catch {
     // Server registration is retried independently.
+  }
+}
+
+function readStoredPushRegistration() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const token =
+      FCM_TOKEN_STORAGE_KEYS.map((key) => window.localStorage.getItem(key) || '')
+        .find((value) => value.trim()) || '';
+    const platform =
+      window.localStorage.getItem(FCM_PLATFORM_STORAGE_KEY) ||
+      (Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web');
+    const registeredAt = Number(window.localStorage.getItem(FCM_REGISTERED_AT_STORAGE_KEY) || 0);
+
+    return token.trim()
+      ? {
+          token: token.trim(),
+          platform,
+          registeredAt: Number.isFinite(registeredAt) ? registeredAt : 0,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function markStoredTokenRegistered() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(FCM_REGISTERED_AT_STORAGE_KEY, String(Date.now()));
+  } catch {
+    // A successful server registration is enough even if local storage fails.
   }
 }
 
@@ -173,7 +218,7 @@ async function registerTokenWithServer(token: string, platform: string) {
     return false;
   }
 
-  storeToken(normalizedToken);
+  storeToken(normalizedToken, platform);
 
   try {
     const response = await fetch('/api/notifications/register', {
@@ -183,11 +228,34 @@ async function registerTokenWithServer(token: string, platform: string) {
       body: JSON.stringify({ token: normalizedToken, platform }),
     });
 
-    return response.ok;
+    if (response.ok) {
+      markStoredTokenRegistered();
+      return true;
+    }
+
+    return false;
   } catch (error) {
     console.warn('[push] token registration failed', error);
     return false;
   }
+}
+
+async function retryStoredTokenRegistration(options?: { force?: boolean }) {
+  const storedRegistration = readStoredPushRegistration();
+
+  if (!storedRegistration) {
+    return false;
+  }
+
+  if (
+    !options?.force &&
+    storedRegistration.registeredAt > 0 &&
+    Date.now() - storedRegistration.registeredAt < FCM_REGISTRATION_REFRESH_INTERVAL_MS
+  ) {
+    return true;
+  }
+
+  return registerTokenWithServer(storedRegistration.token, storedRegistration.platform);
 }
 
 function resolveNotificationRoute(payload: unknown) {
@@ -214,6 +282,30 @@ function resolveNotificationRoute(payload: unknown) {
   }
 
   return '/notifications';
+}
+
+function resolveNotificationImage(payload: unknown) {
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const notification = record.notification && typeof record.notification === 'object'
+    ? (record.notification as Record<string, unknown>)
+    : {};
+  const data = record.data && typeof record.data === 'object'
+    ? (record.data as Record<string, unknown>)
+    : notification.data && typeof notification.data === 'object'
+      ? (notification.data as Record<string, unknown>)
+      : notification.extra && typeof notification.extra === 'object'
+        ? (notification.extra as Record<string, unknown>)
+        : record;
+
+  return String(
+    notification.image ||
+      notification.imageUrl ||
+      data.image ||
+      data.imageUrl ||
+      data.banner ||
+      data.poster ||
+      ''
+  ).trim();
 }
 
 function openNotificationRoute(payload: unknown) {
@@ -245,10 +337,12 @@ async function maybeShowForegroundNotification(payload: NativePushNotification) 
   }
 
   const title = payload.title || 'UGMOVIES247';
+  const image = resolveNotificationImage(payload);
   const options: NotificationOptions & { badge?: string; image?: string } = {
     body: payload.body || 'A new update is ready.',
     icon: '/siteicon.png',
     badge: '/favicon.png',
+    image: image || undefined,
     data: payload.data || {},
   };
   const notification = new Notification(title, options);
@@ -264,6 +358,7 @@ async function maybeShowNativeForegroundNotification(payload: NativePushNotifica
   const title = payload.title || String(data.title || data.notificationTitle || 'UGMOVIES247');
   const body = payload.body || String(data.body || data.message || 'A new update is ready.');
   const channelId = String(data.channelId || data.channel || 'latest_uploads');
+  const image = resolveNotificationImage(payload);
 
   try {
     const { LocalNotifications } = await import('@capacitor/local-notifications');
@@ -294,6 +389,10 @@ async function maybeShowNativeForegroundNotification(payload: NativePushNotifica
           title,
           body,
           channelId,
+          smallIcon: 'ic_notification',
+          largeBody: body,
+          summaryText: body,
+          attachments: image ? [{ id: 'hero', url: image }] : undefined,
           extra: data,
         },
       ],
@@ -378,6 +477,11 @@ async function registerNativePush() {
       }
     })
   );
+  const registrationErrorHandle = await normalizeListenerHandle(
+    plugin.addListener('registrationError', (payload) => {
+      console.warn('[push] native registration error', payload);
+    })
+  );
   const receivedHandle = await normalizeListenerHandle(
     plugin.addListener('pushNotificationReceived', (payload) => {
       void applyBadgeFromPayload(payload);
@@ -398,6 +502,7 @@ async function registerNativePush() {
 
   return () => {
     void registrationHandle?.remove().catch(() => undefined);
+    void registrationErrorHandle?.remove().catch(() => undefined);
     void receivedHandle?.remove().catch(() => undefined);
     void actionHandle?.remove().catch(() => undefined);
     void localActionHandle?.remove().catch(() => undefined);
@@ -494,19 +599,33 @@ export default function PushNotificationRegistrar() {
     const syncStoredBadge = () => {
       void setBadgeCount(readStoredBadgeCount());
     };
+    const syncStoredBadgeAndRetryToken = () => {
+      syncStoredBadge();
+      void retryStoredTokenRegistration();
+    };
+    const forceSyncStoredBadgeAndRetryToken = () => {
+      syncStoredBadge();
+      void retryStoredTokenRegistration({ force: true });
+    };
+    const retryTimer = window.setInterval(() => {
+      void retryStoredTokenRegistration();
+    }, 60 * 1000);
 
     void register();
-    syncStoredBadge();
+    syncStoredBadgeAndRetryToken();
     navigator.serviceWorker?.addEventListener?.('message', handleServiceWorkerMessage);
-    document.addEventListener('visibilitychange', syncStoredBadge);
-    window.addEventListener('focus', syncStoredBadge);
+    document.addEventListener('visibilitychange', syncStoredBadgeAndRetryToken);
+    window.addEventListener('focus', syncStoredBadgeAndRetryToken);
+    window.addEventListener('ugmovies247:auth-session-ready', forceSyncStoredBadgeAndRetryToken);
 
     return () => {
       isMounted = false;
+      window.clearInterval(retryTimer);
       cleanup?.();
       navigator.serviceWorker?.removeEventListener?.('message', handleServiceWorkerMessage);
-      document.removeEventListener('visibilitychange', syncStoredBadge);
-      window.removeEventListener('focus', syncStoredBadge);
+      document.removeEventListener('visibilitychange', syncStoredBadgeAndRetryToken);
+      window.removeEventListener('focus', syncStoredBadgeAndRetryToken);
+      window.removeEventListener('ugmovies247:auth-session-ready', forceSyncStoredBadgeAndRetryToken);
     };
   }, []);
 

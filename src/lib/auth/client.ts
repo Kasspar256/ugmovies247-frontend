@@ -8,6 +8,7 @@ import {
   type ClientAuthStatus,
 } from './status-client';
 import { clearAccountProfileCache } from '@/lib/accountProfile';
+import { refreshLocalPremiumAccessSnapshot } from '@/lib/clientAccessState';
 import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
@@ -259,6 +260,7 @@ async function confirmServerAuthSession(fallbackUser: {
         name: status.user?.name || fallbackUser.name || 'User',
         email: status.user?.email || fallbackUser.email || '',
         role: status.user?.role === 'admin' ? 'admin' : fallbackUser.role,
+        subscription: status.user?.subscription,
       },
     };
 
@@ -294,6 +296,14 @@ async function warmPostLoginAppData(role: 'user' | 'admin') {
     warmHomePageArtwork(prioritizedArtworkMovies.length ? prioritizedArtworkMovies : normalizedMovies, 8);
   } catch {
     // Keep sign-in fast even if background warming fails.
+  }
+}
+
+async function refreshAccessStateAfterLogin() {
+  try {
+    await refreshLocalPremiumAccessSnapshot();
+  } catch (error) {
+    console.warn('[auth] premium access refresh after login failed', error);
   }
 }
 
@@ -343,6 +353,14 @@ async function parseAuthResponse(response: Response) {
 
 function rememberServerSession(session: Partial<SessionResponse>) {
   rememberClientDeviceSession(session.clientSession);
+}
+
+function notifyAuthSessionReady() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('ugmovies247:auth-session-ready'));
 }
 
 function getFirebaseErrorCode(error: unknown) {
@@ -619,7 +637,9 @@ async function createSessionFromIdToken(options: {
     email: options.email || '',
     role: session.role,
   });
+  await refreshAccessStateAfterLogin();
   void warmPostLoginAppData(session.role);
+  notifyAuthSessionReady();
 
   return session;
 }
@@ -762,7 +782,9 @@ export async function loginWithEmailPassword(
     email,
     role: session.role,
   });
+  await refreshAccessStateAfterLogin();
   void warmPostLoginAppData(session.role);
+  notifyAuthSessionReady();
   return { credential: null, session };
 }
 
@@ -786,7 +808,9 @@ export async function signupWithEmailPassword(options: {
     email: options.email,
     role: session.role,
   });
+  await refreshAccessStateAfterLogin();
   void warmPostLoginAppData(session.role);
+  notifyAuthSessionReady();
   return { credential: null, session };
 }
 

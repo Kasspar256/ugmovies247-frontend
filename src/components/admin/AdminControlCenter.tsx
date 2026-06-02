@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  BellRing,
   Clapperboard,
   DollarSign,
   Film,
@@ -550,6 +551,14 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         icon: <ShieldCheck size={20} />,
       },
       {
+        id: 'notifications' as AdminTab,
+        href: '/admin/notifications',
+        label: 'Notifications',
+        description: 'Send immediate push alerts and app inbox messages.',
+        meta: 'Broadcast + targeted push',
+        icon: <BellRing size={20} />,
+      },
+      {
         id: 'requests' as AdminTab,
         href: '/admin/requests',
         label: 'Requests',
@@ -859,6 +868,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           title: season.title.trim() || `Season ${seasonIndex + 1}`,
           overview: season.overview.trim(),
           poster: seasonPoster || posterUrl,
+          overriddenBackdrop: season.overriddenBackdrop || seasonPoster || posterUrl,
           tmdb_id: season.tmdbId ?? null,
           episodes,
         });

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getCurrentAuthSession, getRequestAuthSession } from '@/lib/auth/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,7 @@ type NotificationDocument = {
 function normalizeNotification(id: string, data: Partial<NotificationDocument>) {
   return {
     id,
-    title: String(data.title || 'UG Movies 247'),
+    title: String(data.title || 'UGMOVIES247'),
     body: String(data.body || 'You have a new update.'),
     path: String(data.path || '/notifications'),
     movieId: String(data.movieId || ''),
@@ -31,37 +31,18 @@ function normalizeNotification(id: string, data: Partial<NotificationDocument>) 
   };
 }
 
-
-async function readUserNotification(notificationId: string, userId: string) {
-  const { adminDb } = await import('@/lib/firebaseAdmin');
-  const ref = adminDb.collection('user_notifications').doc(notificationId);
-  const snapshot = await ref.get();
-
-  if (!snapshot.exists || snapshot.data()?.userId !== userId) {
-    return null;
-  }
-
-  return normalizeNotification(snapshot.id, snapshot.data());
+async function getSession(request: Request) {
+  return (
+    (await getCurrentAuthSession({ hydrateUserRecord: true })) ||
+    (await getRequestAuthSession(request))
+  );
 }
 
 export async function GET(request: Request) {
-  const session = await getCurrentAuthSession();
+  const session = await getSession(request);
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const requestUrl = new URL(request.url);
-  const notificationId = requestUrl.searchParams.get('notificationId')?.trim() || '';
-
-  if (notificationId) {
-    const notification = await readUserNotification(notificationId, session.uid);
-
-    if (!notification) {
-      return NextResponse.json({ error: 'Notification not found.' }, { status: 404 });
-    }
-
-    return NextResponse.json({ notification });
   }
 
   const { adminDb } = await import('@/lib/firebaseAdmin');
@@ -97,16 +78,17 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getCurrentAuthSession();
+  const session = await getSession(request);
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await request.json().catch(() => ({}));
-  const title = String(body.title || 'UG Movies 247').trim();
+  const title = String(body.title || 'UGMOVIES247').trim();
   const messageBody = String(body.body || 'You have a new update.').trim();
-  const path = String(body.path || '/notifications').trim();
+  const rawPath = String(body.path || '/notifications').trim();
+  const path = rawPath.startsWith('/') ? rawPath : '/notifications';
   const movieId = String(body.movieId || '').trim();
   const source = String(body.source || 'push').trim();
   const now = new Date().toISOString();
@@ -122,7 +104,7 @@ export async function POST(request: Request) {
     userId: session.uid,
     title,
     body: messageBody,
-    path: path.startsWith('/') ? path : '/notifications',
+    path,
     movieId,
     source,
     readAt: '',
@@ -130,19 +112,21 @@ export async function POST(request: Request) {
     updatedAt: now,
   } satisfies NotificationDocument);
 
-  return NextResponse.json({ notification: normalizeNotification(ref.id, {
-    title,
-    body: messageBody,
-    path,
-    movieId,
-    source,
-    readAt: '',
-    createdAt: now,
-  }) });
+  return NextResponse.json({
+    notification: normalizeNotification(ref.id, {
+      title,
+      body: messageBody,
+      path,
+      movieId,
+      source,
+      readAt: '',
+      createdAt: now,
+    }),
+  });
 }
 
 export async function PATCH(request: Request) {
-  const session = await getCurrentAuthSession();
+  const session = await getSession(request);
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

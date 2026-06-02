@@ -1,209 +1,205 @@
-import * as admin from 'firebase-admin';
 import { NextResponse } from 'next/server';
+import { adminDb, getFirebaseAdminSetupError } from '@/lib/firebaseAdmin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
+import {
+  getFcmRecipients,
+  getNotificationImageUrl,
+  normalizeNotificationImageUrl,
+  sendPushNotificationToRecipients,
+} from '@/lib/server/uploadNotifications';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
+import type { Movie } from '@/types/movie';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type PushTokenDocument = {
-  userId?: string;
-  email?: string;
-  token?: string;
-  platform?: string;
-  isActive?: boolean;
-  lastRegisteredAt?: string;
-};
-
-function normalizePath(path: string, movieId: string) {
-  if (movieId) {
-    return `/movie/${encodeURIComponent(movieId)}`;
-  }
-
+function normalizePath(value: unknown) {
+  const path = String(value || '/notifications').trim();
   return path.startsWith('/') ? path : '/notifications';
 }
 
-async function requireAdmin() {
-  const session = await getCurrentAuthSession();
-
-  if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
-    return null;
+function normalizeStringArray(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
   }
 
-  return session;
+  const normalized = String(value || '').trim();
+  return normalized ? [normalized] : [];
 }
 
-function uniqueByToken(tokens: PushTokenDocument[]) {
-  const seen = new Set<string>();
-  return tokens.filter((entry) => {
-    const token = String(entry.token || '').trim();
+function resolveMovieId(value: unknown, path: string) {
+  const explicitMovieId = String(value || '').trim();
 
-    if (!token || seen.has(token)) {
-      return false;
+  if (explicitMovieId) {
+    return explicitMovieId;
+  }
+
+  const match = path.match(/\/movie\/([^/?#]+)/);
+  return match?.[1] ? decodeURIComponent(match[1]) : '';
+}
+
+async function resolveNotificationImage(inputImage: unknown, movieId: string) {
+  const image = normalizeNotificationImageUrl(inputImage);
+
+  if (image || !movieId) {
+    return image;
+  }
+
+  const snapshot = await adminDb.collection(MOVIES_COLLECTION).doc(movieId).get().catch(() => null);
+
+  if (!snapshot?.exists) {
+    return '';
+  }
+
+  return getNotificationImageUrl(snapshot.data() as Partial<Movie>);
+}
+
+async function createInboxNotifications(
+  recipients: Awaited<ReturnType<typeof getFcmRecipients>>,
+  input: {
+    title: string;
+    body: string;
+    path: string;
+    movieId: string;
+    source: string;
+  }
+) {
+  const timestamp = new Date().toISOString();
+  const userIds = Array.from(
+    new Set(recipients.map((recipient) => recipient.userId || '').filter(Boolean))
+  );
+  let written = 0;
+
+  for (let offset = 0; offset < userIds.length; offset += 450) {
+    const chunk = userIds.slice(offset, offset + 450);
+
+    if (!chunk.length) {
+      continue;
     }
 
-    seen.add(token);
-    return true;
-  });
-}
+    const batch = adminDb.batch();
 
-async function sendPushes(tokens: PushTokenDocument[], input: {
-  title: string;
-  body: string;
-  path: string;
-  movieId: string;
-  notificationIdByUserId: Map<string, string>;
-}) {
-  const activeTokens = uniqueByToken(tokens);
-  let successCount = 0;
-  let failureCount = 0;
-
-  for (const tokenDoc of activeTokens) {
-    const userId = String(tokenDoc.userId || '');
-    const token = String(tokenDoc.token || '');
-    const notificationId = input.notificationIdByUserId.get(userId) || '';
-
-    try {
-      await admin.messaging().send({
-        token,
-        notification: {
-          title: input.title,
-          body: input.body,
-        },
-        data: {
-          title: input.title,
-          body: input.body,
-          path: input.path,
-          movieId: input.movieId,
-          notificationId,
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'movie_updates',
-            sound: 'default',
-            defaultSound: true,
-            defaultVibrateTimings: true,
-          },
-        },
+    chunk.forEach((userId) => {
+      const ref = adminDb.collection('user_notifications').doc();
+      batch.set(ref, {
+        userId,
+        title: input.title,
+        body: input.body,
+        path: input.path,
+        movieId: input.movieId,
+        source: input.source,
+        readAt: '',
+        createdAt: timestamp,
+        updatedAt: timestamp,
       });
+    });
 
-      successCount += 1;
-    } catch (error) {
-      failureCount += 1;
-      console.warn('[admin-notifications] push send failed', error);
-    }
+    await batch.commit();
+    written += chunk.length;
   }
 
-  return { attempted: activeTokens.length, successCount, failureCount };
+  return written;
 }
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdmin();
+    const session = await getCurrentAuthSession({ hydrateUserRecord: true });
 
-    if (!session) {
+    if (!session || (session.role !== 'admin' && !isAdminEmail(session.email))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json().catch(() => ({}));
-    const title = String(body.title || '').trim();
-    const messageBody = String(body.body || '').trim();
-    const audience = String(body.audience || 'all').trim();
-    const targetUserId = String(body.userId || '').trim();
-    const targetEmail = String(body.email || '').trim().toLowerCase();
-    const movieId = String(body.movieId || '').trim();
-    const path = normalizePath(String(body.path || '/notifications').trim(), movieId);
+    const adminSetupError = getFirebaseAdminSetupError();
 
-    if (!title || !messageBody) {
+    if (adminSetupError) {
+      return NextResponse.json(
+        {
+          error: 'Firebase Admin messaging is not configured.',
+          detail: adminSetupError,
+        },
+        { status: 500 }
+      );
+    }
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const title = String(body.title || 'UGMOVIES247').trim();
+    const message = String(body.body || body.message || '').trim();
+    const path = normalizePath(body.path || body.route);
+    const movieId = resolveMovieId(body.movieId, path);
+    const image = await resolveNotificationImage(body.image || body.imageUrl, movieId);
+    const target = String(body.target || body.audience || 'all').trim().toLowerCase();
+    const tokens = normalizeStringArray(body.token || body.tokens);
+    const userIds = normalizeStringArray(body.userId || body.userIds);
+    const emails = normalizeStringArray(body.email || body.emails);
+
+    if (!title || !message) {
       return NextResponse.json({ error: 'Title and message are required.' }, { status: 400 });
     }
 
-    if (title.length > 120) {
-      return NextResponse.json({ error: 'Title must be 120 characters or less.' }, { status: 400 });
+    const recipients =
+      target === 'all' && !tokens.length && !userIds.length && !emails.length
+        ? await getFcmRecipients()
+        : await getFcmRecipients({ tokens, userIds, emails });
+
+    if (!recipients.length) {
+      return NextResponse.json(
+        {
+          error: 'No registered push tokens matched this notification target.',
+          recipientCount: 0,
+          successCount: 0,
+          failureCount: 0,
+        },
+        { status: 400 }
+      );
     }
 
-    if (messageBody.length > 4000) {
-      return NextResponse.json({ error: 'Message must be 4000 characters or less.' }, { status: 400 });
-    }
-
-    if (audience === 'user' && !targetUserId && !targetEmail) {
-      return NextResponse.json({ error: 'Choose a user ID or email for a single-user notification.' }, { status: 400 });
-    }
-
-    const { adminDb } = await import('@/lib/firebaseAdmin');
-
-    let tokenQuery = adminDb.collection('push_tokens').where('isActive', '==', true).limit(500);
-
-    if (audience === 'user' && targetUserId) {
-      tokenQuery = adminDb
-        .collection('push_tokens')
-        .where('isActive', '==', true)
-        .where('userId', '==', targetUserId)
-        .limit(50);
-    } else if (audience === 'user' && targetEmail) {
-      tokenQuery = adminDb
-        .collection('push_tokens')
-        .where('isActive', '==', true)
-        .where('email', '==', targetEmail)
-        .limit(50);
-    }
-
-    const tokenSnapshot = await tokenQuery.get();
-    const tokens = tokenSnapshot.docs.map((doc) => doc.data() as PushTokenDocument);
-    const userIds = Array.from(new Set(tokens.map((token) => String(token.userId || '')).filter(Boolean)));
-
-    if (userIds.length === 0) {
-      return NextResponse.json({ error: 'No active push recipients found.' }, { status: 404 });
-    }
-
-    const now = new Date().toISOString();
-    const notificationIdByUserId = new Map<string, string>();
-
-    for (let index = 0; index < userIds.length; index += 450) {
-      const chunk = userIds.slice(index, index + 450);
-      const batch = adminDb.batch();
-
-      for (const userId of chunk) {
-        const ref = adminDb.collection('user_notifications').doc();
-        notificationIdByUserId.set(userId, ref.id);
-
-        batch.set(ref, {
-          userId,
-          title,
-          body: messageBody,
-          path,
-          movieId,
-          source: 'admin_broadcast',
-          readAt: '',
-          createdAt: now,
-          updatedAt: now,
-          createdBy: session.email || session.uid,
-        });
-      }
-
-      await batch.commit();
-    }
-
-    const pushResult = await sendPushes(tokens, {
+    const source = target === 'all' ? 'admin_broadcast' : 'admin_targeted';
+    const delivery = await sendPushNotificationToRecipients(recipients, {
       title,
-      body: messageBody,
+      body: message,
+      route: path,
+      image,
+      channelId: 'latest_uploads',
+      data: {
+        type: source,
+        route: path,
+        movieId,
+        image,
+      },
+    });
+    const inboxCount = await createInboxNotifications(recipients, {
+      title,
+      body: message,
       path,
       movieId,
-      notificationIdByUserId,
+      source,
+    }).catch((error) => {
+      console.warn('[admin-notifications] inbox write failed', error);
+      return 0;
     });
+
+    if (!delivery.sent) {
+      return NextResponse.json(
+        {
+          error: 'FCM accepted no device tokens for this notification.',
+          ...delivery,
+          inboxCount,
+        },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      recipientCount: userIds.length,
-      attemptedPushes: pushResult.attempted,
-      sentPushes: pushResult.successCount,
-      failedPushes: pushResult.failureCount,
+      ...delivery,
+      inboxCount,
     });
   } catch (error) {
-    console.error('[admin-notifications] failed to send notification', error);
-
+    console.error('[admin-notifications] send failed', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to send notification.' },
+      {
+        error: error instanceof Error ? error.message : 'Failed to send notification.',
+      },
       { status: 500 }
     );
   }

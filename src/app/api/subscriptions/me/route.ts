@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCurrentAuthSession } from '@/lib/auth/server';
+import { getCurrentAuthSession, getRequestAuthSession } from '@/lib/auth/server';
 import { BILLING_OPERATOR } from '@/lib/billingIdentity';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import {
@@ -29,8 +29,10 @@ function getDaysLeft(expiresAt?: string) {
   return Math.max(0, Math.ceil((expiresAtMs - Date.now()) / (1000 * 60 * 60 * 24)));
 }
 
-export async function GET() {
-  const session = await getCurrentAuthSession({ hydrateUserRecord: true });
+export async function GET(request: Request) {
+  const session =
+    (await getCurrentAuthSession({ hydrateUserRecord: true })) ||
+    (await getRequestAuthSession(request));
 
   if (!session) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

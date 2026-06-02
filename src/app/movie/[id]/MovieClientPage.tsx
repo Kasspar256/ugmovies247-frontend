@@ -3,8 +3,12 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
-import { readCachedAccountProfile } from '@/lib/accountProfile';
-import { readCachedAuthStatus } from '@/lib/auth/status-client';
+import {
+  applyLocalPremiumAccessToMovie,
+  LOCAL_PREMIUM_ACCESS_UPDATED_EVENT,
+  readLocalPremiumAccessSnapshot,
+  refreshLocalPremiumAccessSnapshot,
+} from '@/lib/clientAccessState';
 import {
   cancelOfflineDownload,
   createOfflineDownloadKey,
@@ -142,42 +146,7 @@ function movieHasAnyPlaybackSource(movie: Movie) {
 }
 
 function hasCachedPremiumAccess() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const cachedProfile = readCachedAccountProfile();
-
-  if (cachedProfile?.role === 'admin' || cachedProfile?.subscription?.isActive === true) {
-    return true;
-  }
-
-  const cachedAuthStatus = readCachedAuthStatus();
-
-  if (cachedAuthStatus?.authenticated && cachedAuthStatus.user?.role === 'admin') {
-    return true;
-  }
-
-  try {
-    const rawSubscriptionCache = window.localStorage.getItem('ugmovies247.subscribe-data.v1');
-
-    if (!rawSubscriptionCache) {
-      return false;
-    }
-
-    const parsed = JSON.parse(rawSubscriptionCache) as {
-      value?: {
-        entitlement?: { hasPremiumAccess?: boolean; subscription?: { isActive?: boolean } };
-      };
-    };
-
-    return (
-      parsed.value?.entitlement?.hasPremiumAccess === true ||
-      parsed.value?.entitlement?.subscription?.isActive === true
-    );
-  } catch {
-    return false;
-  }
+  return readLocalPremiumAccessSnapshot().hasPremiumAccess;
 }
 
 function formatPlaybackDuration(durationSeconds?: number) {
@@ -355,9 +324,15 @@ const applyResolvedMovie = (nextMovie: Movie, catalogMovies: Movie[] = []) => {
   }
 
   const { resolvedMovie, sourceEntries } = resolveMovieWithSeriesEntries(nextMovie, catalogMovies);
+  const hasPremiumAccessForRender =
+    hasLocalPremiumAccess || readLocalPremiumAccessSnapshot().hasPremiumAccess;
   renderedMovie = true;
-  setMovie(resolvedMovie);
-  setSeriesSourceEntries(sourceEntries);
+  setMovie(applyLocalPremiumAccessToMovie(resolvedMovie, hasPremiumAccessForRender));
+  setSeriesSourceEntries(
+    hasPremiumAccessForRender
+      ? sourceEntries.map((entry) => applyLocalPremiumAccessToMovie(entry, true))
+      : sourceEntries
+  );
   setLoading(false);
 };
 
@@ -521,11 +496,52 @@ active = false;
 };
 }, [
   initialCatalogCachedAt,
+  hasLocalPremiumAccess,
   params.id,
   routeInitialCatalogMovies,
   routeInitialMovie,
   shouldBypassCatalogCache,
 ]);
+
+useEffect(() => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  let active = true;
+
+  const syncLocalAccess = () => {
+    const snapshot = readLocalPremiumAccessSnapshot();
+
+    if (active) {
+      setHasLocalPremiumAccess(snapshot.hasPremiumAccess);
+    }
+  };
+
+  syncLocalAccess();
+  window.addEventListener(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT, syncLocalAccess);
+
+  void refreshLocalPremiumAccessSnapshot().then((snapshot) => {
+    if (active) {
+      setHasLocalPremiumAccess(snapshot.hasPremiumAccess);
+    }
+  });
+
+  return () => {
+    active = false;
+    window.removeEventListener(LOCAL_PREMIUM_ACCESS_UPDATED_EVENT, syncLocalAccess);
+  };
+}, [params.id]);
+
+useEffect(() => {
+  if (!hasLocalPremiumAccess) {
+    return;
+  }
+
+  setMovie((currentMovie) =>
+    currentMovie ? applyLocalPremiumAccessToMovie(currentMovie, true) : currentMovie
+  );
+}, [hasLocalPremiumAccess]);
 
 useEffect(() => {
 if (!movie?.id) {
@@ -883,7 +899,7 @@ const selectedPlaybackAssetIsLocked = Boolean(
 );
 const isPlaybackLocked = isAppInReview
   ? false
-  : selectedPlaybackAssetIsLocked && (!hasLocalPremiumAccess || !playbackVideoUrl);
+  : selectedPlaybackAssetIsLocked && !hasLocalPremiumAccess;
 const playbackGenreLabel =
   movie?.genres?.find((genre) => genre.trim()) ||
   'Unknown';

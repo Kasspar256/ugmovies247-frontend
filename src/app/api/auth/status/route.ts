@@ -14,6 +14,7 @@ import {
   AUTH_DEVICE_LIMIT_EXCEEDED_MESSAGE,
   DeviceLimitExceededError,
 } from '@/lib/server/authSessions';
+import { getViewerEntitlement } from '@/lib/server/subscriptions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,10 @@ export async function GET(request: Request) {
         });
 
         if (recovered.session && recovered.managedSession) {
+          const entitlement = await getViewerEntitlement(recovered.session.uid, {
+            email: recovered.session.email,
+            role: recovered.session.role,
+          });
           const sessionExpiresAt = new Date(Date.now() + AUTH_SESSION_MAX_AGE_MS);
           const response = NextResponse.json({
             authenticated: true,
@@ -59,6 +64,7 @@ export async function GET(request: Request) {
               email: recovered.session.userRecord.email,
               role: recovered.session.userRecord.role,
               emailVerified: recovered.session.userRecord.emailVerified === true,
+              subscription: entitlement.subscription,
             },
           });
 
@@ -92,6 +98,10 @@ export async function GET(request: Request) {
 
     const hydratedSession = await getCurrentAuthSession({ hydrateUserRecord: true }).catch(() => null);
     const session = hydratedSession || validation.session;
+    const entitlement = await getViewerEntitlement(session.uid, {
+      email: session.email,
+      role: session.role,
+    });
 
     const response = NextResponse.json({
       authenticated: true,
@@ -101,6 +111,7 @@ export async function GET(request: Request) {
         email: session.userRecord.email,
         role: session.userRecord.role,
         emailVerified: session.userRecord.emailVerified === true,
+        subscription: entitlement.subscription,
       },
     });
 

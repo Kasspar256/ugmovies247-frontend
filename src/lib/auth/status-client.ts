@@ -3,6 +3,7 @@ import {
   getHydratedClientDeviceHeaders,
   rememberClientDeviceSession,
 } from '@/lib/auth/deviceIdentity';
+import type { SubscriptionSnapshot } from '@/types/subscriptions';
 
 export type ClientAuthStatus = {
   authenticated: boolean;
@@ -15,6 +16,7 @@ export type ClientAuthStatus = {
     email: string;
     role: 'user' | 'admin';
     emailVerified?: boolean;
+    subscription?: SubscriptionSnapshot;
   };
 };
 
@@ -200,6 +202,10 @@ export async function fetchAuthStatus(options?: { force?: boolean }): Promise<Cl
               email: payload.user.email || '',
               role: payload.user.role === 'admin' ? 'admin' : 'user',
               emailVerified: payload.user.emailVerified === true,
+              subscription:
+                payload.user.subscription && typeof payload.user.subscription === 'object'
+                  ? payload.user.subscription
+                  : undefined,
             }
           : undefined,
       };

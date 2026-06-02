@@ -42,7 +42,11 @@ const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
 };
 const CATALOG_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
-function isPremiumAccessTier(accessTier: unknown) {
+function isPremiumAccessTier(accessTier: unknown, subscriptionRequired?: unknown) {
+  if (subscriptionRequired === false) {
+    return false;
+  }
+
   return accessTier !== 'free';
 }
 
@@ -50,7 +54,7 @@ function sanitizeEpisodeForViewer(
   episode: Record<string, unknown>,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(episode.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(episode.accessTier, episode.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
   const sanitizedEpisode = {
     ...episode,
@@ -92,7 +96,7 @@ function sanitizeMoviePartForViewer(
   part: Record<string, unknown>,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(part.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(part.accessTier, part.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
   const sanitizedPart = {
     ...part,
@@ -134,7 +138,7 @@ function sanitizeMovieForViewerLocally(
   movie: Record<string, unknown>,
   entitlement: SubscriptionEntitlement
 ) {
-  const subscriptionRequired = isPremiumAccessTier(movie.accessTier);
+  const subscriptionRequired = isPremiumAccessTier(movie.accessTier, movie.subscriptionRequired);
   const isLocked = subscriptionRequired && !entitlement.hasPremiumAccess;
   const parts = Array.isArray(movie.parts)
     ? movie.parts.map((part) =>

@@ -560,7 +560,7 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     return inFlightMovieCatalogRequest;
   }
 
-  if (!forceRefresh) {
+  if (!forceRefresh && !shouldRefreshEntitlement) {
     const cachedCatalog = getBestAvailableCatalog();
 
     if (cachedCatalog) {
