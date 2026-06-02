@@ -10,10 +10,7 @@ import {
 import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
-import {
-  isTmdbMatureExclusive,
-  mergeMatureExclusiveCategory,
-} from '@/lib/matureContent';
+import { mergeMatureExclusiveCategory } from '@/lib/matureContent';
 import { createVideoJob } from '@/lib/server/videoJobs';
 import { sendLatestUploadPushNotification } from '@/lib/server/uploadNotifications';
 import type { MovieDocument, Season } from '@/types/movie';
@@ -78,10 +75,7 @@ function normalizeImportedSourceFileName(fileName: string, fallback: string) {
 }
 
 function normalizeDirectMetadata(input?: AdminMovieMetadata): MovieDocument {
-  const categories = mergeMatureExclusiveCategory(
-    input?.category || [],
-    input?.isMatureExclusive === true || isTmdbMatureExclusive(input)
-  );
+  const categories = mergeMatureExclusiveCategory(input?.category || []);
   const isTrendingTikTok =
     Boolean(input?.isTrendingTikTok) ||
     categories.some((category) => category.toLowerCase() === 'trending on tiktok');

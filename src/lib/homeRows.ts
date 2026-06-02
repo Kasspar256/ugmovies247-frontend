@@ -1,4 +1,5 @@
 import { AUTO_HOME_ROW_CONFIG, HOME_PAGE_CATEGORY_CONFIG } from '@/lib/homeCategories';
+import { hasMatureExclusiveCategory, MATURE_EXCLUSIVES_CATEGORY } from '@/lib/matureContent';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
 import { isAppInReview } from '@/lib/appReview';
 import { isIndianCatalogMovie, isIndianSectionName } from '@/lib/regionalCatalog';
@@ -97,6 +98,22 @@ function hasCategory(movie: Movie, category: string) {
   );
 }
 
+function isMatureExclusiveMovie(movie: Movie) {
+  return hasMatureExclusiveCategory(movie.category || []);
+}
+
+function isMatureExclusiveCategoryName(category: string) {
+  return normalizeCatalogLabel(category) === normalizeCatalogLabel(MATURE_EXCLUSIVES_CATEGORY);
+}
+
+function matchesManualHomeCategory(movie: Movie, category: string) {
+  if (isMatureExclusiveMovie(movie) && !isMatureExclusiveCategoryName(category)) {
+    return false;
+  }
+
+  return hasCategory(movie, category);
+}
+
 function hasVj(movie: Movie, ...names: string[]) {
   const normalizedVj = (movie.vj || '').toLowerCase();
   return names.some((name) => normalizedVj.includes(name.toLowerCase()));
@@ -116,6 +133,10 @@ function hasMetadataLabel(movie: Movie, ...aliases: string[]) {
 }
 
 function matchesAutoHomeRow(movie: Movie, rowKey: string) {
+  if (isMatureExclusiveMovie(movie)) {
+    return false;
+  }
+
   switch (rowKey) {
     case 'vj-junior':
       return hasVj(movie, 'junior');
@@ -156,6 +177,15 @@ function isStrictFallbackMovie(movie: Movie) {
 function matchesActiveCategoryFilter(movie: Movie, activeCategory: string) {
   if (isIndianSectionName(activeCategory)) {
     return isIndianCatalogMovie(movie);
+  }
+
+  const normalizedActiveCategory = normalizeCatalogLabel(activeCategory);
+
+  if (
+    isMatureExclusiveMovie(movie) &&
+    normalizedActiveCategory !== normalizeCatalogLabel(MATURE_EXCLUSIVES_CATEGORY)
+  ) {
+    return false;
   }
 
   switch (normalizeCatalogLabel(activeCategory)) {
@@ -229,9 +259,11 @@ export function buildHomeCollections(options: {
       movies:
         category.name.toLowerCase() === 'trending on tiktok'
           ? filteredMovies.filter(
-              (movie) => movie.is_trending_tiktok || hasCategory(movie, category.name)
+              (movie) =>
+                !isMatureExclusiveMovie(movie) &&
+                (movie.is_trending_tiktok || hasCategory(movie, category.name))
             )
-          : filteredMovies.filter((movie) => hasCategory(movie, category.name)),
+          : filteredMovies.filter((movie) => matchesManualHomeCategory(movie, category.name)),
     }));
 
   const autoRows: HomeRowRecord[] = AUTO_HOME_ROW_CONFIG.map((row) => ({

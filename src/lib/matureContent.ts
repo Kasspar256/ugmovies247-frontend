@@ -46,35 +46,56 @@ function asArray(value: unknown): unknown[] {
 }
 
 function addRating(ratings: string[], value: unknown) {
-  if (typeof value === 'string' && value.trim()) ratings.push(value.trim());
+  if (typeof value !== 'string') {
+    return;
+  }
+
+  const normalized = value.trim();
+
+  if (normalized) {
+    ratings.push(normalized);
+  }
 }
 
 function addTextSignal(signals: string[], value: unknown) {
-  if (typeof value === 'string' && value.trim()) signals.push(value.trim());
+  if (typeof value === 'string' && value.trim()) {
+    signals.push(value.trim());
+  }
 }
 
 export function normalizeMatureCertification(value: unknown) {
-  return String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
 }
 
 export function isMatureCertification(value: unknown) {
   const normalized = normalizeMatureCertification(value);
-  return Boolean(
-    normalized &&
-      (STRICT_MATURE_CERTIFICATION_VALUES.has(normalized) ||
-        /^(NC-17|R18\+?|18\+?|X)$/i.test(normalized))
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    STRICT_MATURE_CERTIFICATION_VALUES.has(normalized) ||
+    /^(NC-17|R18\+?|18\+?|X)$/i.test(normalized)
   );
 }
 
 export function isEroticContextCertification(value: unknown) {
-  return EROTIC_CONTEXT_CERTIFICATION_VALUES.has(normalizeMatureCertification(value));
+  const normalized = normalizeMatureCertification(value);
+
+  return EROTIC_CONTEXT_CERTIFICATION_VALUES.has(normalized);
 }
 
 export function collectTmdbMaturityRatings(payload: unknown) {
   const record = asRecord(payload);
   const ratings: string[] = [];
 
-  if (!record) return ratings;
+  if (!record) {
+    return ratings;
+  }
 
   addRating(ratings, record.certification);
   addRating(ratings, record.rating);
@@ -84,14 +105,17 @@ export function collectTmdbMaturityRatings(payload: unknown) {
 
   const releaseDates = asRecord(record.release_dates);
   for (const country of asArray(releaseDates?.results)) {
-    for (const release of asArray(asRecord(country)?.release_dates)) {
+    const countryRecord = asRecord(country);
+
+    for (const release of asArray(countryRecord?.release_dates)) {
       addRating(ratings, asRecord(release)?.certification);
     }
   }
 
   const contentRatings = asRecord(record.content_ratings);
   for (const country of asArray(contentRatings?.results)) {
-    addRating(ratings, asRecord(country)?.rating);
+    const countryRecord = asRecord(country);
+    addRating(ratings, countryRecord?.rating);
   }
 
   return Array.from(new Set(ratings));
@@ -101,7 +125,9 @@ export function collectTmdbEroticSignals(payload: unknown) {
   const record = asRecord(payload);
   const signals: string[] = [];
 
-  if (!record) return signals;
+  if (!record) {
+    return signals;
+  }
 
   addTextSignal(signals, record.title);
   addTextSignal(signals, record.original_title);
@@ -111,19 +137,28 @@ export function collectTmdbEroticSignals(payload: unknown) {
   addTextSignal(signals, record.tagline);
 
   for (const genre of asArray(record.genres)) {
-    addTextSignal(signals, asRecord(genre)?.name || genre);
+    const genreRecord = asRecord(genre);
+    addTextSignal(signals, genreRecord?.name || genre);
   }
 
-  for (const category of asArray(record.category)) addTextSignal(signals, category);
-  for (const tag of asArray(record.tags)) addTextSignal(signals, tag);
+  for (const category of asArray(record.category)) {
+    addTextSignal(signals, category);
+  }
+
+  for (const tag of asArray(record.tags)) {
+    addTextSignal(signals, tag);
+  }
 
   const keywords = asRecord(record.keywords);
-  for (const keyword of [
+  const keywordEntries = [
     ...asArray(keywords?.keywords),
     ...asArray(keywords?.results),
     ...asArray(record.keywords),
-  ]) {
-    addTextSignal(signals, asRecord(keyword)?.name || keyword);
+  ];
+
+  for (const keyword of keywordEntries) {
+    const keywordRecord = asRecord(keyword);
+    addTextSignal(signals, keywordRecord?.name || keyword);
   }
 
   return Array.from(new Set(signals));
@@ -131,13 +166,20 @@ export function collectTmdbEroticSignals(payload: unknown) {
 
 export function hasEroticMaturitySignal(payload: unknown) {
   const text = collectTmdbEroticSignals(payload).join(' ');
-  return Boolean(text.trim() && EROTIC_SIGNAL_PATTERNS.some((pattern) => pattern.test(text)));
+
+  if (!text.trim()) {
+    return false;
+  }
+
+  return EROTIC_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 export function isTmdbMatureExclusive(payload: unknown) {
   const record = asRecord(payload);
 
-  if (!record) return false;
+  if (!record) {
+    return false;
+  }
 
   const ratings = collectTmdbMaturityRatings(record);
 
@@ -156,21 +198,38 @@ export function mergeCategoryNames(...categoryLists: Array<unknown>) {
     const entries = Array.isArray(categoryList) ? categoryList : [categoryList];
 
     for (const entry of entries) {
-      if (typeof entry !== 'string') continue;
+      if (typeof entry !== 'string') {
+        continue;
+      }
 
       const trimmed = entry.trim();
-      if (!trimmed) continue;
+
+      if (!trimmed) {
+        continue;
+      }
 
       const key = trimmed.toLowerCase();
-      if (!categories.has(key)) categories.set(key, trimmed);
+
+      if (!categories.has(key)) {
+        categories.set(key, trimmed);
+      }
     }
   }
 
   return Array.from(categories.values());
 }
 
-export function mergeMatureExclusiveCategory(categories: unknown, isMatureExclusive: boolean) {
-  return isMatureExclusive
-    ? mergeCategoryNames(categories, [MATURE_EXCLUSIVES_CATEGORY])
-    : mergeCategoryNames(categories);
+export function hasMatureExclusiveCategory(categories: unknown) {
+  return mergeCategoryNames(categories).some(
+    (category) => category.trim().toLowerCase() === MATURE_EXCLUSIVES_CATEGORY.toLowerCase()
+  );
 }
+
+export function mergeMatureExclusiveCategory(categories: unknown, _isMatureExclusive = false) {
+  const normalizedCategories = mergeCategoryNames(categories);
+
+  return hasMatureExclusiveCategory(normalizedCategories)
+    ? [MATURE_EXCLUSIVES_CATEGORY]
+    : normalizedCategories;
+}
+

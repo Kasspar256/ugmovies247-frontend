@@ -1,4 +1,5 @@
 import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
+import { hasMatureExclusiveCategory, MATURE_EXCLUSIVES_CATEGORY } from '@/lib/matureContent';
 import { isIndianCatalogMovie, isIndianSectionName } from '@/lib/regionalCatalog';
 import type { Movie } from '@/types/movie';
 
@@ -125,6 +126,18 @@ export function buildCatalogGenreOptions(catalog: Movie[]) {
 
 export function filterCatalogBySelection(catalog: Movie[], selectedVj: string, selectedGenre: string) {
   return catalog.filter((movie) => {
+    const isMatureExclusive = hasMatureExclusiveCategory(movie.category || []);
+    const selectedMatureExclusive =
+      matchesCatalogSelectedValue(MATURE_EXCLUSIVES_CATEGORY, selectedGenre);
+
+    if (
+      isMatureExclusive &&
+      selectedGenre !== CATALOG_FILTER_ALL &&
+      !selectedMatureExclusive
+    ) {
+      return false;
+    }
+
     const matchesVj =
       selectedVj === CATALOG_FILTER_ALL ||
       matchesCatalogSelectedVj(getCatalogVjName(movie), selectedVj);
@@ -152,3 +165,4 @@ export function buildCatalogEmptyMessage(contentLabel: string, selectedVj: strin
 
   return `No ${contentLabel} found right now.`;
 }
+

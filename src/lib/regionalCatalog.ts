@@ -136,7 +136,23 @@ export function hasExplicitIndianMetadata(movie: RegionalCatalogRecord) {
   return metadataValues.some((value) => includesSignal(value, INDIAN_METADATA_SIGNALS));
 }
 
+function hasAdminRegionalMetadata(movie: RegionalCatalogRecord) {
+  return [
+    ...toStringList(movie.category),
+    ...toStringList(movie.genres),
+    ...toStringList(movie.tags),
+  ].some((value) => Boolean(normalizeRegionalCatalogValue(value)));
+}
+
 export function isIndianCatalogMovie(movie: RegionalCatalogRecord) {
+  if (hasExplicitIndianMetadata(movie)) {
+    return true;
+  }
+
+  if (hasAdminRegionalMetadata(movie)) {
+    return false;
+  }
+
   if (isIndianCountryValue(movie.country)) {
     return true;
   }
@@ -152,7 +168,7 @@ export function isIndianCatalogMovie(movie: RegionalCatalogRecord) {
     return true;
   }
 
-  return hasExplicitIndianMetadata(movie);
+  return false;
 }
 
 export function mergeUniqueRegionalValues(...lists: Array<readonly string[] | null | undefined>) {

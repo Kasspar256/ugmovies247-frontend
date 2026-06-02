@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save } from 'lucide-react';
 import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import {
+  MATURE_EXCLUSIVES_ADMIN_LABEL,
+  MATURE_EXCLUSIVES_CATEGORY,
+} from '@/lib/matureContent';
 import type { AdminCategory } from '@/types/admin';
 import type { Movie } from '@/types/movie';
 import {
@@ -17,6 +21,7 @@ import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/contro
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 
 const TRENDING_CATEGORY = 'Trending on tiktok';
+const EDITABLE_AUTO_CATEGORY_TAGS = new Set(['indian', 'indian movies']);
 
 function normalizeYear(value: string) {
   const parsed = Number(value);
@@ -25,6 +30,16 @@ function normalizeYear(value: string) {
 
 function normalizeName(value: string) {
   return value.trim().toLowerCase();
+}
+
+function isEditableAutoCategoryTag(value: string) {
+  return EDITABLE_AUTO_CATEGORY_TAGS.has(normalizeName(value));
+}
+
+function normalizeSavedHomeCategories(categories: string[]) {
+  return categories.some((entry) => normalizeName(entry) === normalizeName(MATURE_EXCLUSIVES_CATEGORY))
+    ? [MATURE_EXCLUSIVES_CATEGORY]
+    : mergeUniqueStrings(categories);
 }
 
 function splitCommaList(value: string) {
@@ -191,6 +206,7 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
         setPreservedCategories(
           (nextMovie.category || []).filter(
             (entry) =>
+              !isEditableAutoCategoryTag(entry) &&
               !MANUAL_HOME_CATEGORIES.some(
                 (categoryName) => normalizeName(categoryName) === normalizeName(entry)
               )
@@ -400,7 +416,10 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
 
     try {
       const uploadedPoster = posterFile ? await uploadPosterToAdmin(posterFile) : null;
-      const mergedCategories = mergeUniqueStrings(preservedCategories, selectedHomeCategories);
+      const mergedCategories = normalizeSavedHomeCategories([
+        ...preservedCategories,
+        ...selectedHomeCategories,
+      ]);
 
       const response = await fetch(`/api/admin/movies/${movie.id}`, {
         method: 'PATCH',
@@ -550,8 +569,8 @@ export function AdminMovieEditView({ movieId }: { movieId: string }) {
                     selected={selectedHomeCategories}
                     onToggle={toggleCategory}
                     getLabel={(category) =>
-                      category.name === 'Mature Exclusives (18+)'
-                        ? 'Mature Exclusives (18+) - strict erotic 18+ only'
+                      category.name === MATURE_EXCLUSIVES_CATEGORY
+                        ? MATURE_EXCLUSIVES_ADMIN_LABEL
                         : category.displayLabel || category.name
                     }
                   />

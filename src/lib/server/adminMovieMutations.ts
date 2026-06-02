@@ -1,4 +1,5 @@
 import { createPartId, normalizeEditableStringList } from '@/lib/server/adminControlCenter';
+import { mergeMatureExclusiveCategory } from '@/lib/matureContent';
 import type { Episode, Movie, MoviePart, Season } from '@/types/movie';
 
 function nowIso() {
@@ -122,6 +123,7 @@ function normalizeSeasonInput(input: Record<string, unknown>, seasonIndex: numbe
     title: String(input.title || `Season ${seasonIndex + 1}`),
     overview: String(input.overview || ''),
     poster: String(input.poster || ''),
+    overriddenBackdrop: String(input.overriddenBackdrop || input.poster || ''),
     tmdb_id:
       typeof input.tmdb_id === 'number' && Number.isFinite(input.tmdb_id) ? input.tmdb_id : null,
     episodes,
@@ -213,7 +215,9 @@ export function buildEditableMovieDocument(
     '';
   const sourceType = normalizeSourceType(input.sourceType ?? existingMovie?.sourceType);
   const sourcePipeline = normalizeSourcePipeline(input.sourcePipeline, sourceType);
-  const normalizedCategories = normalizeEditableStringList(input.category ?? existingMovie?.category);
+  const normalizedCategories = mergeMatureExclusiveCategory(
+    normalizeEditableStringList(input.category ?? existingMovie?.category)
+  );
   const isTrendingTikTok =
     Boolean(input.is_trending_tiktok ?? existingMovie?.is_trending_tiktok) ||
     normalizedCategories.some((entry) => entry.toLowerCase() === 'trending on tiktok');
@@ -273,6 +277,7 @@ export function buildEditableMovieDocument(
     tags: normalizeEditableStringList(input.tags ?? existingMovie?.tags),
     cast: normalizeEditableStringList(input.cast ?? existingMovie?.cast),
     poster: String(input.poster || existingMovie?.poster || ''),
+    heroPoster: String(input.heroPoster || existingMovie?.heroPoster || ''),
     overriddenBackdrop: String(input.overriddenBackdrop || existingMovie?.overriddenBackdrop || ''),
     overriddenPlayerBackdrop: String(
       input.overriddenPlayerBackdrop || existingMovie?.overriddenPlayerBackdrop || ''
