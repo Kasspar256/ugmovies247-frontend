@@ -4,6 +4,57 @@ Keep this list as the holding area for fixes that are ready to ship later. Do no
 
 ## Pending
 
+### Catalog Rendering Performance Refactor
+
+Status: code changed locally, not deployed.
+
+Purpose: remove bottom-nav input delay, stop full catalog pages from rendering the entire library at once, move catalog persistence off synchronous localStorage parsing, and show instant skeleton screens during route transitions.
+
+Files changed:
+
+- `package.json`
+- `src/components/MobileBottomNav.tsx`
+- `src/components/PublicCatalogHydrator.tsx`
+- `src/components/catalog/VirtualizedCatalogGrid.tsx`
+- `src/components/catalog/CatalogGridRouteSkeleton.tsx`
+- `src/lib/publicMovies.ts`
+- `src/app/movies/page.tsx`
+- `src/app/series/page.tsx`
+- `src/app/category/[id]/page.tsx`
+- `src/app/genres/[id]/page.tsx`
+- `src/app/movies/loading.tsx`
+- `src/app/series/loading.tsx`
+- `src/app/category/[id]/loading.tsx`
+- `src/app/genres/[id]/loading.tsx`
+- `src/app/browse/loading.tsx`
+- `src/app/browse/[section]/loading.tsx`
+
+Verification needed before deploy:
+
+- Run `npm install` in the Linux repo so `@tanstack/react-virtual` and `localforage` are installed and the lockfile is refreshed.
+- Run `npm run build`.
+- Test bottom nav taps between Home, Movies, Series, Search, and Profile on Android; the active icon should update immediately.
+- Open `/movies`, `/series`, `/category/{id}`, and `/genres/{id}` with a large catalog and confirm scrolling is smooth with no card overlap.
+- Hard refresh the app and confirm the catalog hydrates without a long main-thread freeze.
+
+### P1 Video Player Stability Rewrite
+
+Status: code changed locally, not deployed.
+
+Purpose: stop infinite loading spinners, preserve playback position across mini/full player transitions, and prevent ghost control flicker while a movie is playing.
+
+Files changed:
+
+- `src/components/player/PlaybackProvider.tsx`
+
+Verification needed before deploy:
+
+- Run `npm run build` in the Linux repo.
+- Open several MP4/HLS movie and episode URLs, including one on a slower network.
+- Confirm a stuck `loadstart`, `waiting`, or `stalled` state retries automatically instead of spinning forever.
+- Start a movie, move into mini-player/navigation, return to the full player, and confirm it resumes at the live timestamp.
+- Watch for at least five minutes and confirm controls do not flicker unless touched/clicked/moved.
+
 ### Premium Android Push Notification Visuals
 
 Status: code changed locally, not deployed.

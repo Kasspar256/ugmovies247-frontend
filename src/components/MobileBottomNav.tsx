@@ -1,9 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { Film, Home, Search, Tv2, User } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, useTransition, type ReactNode } from 'react';
 import { isLegalRoute } from '@/lib/legalRoutes';
 import { isAppInReview } from '@/lib/appReview';
 
@@ -61,34 +60,48 @@ function NavItem({
   href,
   label,
   active,
+  pending,
   children,
+  onNavigate,
+  onPreview,
 }: {
   href: string;
   label: string;
   active: boolean;
+  pending: boolean;
   children: ReactNode;
+  onNavigate: (href: string) => void;
+  onPreview: (href: string) => void;
 }) {
   const itemColor = active ? 'text-[#D90429]' : 'text-gray-400 hover:text-gray-200';
   const iconColor = active ? '[&_svg]:text-[#D90429]' : '[&_svg]:text-gray-400';
 
   return (
-    <Link
-      href={href}
-      scroll={false}
-      prefetch
-      className={`flex w-16 flex-col items-center gap-1 transition-colors active:scale-95 ${itemColor}`}
+    <button
+      type="button"
+      aria-current={active ? 'page' : undefined}
+      aria-label={label}
+      onPointerDown={() => onPreview(href)}
+      onClick={() => onNavigate(href)}
+      className={`relative flex w-16 flex-col items-center gap-1 transition-colors active:scale-95 ${itemColor}`}
     >
       <span className={iconColor}>{children}</span>
       <span className={`text-[10px] font-semibold ${itemColor}`}>{label}</span>
-    </Link>
+      {pending && active && (
+        <span className="absolute -top-1 h-1 w-1 animate-pulse rounded-full bg-[#D90429]" />
+      )}
+    </button>
   );
 }
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [optimisticPathname, setOptimisticPathname] = useState('');
   const shouldShow = shouldShowMobileNav(pathname);
-  const activeTab = getActiveTab(pathname);
+  const visiblePathname = optimisticPathname || pathname;
+  const activeTab = getActiveTab(visiblePathname);
 
   useEffect(() => {
     if (!shouldShow) return;
@@ -97,6 +110,28 @@ export default function MobileBottomNav() {
       router.prefetch(href);
     });
   }, [router, shouldShow]);
+
+  useEffect(() => {
+    setOptimisticPathname('');
+  }, [pathname]);
+
+  const handlePreview = (href: string) => {
+    if (href !== pathname) {
+      setOptimisticPathname(href);
+    }
+  };
+
+  const handleNavigate = (href: string) => {
+    if (href === pathname) {
+      setOptimisticPathname('');
+      return;
+    }
+
+    setOptimisticPathname(href);
+    startTransition(() => {
+      router.push(href, { scroll: false });
+    });
+  };
 
   if (!shouldShow) {
     return null;
@@ -118,20 +153,56 @@ export default function MobileBottomNav() {
         backgroundColor: '#0B0C10',
       }}
       aria-label="Mobile navigation"
+      aria-busy={isPending}
     >
-      <NavItem href="/browse" label="Home" active={activeTab === 'home'}>
+      <NavItem
+        href="/browse"
+        label="Home"
+        active={activeTab === 'home'}
+        pending={isPending}
+        onNavigate={handleNavigate}
+        onPreview={handlePreview}
+      >
         <Home className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
-      <NavItem href="/movies" label="Movies" active={activeTab === 'movies'}>
+      <NavItem
+        href="/movies"
+        label="Movies"
+        active={activeTab === 'movies'}
+        pending={isPending}
+        onNavigate={handleNavigate}
+        onPreview={handlePreview}
+      >
         <Film className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
-      <NavItem href="/series" label="Series" active={activeTab === 'series'}>
+      <NavItem
+        href="/series"
+        label="Series"
+        active={activeTab === 'series'}
+        pending={isPending}
+        onNavigate={handleNavigate}
+        onPreview={handlePreview}
+      >
         <Tv2 className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
-      <NavItem href="/search" label="Search" active={activeTab === 'search'}>
+      <NavItem
+        href="/search"
+        label="Search"
+        active={activeTab === 'search'}
+        pending={isPending}
+        onNavigate={handleNavigate}
+        onPreview={handlePreview}
+      >
         <Search className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
-      <NavItem href="/profile" label="Profile" active={activeTab === 'profile'}>
+      <NavItem
+        href="/profile"
+        label="Profile"
+        active={activeTab === 'profile'}
+        pending={isPending}
+        onNavigate={handleNavigate}
+        onPreview={handlePreview}
+      >
         <User className="h-6 w-6" strokeWidth={2.25} />
       </NavItem>
     </nav>

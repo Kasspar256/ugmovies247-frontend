@@ -7,11 +7,25 @@ import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
 import { isAppInReview } from '@/lib/appReview';
+import { hasMatureExclusiveCategory, MATURE_EXCLUSIVES_CATEGORY } from '@/lib/matureContent';
 import { isIndianCatalogMovie, isIndianSectionName, normalizeRegionalCatalogValue } from '@/lib/regionalCatalog';
 
 function movieHasCategorySignal(movie: Movie, categorySlug: string) {
   const categoryLabel = categorySlug.replace(/[-_]+/g, ' ');
+  const isMatureCategory =
+    normalizeRegionalCatalogValue(categoryLabel) ===
+    normalizeRegionalCatalogValue(MATURE_EXCLUSIVES_CATEGORY);
+  const isMatureMovie = hasMatureExclusiveCategory(movie.category || []);
+
+  if (isMatureMovie && !isMatureCategory) {
+    return false;
+  }
+
+  if (isMatureCategory) {
+    return isMatureMovie;
+  }
 
   if (isIndianSectionName(categoryLabel)) {
     return isIndianCatalogMovie(movie);
@@ -131,42 +145,52 @@ export default function CategoryDetail({ params }: { params: { id: string } }) {
       </p>
 
       {/* Massive Cinematic Grid of Category Movies */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-3 md:gap-5 mt-4 md:mt-0 max-w-[1380px] mx-auto">
-        {movies.map((movie) => (
-          <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group bg-[#1F2833]/10 md:bg-[#1F2833]/30 p-1 md:p-3 rounded-lg md:rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg flex flex-col h-full">
-            <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2 md:mb-3 relative flex-shrink-0">
-              
-              {/* VJ Badge Top Left Corner (All screens) */}
-              {isSeriesMovie(movie) && (
-                <div className="absolute top-1 right-1 md:top-2 md:right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-20 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
-                  EPS
-                </div>
-              )}
+      <div className="mt-4 max-w-[1380px] mx-auto md:mt-0">
+        <VirtualizedCatalogGrid
+          items={movies}
+          getKey={(movie) => movie.id}
+          columns={{ base: 3, sm: 4, md: 5, lg: 6, xl: 8 }}
+          rowHeight={{ base: 242, sm: 286, md: 344, lg: 318, xl: 320 }}
+          rowClassName="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 md:gap-5 lg:grid-cols-6 xl:grid-cols-8"
+          renderItem={(movie, index) => (
+            <Link href={`/movie/${movie.id}`} className="relative group bg-[#1F2833]/10 md:bg-[#1F2833]/30 p-1 md:p-3 rounded-lg md:rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg flex flex-col h-full">
+              <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2 md:mb-3 relative flex-shrink-0">
+                {isSeriesMovie(movie) && (
+                  <div className="absolute top-1 right-1 md:top-2 md:right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-20 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
+                    EPS
+                  </div>
+                )}
 
-              <div className="absolute top-1 left-1 md:top-2 md:left-2 bg-[#D90429] text-white text-[8px] md:text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 md:px-2 md:py-1 rounded-sm z-20 shadow-[0_2px_10px_rgba(217,4,41,0.5)] max-w-[90%] truncate leading-none">
-                {movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD'}
+                <div className="absolute top-1 left-1 md:top-2 md:left-2 bg-[#D90429] text-white text-[8px] md:text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 md:px-2 md:py-1 rounded-sm z-20 shadow-[0_2px_10px_rgba(217,4,41,0.5)] max-w-[90%] truncate leading-none">
+                  {movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD'}
+                </div>
+
+                <img
+                  src={movie.poster}
+                  alt={movie.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading={index < 8 ? 'eager' : 'lazy'}
+                  decoding="async"
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-10">
+                  <div className="w-8 h-8 md:w-12 md:h-12 bg-[#D90429] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(217,4,41,0.8)] scale-75 group-hover:scale-100 transition-transform">
+                    <Play className="text-white fill-[white] ml-0.5 md:ml-1 w-4 h-4 md:w-6 md:h-6" />
+                  </div>
+                </div>
               </div>
 
-              <img src={movie.poster} alt={movie.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-10">
-                <div className="w-8 h-8 md:w-12 md:h-12 bg-[#D90429] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(217,4,41,0.8)] scale-75 group-hover:scale-100 transition-transform">
-                  <Play className="text-white fill-[white] ml-0.5 md:ml-1 w-4 h-4 md:w-6 md:h-6" />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex flex-col flex-1 justify-between px-0.5">
-               <div>
+              <div className="flex flex-col flex-1 justify-between px-0.5">
+                <div>
                   <h3 className="text-white text-[11px] md:text-[14px] font-bold leading-tight mb-0.5 line-clamp-2 md:truncate group-hover:text-[#D90429] transition-colors">{movie.title}</h3>
-               </div>
-               <div className="flex flex-col gap-0.5 md:gap-1 mt-1">
-                  {/* DESKTOP ONLY: VJ Name underneath the image */}
+                </div>
+                <div className="flex flex-col gap-0.5 md:gap-1 mt-1">
                   <p className="hidden md:block text-[#D90429] text-[10px] md:text-[11px] font-black uppercase tracking-widest truncate">{movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD'}</p>
                   <p className="text-white/50 text-[7px] md:text-[10px] font-bold uppercase flex items-center gap-1"><Film size={8} className="md:w-[10px] md:h-[10px]" /> {movie.genres?.[0] || 'Movie'}</p>
-               </div>
-            </div>
-          </Link>
-        ))}
+                </div>
+              </div>
+            </Link>
+          )}
+        />
       </div>
 
       <div className="mt-12 md:mt-16 text-center max-w-2xl mx-auto border-t border-[#1F2833] pt-8 md:pt-10">

@@ -7,25 +7,36 @@ import { isSeriesMovie } from '@/lib/moviePresentation';
 import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
+import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 import { isAppInReview } from '@/lib/appReview';
+import { hasMatureExclusiveCategory, MATURE_EXCLUSIVES_CATEGORY } from '@/lib/matureContent';
 import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
 
 function getGenreMovies(genreId: string, allMovies: Movie[]) {
+  const isMatureGenre = genreId.toLowerCase() === MATURE_EXCLUSIVES_CATEGORY.toLowerCase();
+  const availableMovies = isMatureGenre
+    ? allMovies.filter((movie) => hasMatureExclusiveCategory(movie.category || []))
+    : allMovies.filter((movie) => !hasMatureExclusiveCategory(movie.category || []));
+
+  if (isMatureGenre) {
+    return availableMovies;
+  }
+
   if (genreId.toLowerCase() === 'indian') {
-    return allMovies.filter((movie) => isIndianCatalogMovie(movie));
+    return availableMovies.filter((movie) => isIndianCatalogMovie(movie));
   }
 
   if (genreId.toLowerCase() === 'k-drama' || genreId.toLowerCase() === 'k drama') {
-    return allMovies.filter(
+    return availableMovies.filter(
       (movie) =>
         movie.country === 'South Korea' ||
         movie.genres?.map((genre) => genre.toLowerCase()).includes('k-drama')
     );
   }
 
-  return allMovies.filter((movie) =>
+  return availableMovies.filter((movie) =>
     movie.genres?.map((genre) => genre.toLowerCase()).includes(genreId.toLowerCase())
   );
 }
@@ -122,30 +133,37 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
       </div>
 
       {/* Grid of Movies */}
-      <div className="grid max-w-[1380px] mx-auto grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-6">
-        {movies.map((movie, index) => (
-          <Link href={`/movie/${movie.id}`} key={movie.id} className="relative group bg-[#1F2833]/30 p-2 md:p-3 rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg">
-            <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3">
-              <img
-                src={getOptimizedArtworkUrl(movie.poster, 'card')}
-                alt={`${isAppInReview ? 'Discover' : 'Watch'} ${movie.title} on UGMOVIES247`}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                loading={index < 6 ? 'eager' : 'lazy'}
-                decoding="async"
-              />
-              {isSeriesMovie(movie) && (
-                <div className="absolute top-3 right-3 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
-                  EPS
+      <div className="max-w-[1380px] mx-auto mt-6">
+        <VirtualizedCatalogGrid
+          items={movies}
+          getKey={(movie) => movie.id}
+          columns={{ base: 2, md: 4, lg: 5 }}
+          rowHeight={{ base: 342, md: 382, lg: 392 }}
+          rowClassName="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-5"
+          renderItem={(movie, index) => (
+            <Link href={`/movie/${movie.id}`} className="relative group bg-[#1F2833]/30 p-2 md:p-3 rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg block">
+              <div className="aspect-[2/3] w-full rounded-lg bg-[#1F2833] overflow-hidden mb-3 relative">
+                <img
+                  src={getOptimizedArtworkUrl(movie.poster, 'card')}
+                  alt={`${isAppInReview ? 'Discover' : 'Watch'} ${movie.title} on UGMOVIES247`}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading={index < 6 ? 'eager' : 'lazy'}
+                  decoding="async"
+                />
+                {isSeriesMovie(movie) && (
+                  <div className="absolute top-3 right-3 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-10 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
+                    EPS
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Play className="text-[#D90429] fill-[#D90429] drop-shadow-[0_0_15px_rgba(217,4,41,0.8)]" size={48} />
                 </div>
-              )}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Play className="text-[#D90429] fill-[#D90429] drop-shadow-[0_0_15px_rgba(217,4,41,0.8)]" size={48} />
               </div>
-            </div>
-            <h3 className="text-white text-sm md:text-base font-bold leading-tight mb-1 truncate group-hover:text-[#D90429] transition-colors">{movie.title}</h3>
-            <p className="text-[#D90429] text-[10px] md:text-xs font-black uppercase tracking-widest">{movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD'}</p>
-          </Link>
-        ))}
+              <h3 className="text-white text-sm md:text-base font-bold leading-tight mb-1 truncate group-hover:text-[#D90429] transition-colors">{movie.title}</h3>
+              <p className="text-[#D90429] text-[10px] md:text-xs font-black uppercase tracking-widest">{movie.vj && movie.vj !== 'Unknown' ? `VJ ${movie.vj}` : 'VJ HD'}</p>
+            </Link>
+          )}
+        />
         {movies.length === 0 && (
           <div className="col-span-full text-center text-[#888888] mt-20 font-mono">
             NO ASSETS FOUND IN THIS GENRE.
@@ -155,4 +173,3 @@ export default function GenreDetail({ params }: { params: { id: string } }) {
     </div>
   );
 }
-

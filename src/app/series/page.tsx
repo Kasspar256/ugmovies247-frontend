@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
 import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
+import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getCatalogPosterCandidates } from '@/lib/catalogArtwork';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
@@ -378,11 +379,11 @@ export default function SeriesDirectoryPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 md:grid-cols-5 md:gap-x-7 md:gap-y-8 2xl:grid-cols-6">
-            {filteredSeries.map((item, index) => (
-              <SeriesCard key={item.id} series={item} priority={index < 6} />
-            ))}
-          </div>
+          <VirtualizedCatalogGrid
+            items={filteredSeries}
+            getKey={(item) => item.id}
+            renderItem={(item, index) => <SeriesCard series={item} priority={index < 6} />}
+          />
         )}
       </section>
     </main>
