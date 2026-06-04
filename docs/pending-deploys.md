@@ -55,6 +55,26 @@ Verification needed before deploy:
 - Start a movie, move into mini-player/navigation, return to the full player, and confirm it resumes at the live timestamp.
 - Watch for at least five minutes and confirm controls do not flicker unless touched/clicked/moved.
 
+### Seamless Player Lifecycle and Episode Queue
+
+Status: code changed locally, not deployed.
+
+Purpose: remove the extra "Preparing Player" stage, force clean video remounts on episode/source changes, prevent episode timestamp leaks, add next episode/movie queueing, and center the active episode thumbnail in the rail.
+
+Files changed:
+
+- `src/components/player/PlaybackProvider.tsx`
+- `src/app/movie/[id]/MovieClientPage.tsx`
+
+Verification needed before deploy:
+
+- Run `npm run build` in the Linux repo.
+- Open a movie and confirm Play goes straight into the video canvas loading state with no "Preparing Player" box.
+- Start Episode 1 near the end, switch to Episode 2, and confirm Episode 2 starts at `0:00`.
+- Let a series episode end and confirm the 5-second next-episode countdown appears and advances automatically.
+- Let a movie end with related movies available and confirm the first related title can be skipped to from the player.
+- Open a high episode number and confirm the episode rail centers the active episode thumbnail automatically.
+
 ### Premium Android Push Notification Visuals
 
 Status: code changed locally, not deployed.

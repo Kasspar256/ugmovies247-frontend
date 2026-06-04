@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { getUserDownloadByMovieId, saveMovieDownload } from '@/lib/downloads';
@@ -288,9 +288,6 @@ const [actionMessage, setActionMessage] = useState('');
 const [showPremiumDownloadModal, setShowPremiumDownloadModal] = useState(false);
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(() => hasCachedPremiumAccess());
-const [sourceRefreshPending, setSourceRefreshPending] = useState(
-  () => Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie))
-);
 const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>(
   () => initialResolvedMovieState?.sourceEntries || []
 );
@@ -303,6 +300,7 @@ const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
 const { setPlaybackSource, videoElement } = usePlayback();
+const episodeButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const shouldAutoplay = searchParams.get('autoplay') === '1';
 const shouldBypassCatalogCache =
   searchParams.get('fresh') === '1' || searchParams.get('fromRequest') === '1';
@@ -310,7 +308,6 @@ const shouldBypassCatalogCache =
 useEffect(() => {
 setIsTrailerPlaying(false);
 setHasLocalPremiumAccess(hasCachedPremiumAccess());
-setSourceRefreshPending(Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie)));
 }, [params.id, routeInitialMovie]);
 
 useEffect(() => {
@@ -355,7 +352,6 @@ if (routeInitialMovie) {
   applyResolvedMovie(routeInitialMovie, initialCatalogForRoute);
 
   if (!movieHasAnyPlaybackSource(routeInitialMovie)) {
-    setSourceRefreshPending(true);
     void fetchPublicMovieById(params.id)
       .then((freshMovie) => {
         if (!active) {
@@ -371,11 +367,6 @@ if (routeInitialMovie) {
       })
       .catch((error) => {
         console.warn('[movie-page] silent exact source refresh failed after bootstrap render', error);
-      })
-      .finally(() => {
-        if (active) {
-          setSourceRefreshPending(false);
-        }
       });
   } else if (!shouldBypassCatalogCache) {
     void fetchPublicMovies()
@@ -424,10 +415,6 @@ const cachedMovie = cachedMovies.find((candidate) =>
 
 if (cachedMovie && !renderedMovie) {
   applyResolvedMovie(cachedMovie, cachedMovies);
-
-  if (!movieHasAnyPlaybackSource(cachedMovie)) {
-    setSourceRefreshPending(true);
-  }
 }
 
 const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
@@ -440,7 +427,6 @@ const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
 });
 
 if (freshMovie) {
-setSourceRefreshPending(false);
 applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
 void fetchPublicMovies({ force: shouldBypassCatalogCache })
   .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
@@ -451,7 +437,6 @@ return;
 }
 
 if (renderedMovie) {
-  setSourceRefreshPending(false);
   return;
 }
 
@@ -461,7 +446,6 @@ const matchedMovie = allMovies.find((candidate) =>
 );
 
 if (matchedMovie) {
-setSourceRefreshPending(false);
 applyResolvedMovie(matchedMovie, allMovies);
 return;
 }
@@ -478,7 +462,6 @@ return;
 }
 
 if (!renderedMovie) {
-  setSourceRefreshPending(false);
   setSeriesSourceEntries([]);
   setMovie(null);
 }
@@ -791,6 +774,29 @@ const activeEpisode = selectedEpisode
       isLocked: selectedEpisode.isLocked ?? selectedEpisodePlaybackCandidate?.isLocked ?? false,
     }
   : undefined;
+const activeEpisodeRailKey =
+  selectedSeason && selectedEpisode
+    ? `${selectedSeason.seasonNumber}-${selectedEpisode.episodeNumber}`
+    : '';
+
+useEffect(() => {
+  if (!activeEpisodeRailKey) {
+    return;
+  }
+
+  const frameId = window.requestAnimationFrame(() => {
+    episodeButtonRefs.current[activeEpisodeRailKey]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center',
+    });
+  });
+
+  return () => {
+    window.cancelAnimationFrame(frameId);
+  };
+}, [activeEpisodeRailKey, selectedSeasonEpisodes.length]);
+
 const selectedPart =
   movie?.contentType !== 'series' && movie?.parts?.length
     ? movie.parts[selectedPartIndex]
@@ -924,7 +930,7 @@ const getEpisodeDisplayTitle = (episodeNumber: number, episodeTitle: string) => 
 
   return normalizedTitle;
 };
-const syncPartSelection = (partIndex: number) => {
+const syncPartSelection = useCallback((partIndex: number) => {
   setSelectedPartIndex(partIndex);
   setIsTrailerPlaying(false);
   setIsSavedToDownloads(false);
@@ -936,8 +942,8 @@ const syncPartSelection = (partIndex: number) => {
   if (nextParams.toString() !== searchQueryString) {
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
   }
-};
-const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
+}, [pathname, router, searchQueryString]);
+const syncSeriesSelection = useCallback((seasonNumber: number, episodeNumber: number) => {
   setSelectedSeasonNumber(seasonNumber);
   setSelectedEpisodeNumber(episodeNumber);
   setIsTrailerPlaying(false);
@@ -952,7 +958,50 @@ const syncSeriesSelection = (seasonNumber: number, episodeNumber: number) => {
   if (nextParams.toString() !== searchQueryString) {
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
   }
-};
+}, [pathname, router, searchQueryString]);
+const nextEpisodeIndex =
+  activeEpisode && selectedSeason
+    ? selectedSeasonEpisodes.findIndex(
+        (episode) => episode.episodeNumber === activeEpisode.episodeNumber
+      ) + 1
+    : -1;
+const nextEpisode =
+  nextEpisodeIndex > 0 && nextEpisodeIndex < selectedSeasonEpisodes.length
+    ? selectedSeasonEpisodes[nextEpisodeIndex]
+    : undefined;
+const nextRelatedMovie = !activeEpisode && !selectedPart ? relatedMovies[0] : undefined;
+const queueNextEpisode = useCallback(() => {
+  if (!selectedSeason || !nextEpisode) {
+    return;
+  }
+
+  syncSeriesSelection(selectedSeason.seasonNumber, nextEpisode.episodeNumber);
+}, [nextEpisode, selectedSeason, syncSeriesSelection]);
+const queueRelatedMovie = useCallback(() => {
+  if (!nextRelatedMovie?.id) {
+    return;
+  }
+
+  router.push(`/movie/${nextRelatedMovie.id}?autoplay=1`);
+}, [nextRelatedMovie?.id, router]);
+const playbackNextAction = activeEpisode
+  ? nextEpisode
+    ? queueNextEpisode
+    : undefined
+  : nextRelatedMovie
+    ? queueRelatedMovie
+    : undefined;
+const playbackNextActionKey = activeEpisode
+  ? nextEpisode
+    ? `series-${selectedSeason?.seasonNumber || 1}-${nextEpisode.episodeNumber}`
+    : ''
+  : nextRelatedMovie
+    ? `movie-${nextRelatedMovie.id}`
+    : '';
+const playbackNextLabel = activeEpisode ? 'Next Episode' : 'Skip Movie';
+const playbackNextCountdownLabel = activeEpisode
+  ? 'Next episode starting in'
+  : 'Next movie starting in';
 const playbackTitle = activeEpisode
   ? `${movie?.title || movie?.name} - S${selectedSeason?.seasonNumber || 1} EP ${activeEpisode.episodeNumber}`
   : selectedPart
@@ -1106,6 +1155,7 @@ useLayoutEffect(() => {
       title: `${playbackTitle || movie.title || movie.name || 'UGMOVIES247'} trailer`,
       description: playbackDescription,
       watchHref: currentMovieHref,
+      disableResume: true,
     });
     return;
   }
@@ -1127,9 +1177,15 @@ useLayoutEffect(() => {
     title: playbackTitle || movie.title || movie.name || 'UGMOVIES247',
     description: playbackDescription,
     watchHref: currentMovieHref,
+    nextActionKey: playbackNextActionKey,
+    nextLabel: playbackNextAction ? playbackNextLabel : undefined,
+    nextCountdownLabel: playbackNextAction ? playbackNextCountdownLabel : undefined,
+    onNext: playbackNextAction,
+    disableResume: Boolean(activeEpisode || selectedPart),
   });
   }, [
     activePlaybackSessionKey,
+    activeEpisode,
     castPlaybackUrl,
     currentMovieHref,
     isPlaybackLocked,
@@ -1137,10 +1193,15 @@ useLayoutEffect(() => {
     movie,
     playbackDescription,
     playbackFallbackUrl,
+    playbackNextAction,
+    playbackNextActionKey,
+    playbackNextCountdownLabel,
+    playbackNextLabel,
     playbackPoster,
     playbackTitle,
     playbackType,
     playbackVideoUrl,
+    selectedPart,
     shouldAutoplay,
     setPlaybackSource,
     uploadedTrailerUrl,
@@ -1494,31 +1555,6 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
         <div className="relative z-10 h-full w-full">
           <PersistentPlaybackHost active className="h-full w-full" />
         </div>
-      ) : sourceRefreshPending ? (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black px-6 text-center">
-          {playbackPoster ? (
-            <>
-              <img
-                src={playbackPoster}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover opacity-35 blur-[1px]"
-              />
-              <div className="absolute inset-0 bg-gradient-to-b from-black/35 via-black/55 to-black/78" />
-            </>
-          ) : null}
-          <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-full border border-white/16 bg-white/10 pl-1 shadow-[0_0_30px_rgba(255,255,255,0.12)] backdrop-blur-md md:h-20 md:w-20">
-            <svg className="h-7 w-7 text-white md:h-9 md:w-9" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M4 4l12 6-12 6z" />
-            </svg>
-          </div>
-          <div className="relative z-10 mt-5 rounded-full border border-white/12 bg-white/6 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/78 backdrop-blur-md">
-            Preparing Player
-          </div>
-          <p className="relative z-10 mt-3 max-w-lg text-xs leading-6 text-white/68 md:text-sm">
-            We are opening the best available stream for this title.
-          </p>
-        </div>
       ) : (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/34 px-6 text-center">
           <div className="rounded-full border border-white/12 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.22em] text-white/78">
@@ -1758,6 +1794,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
 
         <div className="flex gap-2 overflow-x-auto pb-2 md:grid md:grid-cols-3 xl:grid-cols-4 md:overflow-visible [scrollbar-color:#D90429_#1F2833]">
           {selectedSeasonEpisodes.map((episode) => {
+            const episodeRailKey = `${selectedSeason?.seasonNumber || 1}-${episode.episodeNumber}`;
             const episodeLabel = getEpisodeLabel(episode.episodeNumber);
             const episodeDisplayTitle = getEpisodeDisplayTitle(episode.episodeNumber, episode.title);
             const episodePreview =
@@ -1772,6 +1809,9 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             return (
               <button
                 key={`${movie.id}-season-${selectedSeason?.seasonNumber}-episode-${episode.episodeNumber}`}
+                ref={(node) => {
+                  episodeButtonRefs.current[episodeRailKey] = node;
+                }}
                 onClick={() => {
                   if (!selectedSeason) {
                     return;

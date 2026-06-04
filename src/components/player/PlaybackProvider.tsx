@@ -73,6 +73,11 @@ export type PlaybackSource = {
   title: string;
   description?: string;
   watchHref: string;
+  nextActionKey?: string;
+  nextLabel?: string;
+  nextCountdownLabel?: string;
+  onNext?: () => void;
+  disableResume?: boolean;
 };
 
 type PlaybackContextValue = {
@@ -144,10 +149,12 @@ const FATAL_ERROR_DELAY_MS = 1600;
 const SOURCE_RETRY_BASE_DELAY_MS = 850;
 const SOURCE_RETRY_MAX_DELAY_MS = 7500;
 const SOURCE_RETRY_MAX_ATTEMPTS = 5;
+const MANIFEST_WAKEUP_TIMEOUT_MS = 3000;
 const STALL_RECOVERY_DELAY_MS = 6500;
 const HARD_STALL_RECOVERY_DELAY_MS = 14000;
 const STALL_PROGRESS_EPSILON_SECONDS = 0.15;
 const SEEK_BUMP_SECONDS = 0.22;
+const NEXT_AUTOPLAY_COUNTDOWN_SECONDS = 5;
 const CONTROL_HIDE_DELAY_MS = 2600;
 const DESKTOP_MINI_PLAYER_WIDTH = 360;
 const MOBILE_MINI_PLAYER_MIN_WIDTH = 220;
@@ -221,6 +228,10 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
     (current.castUrl || '') === (next.castUrl || '') &&
     (current.playbackType || 'mp4') === (next.playbackType || 'mp4') &&
     Boolean(current.autoplay) === Boolean(next.autoplay) &&
+    (current.nextActionKey || '') === (next.nextActionKey || '') &&
+    (current.nextLabel || '') === (next.nextLabel || '') &&
+    (current.nextCountdownLabel || '') === (next.nextCountdownLabel || '') &&
+    Boolean(current.disableResume) === Boolean(next.disableResume) &&
     current.poster === next.poster &&
     current.title === next.title &&
     current.description === next.description &&
@@ -604,8 +615,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clickIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manifestWakeupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardStallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextCountdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pipHintShownRef = useRef(false);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
@@ -669,6 +683,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   });
   const [miniPlayerPosition, setMiniPlayerPosition] = useState<MiniPlayerPosition | null>(null);
   const [isDraggingMiniPlayer, setIsDraggingMiniPlayer] = useState(false);
+  const [nextCountdownSeconds, setNextCountdownSeconds] = useState<number | null>(null);
   const effectiveFullscreen = isFullscreen || softLandscapeFullscreen;
 
   useEffect(() => {
@@ -723,6 +738,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearManifestWakeupTimer = useCallback(() => {
+    if (manifestWakeupTimerRef.current) {
+      clearTimeout(manifestWakeupTimerRef.current);
+      manifestWakeupTimerRef.current = null;
+    }
+  }, []);
+
   const clearStallRecoveryTimers = useCallback(() => {
     if (stallRecoveryTimerRef.current) {
       clearTimeout(stallRecoveryTimerRef.current);
@@ -733,6 +755,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearTimeout(hardStallRecoveryTimerRef.current);
       hardStallRecoveryTimerRef.current = null;
     }
+  }, []);
+
+  const clearNextCountdownTimer = useCallback(() => {
+    if (nextCountdownTimerRef.current) {
+      clearTimeout(nextCountdownTimerRef.current);
+      nextCountdownTimerRef.current = null;
+    }
+
+    if (nextCountdownIntervalRef.current) {
+      clearInterval(nextCountdownIntervalRef.current);
+      nextCountdownIntervalRef.current = null;
+    }
+
+    setNextCountdownSeconds(null);
   }, []);
 
   const clearFatalError = useCallback(() => {
@@ -787,8 +823,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         lastKnownPlaybackRef.current[sourceKey] = snapshot;
       }
 
-      lastKnownPlaybackRef.current[`movie:${source.movieId}`] = snapshot;
-      writeSessionProgress(source.movieId, snapshot);
+      const sessionProgressKey = source.sessionKey || sourceKey || source.movieId;
+
+      if (sessionProgressKey) {
+        lastKnownPlaybackRef.current[`session:${sessionProgressKey}`] = snapshot;
+        writeSessionProgress(sessionProgressKey, snapshot);
+      }
     },
     [activeSource, currentTime, duration]
   );
@@ -796,12 +836,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const resolveResumePosition = useCallback(
     (source: PlaybackSource, sourceKey: string) => {
       const sourceSnapshot = lastKnownPlaybackRef.current[sourceKey];
-      const movieSnapshot = lastKnownPlaybackRef.current[`movie:${source.movieId}`];
-      const sessionSnapshot = readSessionProgress(source.movieId);
-      const cachedProgress = getCachedPlaybackProgress(source.movieId);
+      const sessionProgressKey = source.sessionKey || sourceKey || source.movieId;
+      const sessionSnapshot =
+        lastKnownPlaybackRef.current[`session:${sessionProgressKey}`] ||
+        readSessionProgress(sessionProgressKey);
+      const cachedProgress = source.disableResume ? null : getCachedPlaybackProgress(source.movieId);
       const candidates = [
         sourceSnapshot?.position,
-        movieSnapshot?.position,
         sessionSnapshot?.position,
         cachedProgress && !cachedProgress.isFinished ? cachedProgress.lastPosition : 0,
       ]
@@ -1169,7 +1210,9 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearClickIntentTimer();
     clearFatalError();
     clearSourceRetryTimer();
+    clearManifestWakeupTimer();
     clearStallRecoveryTimers();
+    clearNextCountdownTimer();
     pendingAutoplayRef.current = false;
     retriedCurrentSourceRef.current = false;
     sourceRetryCountRef.current = 0;
@@ -1202,6 +1245,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     clearClickIntentTimer,
     clearFatalError,
+    clearManifestWakeupTimer,
+    clearNextCountdownTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
     rememberPlaybackPosition,
@@ -1232,6 +1277,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       rememberPlaybackPosition();
       clearFatalError();
+      clearManifestWakeupTimer();
       clearStallRecoveryTimers();
 
       if (currentPosition >= 1) {
@@ -1263,6 +1309,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [
       activeSource,
       clearFatalError,
+      clearManifestWakeupTimer,
       clearStallRecoveryTimers,
       currentTime,
       rememberPlaybackPosition,
@@ -1301,6 +1348,36 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }, retryDelay);
     },
     [activeSource?.sourceUrl, attemptSourceReload, clearSourceRetryTimer, setPlaybackPhaseSafe]
+  );
+
+  const scheduleManifestWakeup = useCallback(
+    (reason: string) => {
+      clearManifestWakeupTimer();
+
+      if (!activeSource?.sourceUrl) {
+        return;
+      }
+
+      manifestWakeupTimerRef.current = setTimeout(() => {
+        manifestWakeupTimerRef.current = null;
+
+        const videoElement = videoRef.current;
+
+        if (
+          !videoElement ||
+          !activeSource?.sourceUrl ||
+          videoElement.readyState >= HTMLMediaElement.HAVE_METADATA ||
+          playbackPhaseRef.current === 'playing' ||
+          playbackPhaseRef.current === 'paused'
+        ) {
+          return;
+        }
+
+        sourceRetryCountRef.current = Math.max(sourceRetryCountRef.current, 0);
+        attemptSourceReload(reason);
+      }, MANIFEST_WAKEUP_TIMEOUT_MS);
+    },
+    [activeSource?.sourceUrl, attemptSourceReload, clearManifestWakeupTimer]
   );
 
   const recoverStalledPlayback = useCallback(
@@ -1483,14 +1560,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     clearFatalError();
     clearSourceRetryTimer();
+    clearManifestWakeupTimer();
     clearStallRecoveryTimers();
+    clearNextCountdownTimer();
     startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
     pendingAutoplayRef.current = shouldResumePlayback;
     retriedCurrentSourceRef.current = false;
     sourceRetryCountRef.current = 0;
     fallbackSourceRef.current = '';
     lastAssignedSourceKeyRef.current = nextSourceKey;
-    const cachedProgress = getCachedPlaybackProgress(activeSource.movieId);
+    const cachedProgress = activeSource.disableResume
+      ? null
+      : getCachedPlaybackProgress(activeSource.movieId);
     pendingResumeRef.current =
       resumePosition >= 1
         ? {
@@ -1513,23 +1594,38 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setBufferedUntil(0);
     setPlaybackPhaseSafe('loading');
 
-    videoElement.pause();
-    videoElement.src = activeSource.sourceUrl;
-    videoElement.load();
+    try {
+      videoElement.pause();
+      videoElement.currentTime = 0;
+      videoElement.removeAttribute('src');
+      videoElement.load();
+      videoElement.src = activeSource.sourceUrl;
+      videoElement.load();
+      scheduleManifestWakeup('manifest-timeout');
+    } catch (error) {
+      console.warn('[player] failed to assign source', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }, [
     activeSource?.autoplay,
+    activeSource?.disableResume,
     activeSource?.movieId,
     activeSource?.sessionKey,
     activeSource?.sourceUrl,
+    videoElementState,
     clearFatalError,
+    clearManifestWakeupTimer,
+    clearNextCountdownTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
     resolveResumePosition,
+    scheduleManifestWakeup,
     setPlaybackPhaseSafe,
   ]);
 
   useEffect(() => {
-    if (!activeSource?.movieId || !activeSource.sourceUrl) {
+    if (!activeSource?.movieId || !activeSource.sourceUrl || activeSource.disableResume) {
       return;
     }
 
@@ -1556,6 +1652,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       isActive = false;
     };
   }, [
+    activeSource?.disableResume,
     activeSource?.movieId,
     activeSource?.sessionKey,
     activeSource?.sourceUrl,
@@ -2360,8 +2457,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setPlaybackPhaseSafe('loading');
     setBufferedUntil(0);
     showControls(true);
+    scheduleManifestWakeup('manifest-loadstart-timeout');
     scheduleStallRecovery('load-start');
-  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, showControls]);
+  }, [
+    clearFatalError,
+    scheduleManifestWakeup,
+    scheduleStallRecovery,
+    setPlaybackPhaseSafe,
+    showControls,
+  ]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2375,10 +2479,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     setDuration(Number.isFinite(videoElement.duration) ? videoElement.duration : 0);
+    clearManifestWakeupTimer();
     applyPendingResume();
     setCurrentTime(Number.isFinite(videoElement.currentTime) ? videoElement.currentTime : 0);
     syncBufferedProgress();
-  }, [applyPendingResume, syncBufferedProgress]);
+  }, [applyPendingResume, clearManifestWakeupTimer, syncBufferedProgress]);
 
   const handleCanPlay = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2388,6 +2493,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const videoElement = videoRef.current;
 
     clearFatalError();
+    clearManifestWakeupTimer();
     clearSourceRetryTimer();
     clearStallRecoveryTimers();
     sourceRetryCountRef.current = 0;
@@ -2412,6 +2518,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     applyPendingResume,
     clearFatalError,
+    clearManifestWakeupTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
     setPlaybackPhaseSafe,
@@ -2514,8 +2621,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     clearFatalError();
+    clearManifestWakeupTimer();
     clearSourceRetryTimer();
     clearStallRecoveryTimers();
+    clearNextCountdownTimer();
     sourceRetryCountRef.current = 0;
     lastProgressAtRef.current = Date.now();
     lastProgressTimeRef.current = videoRef.current?.currentTime || 0;
@@ -2524,6 +2633,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     showControls();
   }, [
     clearFatalError,
+    clearManifestWakeupTimer,
+    clearNextCountdownTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
     setPlaybackPhaseSafe,
@@ -2556,7 +2667,33 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     rememberPlaybackPosition();
     setPlaybackPhaseSafe('ended');
     setControlsVisible(true);
-  }, [rememberPlaybackPosition, setPlaybackPhaseSafe, syncWatchHistory]);
+    clearNextCountdownTimer();
+
+    if (!activeSource?.onNext || !activeSource.nextActionKey) {
+      return;
+    }
+
+    setNextCountdownSeconds(NEXT_AUTOPLAY_COUNTDOWN_SECONDS);
+    nextCountdownIntervalRef.current = setInterval(() => {
+      setNextCountdownSeconds((currentValue) => {
+        if (currentValue === null) {
+          return null;
+        }
+
+        return Math.max(0, currentValue - 1);
+      });
+    }, 1000);
+    nextCountdownTimerRef.current = setTimeout(() => {
+      clearNextCountdownTimer();
+      activeSource.onNext?.();
+    }, NEXT_AUTOPLAY_COUNTDOWN_SECONDS * 1000);
+  }, [
+    activeSource,
+    clearNextCountdownTimer,
+    rememberPlaybackPosition,
+    setPlaybackPhaseSafe,
+    syncWatchHistory,
+  ]);
 
   const handleWaiting = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2611,11 +2748,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         lastKnownPlaybackRef.current[sourceKey] = snapshot;
       }
 
-      lastKnownPlaybackRef.current[`movie:${activeSource.movieId}`] = snapshot;
+      const sessionProgressKey = activeSource.sessionKey || sourceKey || activeSource.movieId;
+
+      if (sessionProgressKey) {
+        lastKnownPlaybackRef.current[`session:${sessionProgressKey}`] = snapshot;
+      }
 
       if (Date.now() - lastSessionProgressPersistAtRef.current > 4000) {
         lastSessionProgressPersistAtRef.current = Date.now();
-        writeSessionProgress(activeSource.movieId, snapshot);
+        writeSessionProgress(sessionProgressKey, snapshot);
       }
     }
 
@@ -2653,6 +2794,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }
 
     rememberPlaybackPosition();
+    clearManifestWakeupTimer();
     clearStallRecoveryTimers();
 
     if (
@@ -2694,6 +2836,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     activeSource,
     clearFatalError,
+    clearManifestWakeupTimer,
     clearStallRecoveryTimers,
     currentTime,
     rememberPlaybackPosition,
@@ -3036,6 +3179,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const playedPercent =
     duration > 0 ? clamp((currentTime / duration) * 100, 0, 100) : 0;
   const activeTimeLabel = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+  const hasNextAction = Boolean(activeSource?.onNext && activeSource.nextActionKey);
+  const nextActionLabel = activeSource?.nextLabel || 'Next';
   const showCenterAction =
     !isMiniMode &&
     (playbackPhase === 'paused' ||
@@ -3052,6 +3197,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     ) : (
       <Volume2 size={18} />
     );
+
+  const triggerNextAction = useCallback(() => {
+    if (!activeSource?.onNext) {
+      return;
+    }
+
+    clearNextCountdownTimer();
+    activeSource.onNext();
+  }, [activeSource, clearNextCountdownTimer]);
 
   const contextValue = useMemo<PlaybackContextValue>(
     () => ({
@@ -3112,9 +3266,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         >
           <div className="relative h-full w-full bg-black">
             <video
+              key={getPlaybackSourceKey(activeSource) || 'idle'}
               ref={setVideoElement}
               poster={activeSource.poster || ''}
-              preload="metadata"
+              preload="auto"
               playsInline
               autoPlay={Boolean(activeSource.autoplay)}
               controls={false}
@@ -3138,6 +3293,29 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               onDurationChange={handleLoadedMetadata}
               onError={handleVideoError}
             />
+
+            {nextCountdownSeconds !== null && hasNextAction ? (
+              <div className="pointer-events-none absolute inset-0 z-[4] flex items-center justify-center px-6">
+                <div className="pointer-events-auto max-w-[min(92vw,420px)] rounded-[28px] border border-white/12 bg-black/72 px-6 py-5 text-center shadow-[0_26px_80px_rgba(0,0,0,0.52)] backdrop-blur-2xl">
+                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/68">
+                    {activeSource.nextCountdownLabel || 'Next starts in'}
+                  </p>
+                  <p className="mt-2 text-4xl font-black tabular-nums text-white">
+                    {nextCountdownSeconds}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      triggerNextAction();
+                    }}
+                    className="mt-4 inline-flex items-center justify-center rounded-full bg-[#D90429] px-5 py-2 text-[11px] font-black uppercase tracking-[0.18em] text-white shadow-[0_12px_32px_rgba(217,4,41,0.34)] transition-transform hover:scale-[1.02]"
+                  >
+                    Play now
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {!isMiniMode ? (
               <button
@@ -3372,6 +3550,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             >
                               <Pause size={18} />
                             </PlayerShellButton>
+                            {hasNextAction ? (
+                              <PlayerShellButton
+                                ariaLabel={nextActionLabel}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  triggerNextAction();
+                                }}
+                                className="h-10 w-10 border-[#D90429]/45 bg-[#D90429]/20 text-[#FFD7DF]"
+                              >
+                                <SkipForward size={15} />
+                              </PlayerShellButton>
+                            ) : null}
                             <PlayerShellButton
                               ariaLabel="Forward 10 seconds"
                               onClick={(event) => {
@@ -3655,6 +3845,20 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                               <Play size={20} className="translate-x-[1px]" />
                             )}
                           </PlayerShellButton>
+                          {hasNextAction ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                triggerNextAction();
+                              }}
+                              className="inline-flex h-11 items-center gap-2 rounded-full border border-[#D90429]/35 bg-[#D90429]/16 px-3 text-[11px] font-black uppercase tracking-[0.15em] text-[#FFD7DF] transition-colors hover:border-[#D90429]/55 hover:bg-[#D90429]/24"
+                              aria-label={nextActionLabel}
+                            >
+                              <SkipForward size={16} />
+                              <span className="hidden md:inline">{nextActionLabel}</span>
+                            </button>
+                          ) : null}
                           <PlayerShellButton
                             ariaLabel="Forward 10 seconds"
                             onClick={(event) => {
@@ -3820,6 +4024,19 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             <Play size={18} className="translate-x-[1px]" />
                           )}
                         </PlayerShellButton>
+
+                        {hasNextAction ? (
+                          <PlayerShellButton
+                            ariaLabel={nextActionLabel}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              triggerNextAction();
+                            }}
+                            className="h-9 w-9 border-[#D90429]/45 bg-[#D90429]/20 text-[#FFD7DF]"
+                          >
+                            <SkipForward size={15} />
+                          </PlayerShellButton>
+                        ) : null}
 
                         <PlayerShellButton
                           ariaLabel="Forward 10 seconds"
