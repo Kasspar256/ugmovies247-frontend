@@ -61,6 +61,12 @@ Status: code changed locally, not deployed.
 
 Purpose: remove the extra "Preparing Player" stage, force clean video remounts on episode/source changes, prevent episode timestamp leaks, add next episode/movie queueing, and center the active episode thumbnail in the rail.
 
+Final adjustments included:
+
+- Prevent the false "Video Unavailable" flash while the exact playback source is still hydrating.
+- Make the seek bar scrub continuously on drag/touch and keep the runtime label readable in landscape mobile layouts.
+- Queue a related series/movie recommendation when the viewer finishes the absolute last episode of a series.
+
 Files changed:
 
 - `src/components/player/PlaybackProvider.tsx`
@@ -70,8 +76,11 @@ Verification needed before deploy:
 
 - Run `npm run build` in the Linux repo.
 - Open a movie and confirm Play goes straight into the video canvas loading state with no "Preparing Player" box.
+- Open a movie from a cold load and confirm "Video Unavailable" does not flash before the source lookup completes.
 - Start Episode 1 near the end, switch to Episode 2, and confirm Episode 2 starts at `0:00`.
 - Let a series episode end and confirm the 5-second next-episode countdown appears and advances automatically.
+- Let the final episode of a series end and confirm the countdown queues a related/new series instead of stopping dead.
+- Drag the seek bar thumb forward/backward on Android portrait and landscape and confirm the runtime text remains visible.
 - Let a movie end with related movies available and confirm the first related title can be skipped to from the player.
 - Open a high episode number and confirm the episode rail centers the active episode thumbnail automatically.
 

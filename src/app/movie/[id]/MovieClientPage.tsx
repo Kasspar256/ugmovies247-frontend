@@ -288,6 +288,9 @@ const [actionMessage, setActionMessage] = useState('');
 const [showPremiumDownloadModal, setShowPremiumDownloadModal] = useState(false);
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
 const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(() => hasCachedPremiumAccess());
+const [isSourceHydrating, setIsSourceHydrating] = useState(
+  () => Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie))
+);
 const [seriesSourceEntries, setSeriesSourceEntries] = useState<Movie[]>(
   () => initialResolvedMovieState?.sourceEntries || []
 );
@@ -308,6 +311,7 @@ const shouldBypassCatalogCache =
 useEffect(() => {
 setIsTrailerPlaying(false);
 setHasLocalPremiumAccess(hasCachedPremiumAccess());
+setIsSourceHydrating(Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie)));
 }, [params.id, routeInitialMovie]);
 
 useEffect(() => {
@@ -330,6 +334,11 @@ const applyResolvedMovie = (nextMovie: Movie, catalogMovies: Movie[] = []) => {
       ? sourceEntries.map((entry) => applyLocalPremiumAccessToMovie(entry, true))
       : sourceEntries
   );
+
+  if (movieHasAnyPlaybackSource(resolvedMovie) || movieHasAnyPlaybackSource(nextMovie)) {
+    setIsSourceHydrating(false);
+  }
+
   setLoading(false);
 };
 
@@ -352,6 +361,7 @@ if (routeInitialMovie) {
   applyResolvedMovie(routeInitialMovie, initialCatalogForRoute);
 
   if (!movieHasAnyPlaybackSource(routeInitialMovie)) {
+    setIsSourceHydrating(true);
     void fetchPublicMovieById(params.id)
       .then((freshMovie) => {
         if (!active) {
@@ -367,8 +377,14 @@ if (routeInitialMovie) {
       })
       .catch((error) => {
         console.warn('[movie-page] silent exact source refresh failed after bootstrap render', error);
+      })
+      .finally(() => {
+        if (active) {
+          setIsSourceHydrating(false);
+        }
       });
   } else if (!shouldBypassCatalogCache) {
+    setIsSourceHydrating(false);
     void fetchPublicMovies()
       .then((catalogMovies) => {
         if (!active) {
@@ -415,6 +431,10 @@ const cachedMovie = cachedMovies.find((candidate) =>
 
 if (cachedMovie && !renderedMovie) {
   applyResolvedMovie(cachedMovie, cachedMovies);
+
+  if (!movieHasAnyPlaybackSource(cachedMovie)) {
+    setIsSourceHydrating(true);
+  }
 }
 
 const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
@@ -427,6 +447,7 @@ const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
 });
 
 if (freshMovie) {
+setIsSourceHydrating(false);
 applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
 void fetchPublicMovies({ force: shouldBypassCatalogCache })
   .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
@@ -437,6 +458,7 @@ return;
 }
 
 if (renderedMovie) {
+  setIsSourceHydrating(false);
   return;
 }
 
@@ -446,6 +468,7 @@ const matchedMovie = allMovies.find((candidate) =>
 );
 
 if (matchedMovie) {
+setIsSourceHydrating(false);
 applyResolvedMovie(matchedMovie, allMovies);
 return;
 }
@@ -456,12 +479,14 @@ const downloadRecord = await getUserDownloadByMovieId(params.id);
 if (downloadRecord) {
 const normalizedDownloadMovie = normalizeMovie(downloadRecord.movieId, downloadRecord);
 applyResolvedMovie(normalizedDownloadMovie, allMovies);
+setIsSourceHydrating(false);
 setIsSavedToDownloads(true);
 return;
 }
 }
 
 if (!renderedMovie) {
+  setIsSourceHydrating(false);
   setSeriesSourceEntries([]);
   setMovie(null);
 }
@@ -469,6 +494,7 @@ if (!renderedMovie) {
 console.error(err);
 } finally {
 if (active && !renderedMovie) {
+setIsSourceHydrating(false);
 setLoading(false);
 }
 }
@@ -969,7 +995,12 @@ const nextEpisode =
   nextEpisodeIndex > 0 && nextEpisodeIndex < selectedSeasonEpisodes.length
     ? selectedSeasonEpisodes[nextEpisodeIndex]
     : undefined;
-const nextRelatedMovie = !activeEpisode && !selectedPart ? relatedMovies[0] : undefined;
+const nextSeriesRecommendation =
+  activeEpisode && !nextEpisode
+    ? relatedMovies.find((candidate) => candidate.id !== movie?.id && isSeriesMovie(candidate)) ||
+      relatedMovies.find((candidate) => candidate.id !== movie?.id)
+    : undefined;
+const nextMovieRecommendation = !activeEpisode && !selectedPart ? relatedMovies[0] : undefined;
 const queueNextEpisode = useCallback(() => {
   if (!selectedSeason || !nextEpisode) {
     return;
@@ -977,30 +1008,65 @@ const queueNextEpisode = useCallback(() => {
 
   syncSeriesSelection(selectedSeason.seasonNumber, nextEpisode.episodeNumber);
 }, [nextEpisode, selectedSeason, syncSeriesSelection]);
-const queueRelatedMovie = useCallback(() => {
-  if (!nextRelatedMovie?.id) {
+const getAutoplayHrefForRecommendation = useCallback((recommendedMovie: Movie) => {
+  const targetId = recommendedMovie.id || recommendedMovie.movieId;
+  const nextParams = new URLSearchParams();
+  nextParams.set('autoplay', '1');
+
+  if (isSeriesMovie(recommendedMovie)) {
+    const firstSeason = [...(recommendedMovie.seasons || [])]
+      .filter((season) => season.episodes?.length)
+      .sort((left, right) => left.seasonNumber - right.seasonNumber)[0];
+    const firstEpisode = firstSeason
+      ? [...(firstSeason.episodes || [])].sort(
+          (left, right) => left.episodeNumber - right.episodeNumber
+        )[0]
+      : undefined;
+
+    if (firstSeason && firstEpisode) {
+      nextParams.set('season', String(firstSeason.seasonNumber));
+      nextParams.set('episode', String(firstEpisode.episodeNumber));
+    }
+  }
+
+  return `/movie/${targetId}?${nextParams.toString()}`;
+}, []);
+const queueRecommendedTitle = useCallback(() => {
+  const recommendedMovie = nextSeriesRecommendation || nextMovieRecommendation;
+
+  if (!recommendedMovie?.id && !recommendedMovie?.movieId) {
     return;
   }
 
-  router.push(`/movie/${nextRelatedMovie.id}?autoplay=1`);
-}, [nextRelatedMovie?.id, router]);
+  router.push(getAutoplayHrefForRecommendation(recommendedMovie));
+}, [getAutoplayHrefForRecommendation, nextMovieRecommendation, nextSeriesRecommendation, router]);
 const playbackNextAction = activeEpisode
   ? nextEpisode
     ? queueNextEpisode
+    : nextSeriesRecommendation
+      ? queueRecommendedTitle
+      : undefined
+  : nextMovieRecommendation
+    ? queueRecommendedTitle
     : undefined
-  : nextRelatedMovie
-    ? queueRelatedMovie
-    : undefined;
 const playbackNextActionKey = activeEpisode
   ? nextEpisode
     ? `series-${selectedSeason?.seasonNumber || 1}-${nextEpisode.episodeNumber}`
-    : ''
-  : nextRelatedMovie
-    ? `movie-${nextRelatedMovie.id}`
+    : nextSeriesRecommendation
+      ? `series-recommendation-${nextSeriesRecommendation.id || nextSeriesRecommendation.movieId}`
+      : ''
+  : nextMovieRecommendation
+    ? `movie-${nextMovieRecommendation.id || nextMovieRecommendation.movieId}`
     : '';
-const playbackNextLabel = activeEpisode ? 'Next Episode' : 'Skip Movie';
+const playbackNextLabel = activeEpisode
+  ? nextEpisode
+    ? 'Next Episode'
+    : 'Next Series'
+  : 'Skip Movie';
 const playbackNextCountdownLabel = activeEpisode
-  ? 'Next episode starting in'
+  ? nextEpisode
+    ? 'Next episode starting in'
+    : 'Next series starting in'
   : 'Next movie starting in';
 const playbackTitle = activeEpisode
   ? `${movie?.title || movie?.name} - S${selectedSeason?.seasonNumber || 1} EP ${activeEpisode.episodeNumber}`
@@ -1484,6 +1550,8 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
 const hasPlaybackSource = !isAppInReview && (Boolean(playbackVideoUrl) || isMp4TrailerPlaying);
+const isPlaybackSourceHydrating =
+  !hasPlaybackSource && !isPlaybackLocked && !isAppInReview && isSourceHydrating;
 const showPlayerPreviewBackdrop =
   Boolean(playerBackdrop) && !isMp4TrailerPlaying && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
 
@@ -1554,6 +1622,21 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
       hasPlaybackSource ? (
         <div className="relative z-10 h-full w-full">
           <PersistentPlaybackHost active className="h-full w-full" />
+        </div>
+      ) : isPlaybackSourceHydrating ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black">
+          {playbackPoster ? (
+            <>
+              <img
+                src={playbackPoster}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover opacity-25 blur-[1px]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/38 via-black/68 to-black/82" />
+            </>
+          ) : null}
+          <div className="relative z-10 h-14 w-14 rounded-full border-2 border-white/16 border-t-[#D90429] animate-spin shadow-[0_0_32px_rgba(217,4,41,0.24)]" />
         </div>
       ) : (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/34 px-6 text-center">

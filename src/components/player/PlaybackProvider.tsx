@@ -10,10 +10,12 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type FormEvent as ReactFormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type TouchEvent as ReactTouchEvent,
 } from 'react';
 import { useRouter } from 'next/navigation';
 import {
@@ -684,6 +686,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [miniPlayerPosition, setMiniPlayerPosition] = useState<MiniPlayerPosition | null>(null);
   const [isDraggingMiniPlayer, setIsDraggingMiniPlayer] = useState(false);
   const [nextCountdownSeconds, setNextCountdownSeconds] = useState<number | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState<number | null>(null);
   const effectiveFullscreen = isFullscreen || softLandscapeFullscreen;
 
   useEffect(() => {
@@ -3055,6 +3059,74 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [duration]
   );
 
+  const previewScrubValue = useCallback(
+    (target: HTMLInputElement) => {
+      if (!duration) {
+        return;
+      }
+
+      const nextTime = clamp(Number(target.value) || 0, 0, duration);
+      setIsScrubbing(true);
+      setScrubTime(nextTime);
+      seekTo(nextTime);
+      showControls(true);
+    },
+    [duration, seekTo, showControls]
+  );
+
+  const handleScrubberInput = useCallback(
+    (event: ReactFormEvent<HTMLInputElement>) => {
+      event.stopPropagation();
+      previewScrubValue(event.currentTarget);
+    },
+    [previewScrubValue]
+  );
+
+  const handleScrubberMouseMove = useCallback(
+    (event: ReactMouseEvent<HTMLInputElement>) => {
+      if (!isScrubbing && event.buttons !== 1) {
+        return;
+      }
+
+      event.stopPropagation();
+      previewScrubValue(event.currentTarget);
+    },
+    [isScrubbing, previewScrubValue]
+  );
+
+  const handleScrubberTouchMove = useCallback(
+    (event: ReactTouchEvent<HTMLInputElement>) => {
+      if (!isScrubbing) {
+        return;
+      }
+
+      event.stopPropagation();
+      previewScrubValue(event.currentTarget);
+    },
+    [isScrubbing, previewScrubValue]
+  );
+
+  const handleScrubberDragStart = useCallback(
+    (event: ReactPointerEvent<HTMLInputElement>) => {
+      event.stopPropagation();
+      setIsScrubbing(true);
+      previewScrubValue(event.currentTarget);
+      showControls(true);
+    },
+    [previewScrubValue, showControls]
+  );
+
+  const handleScrubberDragEnd = useCallback(
+    (event: ReactPointerEvent<HTMLInputElement>) => {
+      event.stopPropagation();
+      previewScrubValue(event.currentTarget);
+      setIsScrubbing(false);
+      setScrubTime(null);
+      showControls();
+    },
+    [previewScrubValue, showControls]
+  );
+
   const handleScrubberPointerLeave = useCallback(() => {
     setHoverPreviewRatio(null);
     setHoverPreviewTime(null);
@@ -3176,9 +3248,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   const bufferedPercent =
     duration > 0 ? clamp((bufferedUntil / duration) * 100, 0, 100) : 0;
+  const displayCurrentTime = isScrubbing && scrubTime !== null ? scrubTime : currentTime;
   const playedPercent =
-    duration > 0 ? clamp((currentTime / duration) * 100, 0, 100) : 0;
-  const activeTimeLabel = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+    duration > 0 ? clamp((displayCurrentTime / duration) * 100, 0, 100) : 0;
+  const activeTimeLabel = `${formatTime(displayCurrentTime)} / ${formatTime(duration)}`;
   const hasNextAction = Boolean(activeSource?.onNext && activeSource.nextActionKey);
   const nextActionLabel = activeSource?.nextLabel || 'Next';
   const showCenterAction =
@@ -3666,12 +3739,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                               min={0}
                               max={Math.max(duration, 0)}
                               step={0.1}
-                              value={Math.min(currentTime, duration || 0)}
+                              value={Math.min(displayCurrentTime, duration || 0)}
                               className="player-range absolute inset-0 z-10 h-full w-full"
-                              onChange={(event) => {
-                                seekTo(Number(event.target.value));
-                              }}
-                              onInput={() => showControls(true)}
+                              onPointerDown={handleScrubberDragStart}
+                              onPointerUp={handleScrubberDragEnd}
+                              onPointerCancel={handleScrubberDragEnd}
+                              onChange={handleScrubberInput}
+                              onInput={handleScrubberInput}
+                              onMouseMove={handleScrubberMouseMove}
+                              onTouchMove={handleScrubberTouchMove}
                             />
                           </div>
 
@@ -3726,7 +3802,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             </button>
                           </div>
 
-                          <div className="min-w-0 flex-1 text-center text-[10px] font-black tabular-nums tracking-[0.12em] text-white/86">
+                          <div className="shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-black/64 px-2.5 py-1.5 text-center text-[9px] font-black tabular-nums tracking-[0.08em] text-white shadow-[0_8px_22px_rgba(0,0,0,0.28)] backdrop-blur-xl min-[390px]:px-3 min-[390px]:text-[10px]">
                             {activeTimeLabel}
                           </div>
 
@@ -3801,12 +3877,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             min={0}
                             max={Math.max(duration, 0)}
                             step={0.1}
-                            value={Math.min(currentTime, duration || 0)}
+                            value={Math.min(displayCurrentTime, duration || 0)}
                             className="player-range absolute inset-0 z-10 h-full w-full"
-                            onChange={(event) => {
-                              seekTo(Number(event.target.value));
-                            }}
-                            onInput={() => showControls(true)}
+                            onPointerDown={handleScrubberDragStart}
+                            onPointerUp={handleScrubberDragEnd}
+                            onPointerCancel={handleScrubberDragEnd}
+                            onChange={handleScrubberInput}
+                            onInput={handleScrubberInput}
+                            onMouseMove={handleScrubberMouseMove}
+                            onTouchMove={handleScrubberTouchMove}
                           />
                         </div>
 
@@ -3869,7 +3948,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             <SkipForward size={18} />
                           </PlayerShellButton>
 
-                          <div className="ml-1 rounded-full border border-white/10 bg-black/38 px-3 py-2 text-[11px] font-black uppercase tracking-[0.16em] text-white/80">
+                          <div className="ml-1 shrink-0 whitespace-nowrap rounded-full border border-white/12 bg-black/64 px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-white shadow-[0_8px_22px_rgba(0,0,0,0.25)] backdrop-blur-xl">
                             {activeTimeLabel}
                           </div>
                         </div>
