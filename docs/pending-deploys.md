@@ -4,6 +4,27 @@ Keep this list as the holding area for fixes that are ready to ship later. Do no
 
 ## Pending
 
+### Series Request Uploader Worker Fix
+
+Status: code changed locally, not deployed.
+
+Purpose: fix request-series episode uploads so worker output is written to the exact season/episode asset, avoid all episodes sharing one `video.mp4` R2 object, and show the real worker error on the admin queue card instead of only "Failed".
+
+Files changed:
+
+- `request-worker/request-worker.js`
+- `src/app/api/admin/request-jobs/route.ts`
+- `src/components/admin/requests/RequestFulfillmentWorkflow.tsx`
+- `src/types/admin.ts`
+
+Verification needed before deploy:
+
+- Run the main app build in the Linux repo.
+- Reinstall or copy the updated `request-worker/request-worker.js` to the isolated request-worker server before retrying series jobs.
+- Retry the failed `3%` series request job from `/admin/requests/queue`.
+- Confirm the failed card now shows the exact worker error if it fails again.
+- Confirm a successful series episode writes a distinct URL like `requested/{seriesId}/season-1/episode-1.mp4` and plays under the requested series episode.
+
 ### Catalog Rendering Performance Refactor
 
 Status: code changed locally, not deployed.
@@ -183,11 +204,11 @@ Verification needed before deploy:
 - Test admin login, paid-user login, movie navigation, and opening several premium movies without subscription prompts.
 - Confirm expired/free users are still asked to subscribe.
 
-### Player Overlay UX Overhaul
+### Player Overlay VLC Rollback and Cleanup
 
 Status: code changed locally, not deployed.
 
-Purpose: replace the cluttered full-player overlay with a cleaner VOD-style control layer: centered 10-second rewind/play/forward controls, real previous/next media buttons, invisible brightness/volume swipe zones, a bottom-right screen lock, and a slimmer red seek bar with visible unplayed track.
+Purpose: strip the over-styled glass player overlay back to a clean VLC-style control layer, keep portrait mode minimal, restore fullscreen and Cast controls, and stop retries from auto-playing after a user manually pauses.
 
 Files changed:
 
@@ -197,8 +218,12 @@ Files changed:
 Verification needed before deploy:
 
 - Run `npm run build` in the Linux repo.
-- Open a movie on Android portrait and landscape, confirm the old side sliders, settings, cast, and PiP clutter no longer appear on the main overlay.
-- Confirm center controls seek by 10 seconds, while the outer previous/next buttons move to previous or next episode/part/title.
+- Open a movie on Android portrait and confirm only play/pause, the clean seek bar, and the fullscreen/landscape button appear.
+- Confirm the loading spinner is a red-and-white ring with a transparent center over the video.
+- Pause a movie and leave it idle for at least 30 seconds; it must stay paused and never auto-resume from retry/watchdog logic.
+- Expand to landscape and confirm the center controls are transparent VLC-style 10-second rewind, play/pause, and 10-second forward controls.
+- Confirm the embedded Cast button is visible in the landscape/full player overlay and still starts Chromecast/AirPlay.
+- Confirm the fullscreen button uses native fullscreen on Android and `webkitEnterFullscreen` on iPhone/Safari.
+- Confirm previous/next media buttons only appear in landscape/full player mode.
 - Confirm the previous button stays visible but dimmed/disabled when no previous item exists.
-- Swipe left half vertically for brightness and right half vertically for volume, then confirm only a temporary percentage pill appears.
-- Tap the bottom-right lock, confirm all taps/swipes are ignored until the lock is tapped again.
+- Swipe left half vertically for brightness and right half vertically for volume in landscape; the zones must stay invisible and only show a temporary percentage indicator.

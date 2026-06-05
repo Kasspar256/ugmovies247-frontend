@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import {
   MOVIE_REQUESTS_COLLECTION,
   REQUEST_PROCESSING_JOBS_COLLECTION,
@@ -69,6 +70,16 @@ function mapRequestJobDoc(doc: { id: string; data: () => Record<string, unknown>
     title: String(data.title || 'Untitled request job'),
     userEmail: String(data.userEmail || ''),
     contentType: data.contentType === 'series' ? 'series' : 'movie',
+    seasonNumber:
+      data.seasonNumber === null || data.seasonNumber === undefined
+        ? null
+        : Math.max(1, Math.round(normalizeNumber(data.seasonNumber))),
+    episodeNumber:
+      data.episodeNumber === null || data.episodeNumber === undefined
+        ? null
+        : Math.max(1, Math.round(normalizeNumber(data.episodeNumber))),
+    episodeTitle: String(data.episodeTitle || ''),
+    episodeDescription: String(data.episodeDescription || ''),
     status: normalizeJobStatus(data.status),
     progress: Math.max(0, Math.min(100, normalizeNumber(data.progress))),
     currentStage: String(data.currentStage || ''),
@@ -107,6 +118,58 @@ function isRequestFulfillmentJob(job: RequestProcessingJob) {
   }
 
   return job.processorQueue === REQUEST_PROCESSOR_QUEUE && Boolean(job.requestId && job.movieId);
+}
+
+async function resetLinkedRequestAsset(job: RequestProcessingJob, timestamp: string) {
+  if (!job.movieId) {
+    return;
+  }
+
+  const movieRef = adminDb.collection(MOVIES_COLLECTION).doc(job.movieId);
+  const basePatch = {
+    jobStatus: 'queued',
+    currentStage: 'Queued for request VPS final processing',
+    processingProgress: 0,
+    errorMessage: '',
+    updatedAt: timestamp,
+  };
+
+  if (job.contentType !== 'series' || !job.seasonNumber || !job.episodeNumber) {
+    await movieRef.set(basePatch, { merge: true });
+    return;
+  }
+
+  const snapshot = await movieRef.get().catch(() => null);
+  const data = snapshot?.data() || {};
+  const seasons = Array.isArray(data.seasons) ? data.seasons : [];
+
+  const nextSeasons = seasons.map((season) => {
+    if (Number(season?.seasonNumber) !== job.seasonNumber) {
+      return season;
+    }
+
+    const episodes = Array.isArray(season.episodes) ? season.episodes : [];
+
+    return {
+      ...season,
+      episodes: episodes.map((episode) =>
+        Number(episode?.episodeNumber) === job.episodeNumber
+          ? {
+              ...episode,
+              ...basePatch,
+            }
+          : episode
+      ),
+    };
+  });
+
+  await movieRef.set(
+    {
+      ...basePatch,
+      ...(nextSeasons.length ? { seasons: nextSeasons } : {}),
+    },
+    { merge: true }
+  );
 }
 
 function getRequestJobId(body: Record<string, unknown>) {
@@ -248,6 +311,8 @@ export async function PATCH(request: Request) {
       },
       { merge: true }
     );
+
+    await resetLinkedRequestAsset(job, timestamp);
 
     if (requestRef) {
       await requestRef.set(

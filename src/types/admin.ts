@@ -113,6 +113,10 @@ export type RequestProcessingJob = {
   title: string;
   userEmail: string;
   contentType: 'movie' | 'series';
+  seasonNumber?: number | null;
+  episodeNumber?: number | null;
+  episodeTitle?: string;
+  episodeDescription?: string;
   status: RequestProcessingJobStatus;
   progress: number;
   currentStage: string;

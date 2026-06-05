@@ -111,12 +111,41 @@ function slugify(value) {
     .slice(0, 80) || 'movie';
 }
 
+function positiveInteger(value, fallback = 1) {
+  const numeric = Number(value);
+
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : fallback;
+}
+
+function objectKeySegment(value, fallback = 'asset') {
+  return String(value || fallback)
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/[\\?#]+/g, '-')
+    .replace(/\s+/g, '-')
+    .slice(0, 160) || fallback;
+}
+
 function getCollections() {
   return {
     jobs: process.env.REQUEST_PROCESSING_JOBS_COLLECTION || 'request_processing_jobs',
     requests: process.env.MOVIE_REQUESTS_COLLECTION || 'movie_requests',
     movies: process.env.MOVIES_COLLECTION || 'movies__production',
   };
+}
+
+function getRequestVideoR2Key(job) {
+  const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
+  const movieId = objectKeySegment(job.movieId, 'movie');
+
+  if (job.contentType === 'series') {
+    const seasonNumber = positiveInteger(job.seasonNumber, 1);
+    const episodeNumber = positiveInteger(job.episodeNumber, 1);
+
+    return `${keyPrefix}/${movieId}/season-${seasonNumber}/episode-${episodeNumber}.mp4`;
+  }
+
+  return `${keyPrefix}/${movieId}/video.mp4`;
 }
 
 function getTelegramConcurrencyLimit() {
@@ -600,14 +629,62 @@ async function updateProgress(db, job, patch) {
     ...(progress !== undefined ? { processingProgress: progress } : {}),
     ...(patch.errorMessage ? { errorMessage: patch.errorMessage } : {}),
   };
+  const movieRef = db.collection(collections.movies).doc(job.movieId);
+  const movieProgressUpdate =
+    job.contentType === 'series'
+      ? updateSeriesEpisodeProgress(movieRef, job, moviePatch)
+      : movieRef.set(moviePatch, { merge: true });
 
   await Promise.all([
     db.collection(collections.jobs).doc(job.id).set(jobPatch, { merge: true }),
     db.collection(collections.requests).doc(job.requestId).set(requestPatch, { merge: true }),
-    db.collection(collections.movies).doc(job.movieId).set(moviePatch, { merge: true }),
+    movieProgressUpdate,
   ]);
 
   Object.assign(job, jobPatch);
+}
+
+async function updateSeriesEpisodeProgress(movieRef, job, moviePatch) {
+  const snapshot = await movieRef.get();
+  const data = snapshot.data() || {};
+  const shell = job.movieShell && typeof job.movieShell === 'object' ? job.movieShell : {};
+  const seasonNumber = positiveInteger(job.seasonNumber, 1);
+  const episodeNumber = positiveInteger(job.episodeNumber, 1);
+  const seasons = Array.isArray(data.seasons)
+    ? data.seasons.map((season) => ({ ...season }))
+    : Array.isArray(shell.seasons)
+      ? shell.seasons.map((season) => ({ ...season }))
+      : [];
+
+  const season = seasons.find((entry) => Number(entry.seasonNumber) === seasonNumber);
+
+  if (season) {
+    season.episodes = Array.isArray(season.episodes)
+      ? season.episodes.map((episode) =>
+          Number(episode.episodeNumber) === episodeNumber
+            ? {
+                ...episode,
+                ...moviePatch,
+                status: moviePatch.jobStatus === 'ready' ? 'live' : episode.status,
+              }
+            : episode
+        )
+      : [];
+  }
+
+  await movieRef.set(
+    {
+      jobStatus: moviePatch.jobStatus,
+      currentStage: moviePatch.currentStage,
+      updatedAt: moviePatch.updatedAt,
+      ...(moviePatch.processingProgress !== undefined
+        ? { processingProgress: moviePatch.processingProgress }
+        : {}),
+      ...(moviePatch.errorMessage ? { errorMessage: moviePatch.errorMessage } : {}),
+      ...(seasons.length ? { seasons } : {}),
+    },
+    { merge: true }
+  );
 }
 
 function createProgressReporter(db, job) {
@@ -2178,8 +2255,8 @@ async function writeSeriesEpisodeReady(db, job, publicVideoUrl, timestamp) {
   const snapshot = await ref.get();
   const data = snapshot.data() || {};
   const shell = job.movieShell && typeof job.movieShell === 'object' ? job.movieShell : {};
-  const seasonNumber = Math.max(1, Number(job.seasonNumber || 1));
-  const episodeNumber = Math.max(1, Number(job.episodeNumber || 1));
+  const seasonNumber = positiveInteger(job.seasonNumber, 1);
+  const episodeNumber = positiveInteger(job.episodeNumber, 1);
   const seasons = Array.isArray(data.seasons)
     ? data.seasons.map((season) => ({ ...season }))
     : Array.isArray(shell.seasons)
@@ -2343,8 +2420,7 @@ async function processJob(db, s3, job) {
   const workDir = path.join(requireEnv('WORK_DIR'), job.id);
   const sourcePath = path.join(workDir, 'source.bin');
   const outputPath = path.join(workDir, `${slugify(title)}.mp4`);
-  const keyPrefix = (process.env.R2_KEY_PREFIX || 'requested').replace(/^\/+|\/+$/g, '');
-  const r2Key = `${keyPrefix}/${job.movieId}/video.mp4`;
+  const r2Key = getRequestVideoR2Key(job);
 
   await fs.mkdir(workDir, { recursive: true });
 

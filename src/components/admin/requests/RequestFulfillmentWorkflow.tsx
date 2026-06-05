@@ -23,6 +23,10 @@ import type { AdminCategory, AdminRequest, RequestProcessingJob } from '@/types/
 import { parseApiResponse, uploadPosterToAdmin } from '@/lib/admin/directUploadClient';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
 import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
+import {
+  isTmdbMatureExclusive,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 
 type RequestDraft = {
   contentType: 'movie' | 'series';
@@ -62,10 +66,17 @@ type TmdbResult = {
   backdrop_path?: string | null;
   release_date?: string;
   first_air_date?: string;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
 };
 
 type TmdbDetails = TmdbResult & {
   genres?: Array<{ id: number; name: string }>;
+  release_dates?: unknown;
+  content_ratings?: unknown;
+  certification?: string;
+  rating?: string;
 };
 
 type TmdbSeasonEpisode = {
@@ -590,6 +601,10 @@ function TmdbLookup({
         releaseDate,
         releaseYear: getYearFromDate(releaseDate) || current.releaseYear,
         tmdbId: String(details.id || result.id),
+        categories: mergeMatureExclusiveCategory(
+          current.categories,
+          isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
+        ),
         nativeBackdrop: backdrop || current.nativeBackdrop,
         nativePoster: poster || current.nativePoster,
       }));
@@ -1030,6 +1045,16 @@ function RequestProcessingQueuePanel({
     const stageLabel = QUEUE_STAGES[currentStageIndex]?.label || 'Queued';
     const canRetry = stage !== 'ready' && stage !== 'queued';
     const canDelete = stage !== 'ready';
+    const episodeLabel =
+      job.contentType === 'series' && job.seasonNumber && job.episodeNumber
+        ? `S${job.seasonNumber} EP ${job.episodeNumber}${job.episodeTitle ? ` - ${job.episodeTitle}` : ''}`
+        : '';
+    const detailMessage =
+      stage === 'failed'
+        ? job.errorMessage || job.currentStage || 'The request worker failed before reporting a detailed error.'
+        : stage === 'stalled'
+          ? 'No request-worker heartbeat for over 30 minutes. Check the worker or retry from the source.'
+          : job.currentStage || job.errorMessage || 'Waiting for worker update';
 
     return (
       <div key={job.id} className="rounded-2xl border border-white/10 bg-[#0C1017] p-4">
@@ -1039,6 +1064,11 @@ function RequestProcessingQueuePanel({
             <div className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
               {job.contentType || 'movie'} / {stageLabel}
             </div>
+            {episodeLabel ? (
+              <div className="mt-1 line-clamp-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100/70">
+                {episodeLabel}
+              </div>
+            ) : null}
           </div>
           <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-black text-white/70">
             {progress}%
@@ -1073,10 +1103,13 @@ function RequestProcessingQueuePanel({
           })}
         </div>
         <div className="mt-3 line-clamp-2 text-xs leading-5 text-white/55">
-          {stage === 'stalled'
-            ? 'No request-worker heartbeat for over 30 minutes. Check the worker or retry from the source.'
-            : job.currentStage || job.errorMessage || 'Waiting for worker update'}
+          {detailMessage}
         </div>
+        {stage === 'failed' && job.errorMessage && job.currentStage && job.currentStage !== job.errorMessage ? (
+          <div className="mt-2 rounded-xl border border-red-300/15 bg-red-500/10 px-3 py-2 text-[11px] font-semibold leading-5 text-red-50/75">
+            Worker stage: {job.currentStage}
+          </div>
+        ) : null}
         {canRetry || canDelete ? (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {canRetry ? (
