@@ -64,6 +64,7 @@ Purpose: remove the extra "Preparing Player" stage, force clean video remounts o
 Final adjustments included:
 
 - Prevent the false "Video Unavailable" flash while the exact playback source is still hydrating.
+- Preserve the same live `<video>` node and buffered stream when expanding from mini/PiP back to the full player page.
 - Make the seek bar scrub continuously on drag/touch and keep the runtime label readable in landscape mobile layouts.
 - Queue a related series/movie recommendation when the viewer finishes the absolute last episode of a series.
 
@@ -77,6 +78,7 @@ Verification needed before deploy:
 - Run `npm run build` in the Linux repo.
 - Open a movie and confirm Play goes straight into the video canvas loading state with no "Preparing Player" box.
 - Open a movie from a cold load and confirm "Video Unavailable" does not flash before the source lookup completes.
+- While a video is playing in mini/PiP, tap expand and confirm the video resizes into the page without a network reload, black frame, or buffer reset.
 - Start Episode 1 near the end, switch to Episode 2, and confirm Episode 2 starts at `0:00`.
 - Let a series episode end and confirm the 5-second next-episode countdown appears and advances automatically.
 - Let the final episode of a series end and confirm the countdown queues a related/new series instead of stopping dead.

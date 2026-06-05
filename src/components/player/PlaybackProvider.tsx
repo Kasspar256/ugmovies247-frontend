@@ -1202,6 +1202,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           return currentSource;
         }
 
+        if (
+          currentSource &&
+          nextSource &&
+          getPlaybackSourceKey(currentSource) === getPlaybackSourceKey(nextSource)
+        ) {
+          return {
+            ...currentSource,
+            ...nextSource,
+            autoplay: Boolean(currentSource.autoplay || nextSource.autoplay),
+          };
+        }
+
         rememberPlaybackPosition(currentSource);
         return nextSource;
       });

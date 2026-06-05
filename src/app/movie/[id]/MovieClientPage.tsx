@@ -302,7 +302,7 @@ const router = useRouter();
 const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
-const { setPlaybackSource, videoElement } = usePlayback();
+const { activeSource, setPlaybackSource, videoElement } = usePlayback();
 const episodeButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const shouldAutoplay = searchParams.get('autoplay') === '1';
 const shouldBypassCatalogCache =
@@ -1202,6 +1202,10 @@ const isMp4TrailerPlaying = !isAppInReview && isTrailerPlaying && Boolean(upload
 const activePlaybackSessionKey = isMp4TrailerPlaying
   ? `trailer-${movie?.id || 'movie'}-${selectedSeason?.seasonNumber || 0}-${activeEpisode?.episodeNumber || selectedPartIndex + 1}-${uploadedTrailerUrl}`
   : playbackSessionKey;
+const activeMovieIdentity = movie ? movie.movieId || movie.id : '';
+const isCurrentProviderPlayback =
+  Boolean(activeSource?.sourceUrl && activeMovieIdentity) &&
+  activeSource?.movieId === activeMovieIdentity;
 
 useLayoutEffect(() => {
   if (!movie) {
@@ -1227,6 +1231,10 @@ useLayoutEffect(() => {
   }
 
   if (isAppInReview || isPlaybackLocked || !playbackVideoUrl) {
+    if (!playbackVideoUrl && isSourceHydrating && isCurrentProviderPlayback) {
+      return;
+    }
+
     setPlaybackSource(null);
     return;
   }
@@ -1254,8 +1262,10 @@ useLayoutEffect(() => {
     activeEpisode,
     castPlaybackUrl,
     currentMovieHref,
+    isCurrentProviderPlayback,
     isPlaybackLocked,
     isMp4TrailerPlaying,
+    isSourceHydrating,
     movie,
     playbackDescription,
     playbackFallbackUrl,
