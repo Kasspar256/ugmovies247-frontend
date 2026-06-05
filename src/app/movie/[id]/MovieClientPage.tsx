@@ -303,6 +303,13 @@ const pathname = usePathname();
 const searchParams = useSearchParams();
 const searchQueryString = searchParams.toString();
 const { activeSource, setPlaybackSource, videoElement } = usePlayback();
+const currentRoutePath = `/movie/${params.id}`;
+const activeSourceWatchHref = activeSource?.watchHref || '';
+const activeSourceWatchPath = activeSourceWatchHref.split('?')[0] || '';
+const isRouteActiveProviderPlayback = Boolean(
+  activeSource?.sourceUrl &&
+    (activeSource.movieId === params.id || activeSourceWatchPath === currentRoutePath)
+);
 const episodeButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 const shouldAutoplay = searchParams.get('autoplay') === '1';
 const shouldBypassCatalogCache =
@@ -1203,9 +1210,15 @@ const activePlaybackSessionKey = isMp4TrailerPlaying
   ? `trailer-${movie?.id || 'movie'}-${selectedSeason?.seasonNumber || 0}-${activeEpisode?.episodeNumber || selectedPartIndex + 1}-${uploadedTrailerUrl}`
   : playbackSessionKey;
 const activeMovieIdentity = movie ? movie.movieId || movie.id : '';
+const currentMoviePath = currentMovieHref.split('?')[0] || '';
 const isCurrentProviderPlayback =
   Boolean(activeSource?.sourceUrl && activeMovieIdentity) &&
-  activeSource?.movieId === activeMovieIdentity;
+  activeSource?.movieId === activeMovieIdentity &&
+  (
+    activeSourceWatchHref === currentMovieHref ||
+    activeSourceWatchPath === currentMoviePath ||
+    !playbackVideoUrl
+  );
 
 useLayoutEffect(() => {
   if (!movie) {
@@ -1231,7 +1244,7 @@ useLayoutEffect(() => {
   }
 
   if (isAppInReview || isPlaybackLocked || !playbackVideoUrl) {
-    if (!playbackVideoUrl && isSourceHydrating && isCurrentProviderPlayback) {
+    if (isCurrentProviderPlayback) {
       return;
     }
 
@@ -1539,16 +1552,33 @@ const handleCast = async () => {
   }
 };
 
-if (loading && !movie) {
+if ((loading && !movie) || (!movie && isRouteActiveProviderPlayback)) {
   return (
-    <main className="min-h-screen bg-[#0B0C10] px-4 pb-24 pt-6 text-white md:px-10 md:pt-[112px]">
-      <div className="mx-auto max-w-[1360px]">
-        <div className="poster-shimmer aspect-video w-full rounded-[28px] border border-white/10" />
-        <div className="mx-auto mt-8 max-w-2xl space-y-4 text-center">
-          <div className="mx-auto h-9 w-64 rounded-full bg-white/8" />
-          <div className="mx-auto h-4 w-44 rounded-full bg-white/6" />
-          <div className="mx-auto h-14 w-full max-w-xl rounded-[22px] bg-white/8" />
-        </div>
+    <main className="min-h-screen bg-[#0B0C10] pb-[calc(7.5rem+env(safe-area-inset-bottom))] text-white md:px-8 md:pb-10 md:pt-[88px] lg:px-10">
+      <div className="relative isolate mt-0 aspect-video w-full overflow-hidden bg-black md:mx-auto md:mt-6 md:w-[min(100%,1380px,calc((100svh-13rem)*16/9))] md:rounded-[28px] md:border md:border-white/8 md:shadow-[0_28px_80px_rgba(0,0,0,0.4)]">
+        {isRouteActiveProviderPlayback ? (
+          <PersistentPlaybackHost active className="h-full w-full" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span
+              className="relative inline-flex h-16 w-16 items-center justify-center rounded-full"
+              aria-label="Opening player"
+              role="status"
+            >
+              <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-xl" />
+              <span className="absolute inset-0 rounded-full border-[3px] border-white/90 border-t-[#D90429] shadow-[0_0_26px_rgba(217,4,41,0.42)] animate-spin" />
+              <span className="absolute inset-[7px] rounded-full border border-white/8 bg-black/22" />
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="px-7 pt-8 text-center">
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/46">
+          Opening player
+        </p>
+        <h1 className="mx-auto mt-4 max-w-xl text-4xl font-black leading-tight tracking-[-0.05em] text-white">
+          {activeSource?.title || 'UGMOVIES247'}
+        </h1>
       </div>
     </main>
   );
@@ -1559,11 +1589,16 @@ if (!movie) return ( <main className="min-h-screen bg-[#0B0C10] text-[#D90429] f
 );
 
 const subscribeHref = `/subscribe?returnTo=${encodeURIComponent(currentMovieHref)}`;
-const hasPlaybackSource = !isAppInReview && (Boolean(playbackVideoUrl) || isMp4TrailerPlaying);
+const hasProviderPlaybackForRoute = isCurrentProviderPlayback;
+const hasPlaybackSource =
+  !isAppInReview && (Boolean(playbackVideoUrl) || isMp4TrailerPlaying || hasProviderPlaybackForRoute);
 const isPlaybackSourceHydrating =
   !hasPlaybackSource && !isPlaybackLocked && !isAppInReview && isSourceHydrating;
 const showPlayerPreviewBackdrop =
-  Boolean(playerBackdrop) && !isMp4TrailerPlaying && (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
+  Boolean(playerBackdrop) &&
+  !hasProviderPlaybackForRoute &&
+  !isMp4TrailerPlaying &&
+  (isAppInReview || (!isPlaybackLocked && !hasPlaybackSource));
 
 return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[calc(7.5rem+env(safe-area-inset-bottom))] md:px-8 md:pb-10 md:pt-[88px] lg:px-10">
 
@@ -1605,7 +1640,7 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
           Watch Trailer
         </div>
       </button>
-    ) : isPlaybackLocked && !isMp4TrailerPlaying ? (
+    ) : isPlaybackLocked && !isMp4TrailerPlaying && !hasProviderPlaybackForRoute ? (
       <button
         type="button"
         onClick={() => router.push(subscribeHref)}

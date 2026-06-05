@@ -65,7 +65,14 @@ Final adjustments included:
 
 - Prevent the false "Video Unavailable" flash while the exact playback source is still hydrating.
 - Preserve the same live `<video>` node and buffered stream when expanding from mini/PiP back to the full player page.
+- Dock the already-playing mini/PiP video into the movie route loading page instead of showing the old fake skeleton controls.
+- Treat the current provider playback session as a valid source while the movie bootstrap is hydrating, so expand cannot clear the live stream.
+- Make the movie route bootstrap fail open to the client cache instead of throwing the app into "reconnecting your session".
+- Let the app error boundary host the live player if a route fallback ever appears during playback.
 - Make the seek bar scrub continuously on drag/touch and keep the runtime label readable in landscape mobile layouts.
+- Make the unplayed seek bar track visibly white/grey behind the red played progress in portrait and landscape.
+- Replace the default player loader with the premium red-and-white ring spinner used by the page loading state.
+- Add a loading watchdog so Android WebView buffering cannot sit on the spinner indefinitely without forcing a source wake-up.
 - Queue a related series/movie recommendation when the viewer finishes the absolute last episode of a series.
 
 Files changed:
@@ -79,10 +86,14 @@ Verification needed before deploy:
 - Open a movie and confirm Play goes straight into the video canvas loading state with no "Preparing Player" box.
 - Open a movie from a cold load and confirm "Video Unavailable" does not flash before the source lookup completes.
 - While a video is playing in mini/PiP, tap expand and confirm the video resizes into the page without a network reload, black frame, or buffer reset.
+- While a video is playing in mini/PiP, tap expand and confirm the old movie skeleton controls never appear.
+- Force a slow/failed movie bootstrap and confirm the live player remains docked instead of showing the "reconnecting your session" dead screen.
 - Start Episode 1 near the end, switch to Episode 2, and confirm Episode 2 starts at `0:00`.
 - Let a series episode end and confirm the 5-second next-episode countdown appears and advances automatically.
 - Let the final episode of a series end and confirm the countdown queues a related/new series instead of stopping dead.
 - Drag the seek bar thumb forward/backward on Android portrait and landscape and confirm the runtime text remains visible.
+- Confirm the unplayed part of the seek bar remains visible over bright and dark scenes.
+- Open a slow-loading movie and confirm the player shows the red-and-white ring spinner, then retries/wakes the stream instead of spinning forever.
 - Let a movie end with related movies available and confirm the first related title can be skipped to from the player.
 - Open a high episode number and confirm the episode rail centers the active episode thumbnail automatically.
 

@@ -5,7 +5,15 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export default async function MoviePlayerRoute({ params }: { params: { id: string } }) {
-  const bootstrap = await getPublicMovieRouteBootstrap(params.id);
+  const bootstrap = await getPublicMovieRouteBootstrap(params.id).catch((error) => {
+    console.warn('[movie-route] rendering client fallback after bootstrap failure', error);
+
+    return {
+      movie: null,
+      catalogMovies: [],
+      cachedAt: '',
+    };
+  });
 
   return (
     <MovieClientPage

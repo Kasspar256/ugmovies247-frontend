@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   Cast,
   GripHorizontal,
-  Loader2,
   Maximize,
   Minimize,
   Pause,
@@ -150,10 +149,11 @@ const STARTUP_ERROR_GRACE_MS = 2200;
 const FATAL_ERROR_DELAY_MS = 1600;
 const SOURCE_RETRY_BASE_DELAY_MS = 850;
 const SOURCE_RETRY_MAX_DELAY_MS = 7500;
-const SOURCE_RETRY_MAX_ATTEMPTS = 5;
+const SOURCE_RETRY_MAX_ATTEMPTS = 7;
 const MANIFEST_WAKEUP_TIMEOUT_MS = 3000;
-const STALL_RECOVERY_DELAY_MS = 6500;
-const HARD_STALL_RECOVERY_DELAY_MS = 14000;
+const LOADING_WATCHDOG_DELAY_MS = 9500;
+const STALL_RECOVERY_DELAY_MS = 4500;
+const HARD_STALL_RECOVERY_DELAY_MS = 10000;
 const STALL_PROGRESS_EPSILON_SECONDS = 0.15;
 const SEEK_BUMP_SECONDS = 0.22;
 const NEXT_AUTOPLAY_COUNTDOWN_SECONDS = 5;
@@ -424,10 +424,13 @@ function PlayerShellButton({
 function SpinnerOrb({ className = '' }: { className?: string }) {
   return (
     <span
-      className={`inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/48 backdrop-blur-xl ${className}`}
-      aria-hidden="true"
+      className={`relative inline-flex h-12 w-12 items-center justify-center rounded-full ${className}`}
+      aria-label="Loading video"
+      role="status"
     >
-      <Loader2 size={18} className="animate-spin text-white/84" />
+      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-xl" />
+      <span className="absolute inset-0 rounded-full border-[3px] border-white/90 border-t-[#D90429] shadow-[0_0_26px_rgba(217,4,41,0.42)] animate-spin" />
+      <span className="absolute inset-[6px] rounded-full border border-white/8 bg-black/22" />
     </span>
   );
 }
@@ -618,6 +621,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const clickIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sourceRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manifestWakeupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingWatchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardStallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextCountdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -746,6 +750,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (manifestWakeupTimerRef.current) {
       clearTimeout(manifestWakeupTimerRef.current);
       manifestWakeupTimerRef.current = null;
+    }
+  }, []);
+
+  const clearLoadingWatchdogTimer = useCallback(() => {
+    if (loadingWatchdogTimerRef.current) {
+      clearTimeout(loadingWatchdogTimerRef.current);
+      loadingWatchdogTimerRef.current = null;
     }
   }, []);
 
@@ -1227,6 +1238,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalError();
     clearSourceRetryTimer();
     clearManifestWakeupTimer();
+    clearLoadingWatchdogTimer();
     clearStallRecoveryTimers();
     clearNextCountdownTimer();
     pendingAutoplayRef.current = false;
@@ -1261,6 +1273,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     clearClickIntentTimer,
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearNextCountdownTimer,
     clearSourceRetryTimer,
@@ -1394,6 +1407,60 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }, MANIFEST_WAKEUP_TIMEOUT_MS);
     },
     [activeSource?.sourceUrl, attemptSourceReload, clearManifestWakeupTimer]
+  );
+
+  const scheduleLoadingWatchdog = useCallback(
+    (reason: string) => {
+      clearLoadingWatchdogTimer();
+
+      if (!activeSource?.sourceUrl) {
+        return;
+      }
+
+      loadingWatchdogTimerRef.current = setTimeout(() => {
+        loadingWatchdogTimerRef.current = null;
+
+        const videoElement = videoRef.current;
+
+        if (
+          !videoElement ||
+          !activeSource?.sourceUrl ||
+          videoElement.ended ||
+          playbackPhaseRef.current === 'playing' ||
+          playbackPhaseRef.current === 'paused' ||
+          playbackPhaseRef.current === 'ended'
+        ) {
+          return;
+        }
+
+        const readyForFrames = videoElement.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+        const noRecentProgress =
+          Date.now() - lastProgressAtRef.current >= LOADING_WATCHDOG_DELAY_MS - 1000;
+
+        if (readyForFrames && !noRecentProgress) {
+          scheduleLoadingWatchdog(reason);
+          return;
+        }
+
+        if (sourceRetryCountRef.current >= SOURCE_RETRY_MAX_ATTEMPTS) {
+          setFatalErrorMessage(
+            'Video is taking too long to connect. Please check your network and try again.'
+          );
+          setPlaybackPhaseSafe('error');
+          return;
+        }
+
+        sourceRetryCountRef.current += 1;
+        attemptSourceReload(reason);
+        scheduleLoadingWatchdog(reason);
+      }, LOADING_WATCHDOG_DELAY_MS);
+    },
+    [
+      activeSource?.sourceUrl,
+      attemptSourceReload,
+      clearLoadingWatchdogTimer,
+      setPlaybackPhaseSafe,
+    ]
   );
 
   const recoverStalledPlayback = useCallback(
@@ -1577,6 +1644,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalError();
     clearSourceRetryTimer();
     clearManifestWakeupTimer();
+    clearLoadingWatchdogTimer();
     clearStallRecoveryTimers();
     clearNextCountdownTimer();
     startupGraceUntilRef.current = Date.now() + STARTUP_ERROR_GRACE_MS;
@@ -1618,6 +1686,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.src = activeSource.sourceUrl;
       videoElement.load();
       scheduleManifestWakeup('manifest-timeout');
+      scheduleLoadingWatchdog('source-assignment-watchdog');
     } catch (error) {
       console.warn('[player] failed to assign source', {
         error: error instanceof Error ? error.message : String(error),
@@ -1631,11 +1700,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     activeSource?.sourceUrl,
     videoElementState,
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearNextCountdownTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
     resolveResumePosition,
+    scheduleLoadingWatchdog,
     scheduleManifestWakeup,
     setPlaybackPhaseSafe,
   ]);
@@ -2474,9 +2545,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setBufferedUntil(0);
     showControls(true);
     scheduleManifestWakeup('manifest-loadstart-timeout');
+    scheduleLoadingWatchdog('load-start-watchdog');
     scheduleStallRecovery('load-start');
   }, [
     clearFatalError,
+    scheduleLoadingWatchdog,
     scheduleManifestWakeup,
     scheduleStallRecovery,
     setPlaybackPhaseSafe,
@@ -2510,6 +2583,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     clearFatalError();
     clearManifestWakeupTimer();
+    clearLoadingWatchdogTimer();
     clearSourceRetryTimer();
     clearStallRecoveryTimers();
     sourceRetryCountRef.current = 0;
@@ -2534,6 +2608,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     applyPendingResume,
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearSourceRetryTimer,
     clearStallRecoveryTimers,
@@ -2638,6 +2713,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     clearFatalError();
     clearManifestWakeupTimer();
+    clearLoadingWatchdogTimer();
     clearSourceRetryTimer();
     clearStallRecoveryTimers();
     clearNextCountdownTimer();
@@ -2649,6 +2725,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     showControls();
   }, [
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearNextCountdownTimer,
     clearSourceRetryTimer,
@@ -2725,8 +2802,17 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearFatalError();
     setPlaybackPhaseSafe(videoElement.currentTime > 0 ? 'buffering' : 'loading');
     syncBufferedProgress();
+    scheduleManifestWakeup('media-waiting-manifest-timeout');
+    scheduleLoadingWatchdog('media-waiting-watchdog');
     scheduleStallRecovery('media-waiting');
-  }, [clearFatalError, scheduleStallRecovery, setPlaybackPhaseSafe, syncBufferedProgress]);
+  }, [
+    clearFatalError,
+    scheduleLoadingWatchdog,
+    scheduleManifestWakeup,
+    scheduleStallRecovery,
+    setPlaybackPhaseSafe,
+    syncBufferedProgress,
+  ]);
 
   const handleTimeUpdate = useCallback(() => {
     if (castSnapshotRef.current.transport === 'google-cast' && castSnapshotRef.current.connected) {
@@ -2748,6 +2834,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     if (didAdvance) {
       lastProgressAtRef.current = Date.now();
       lastProgressTimeRef.current = nextCurrentTime;
+      clearLoadingWatchdogTimer();
       clearStallRecoveryTimers();
     }
 
@@ -2790,6 +2877,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     activeSource,
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearStallRecoveryTimers,
     duration,
     setPlaybackPhaseSafe,
@@ -2811,6 +2899,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
     rememberPlaybackPosition();
     clearManifestWakeupTimer();
+    clearLoadingWatchdogTimer();
     clearStallRecoveryTimers();
 
     if (
@@ -2841,6 +2930,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       videoElement.load();
       videoElement.src = fallbackUrl;
       videoElement.load();
+      scheduleManifestWakeup('fallback-manifest-timeout');
+      scheduleLoadingWatchdog('fallback-loading-watchdog');
       return;
     }
 
@@ -2852,11 +2943,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     activeSource,
     clearFatalError,
+    clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearStallRecoveryTimers,
     currentTime,
     rememberPlaybackPosition,
     scheduleFatalError,
+    scheduleLoadingWatchdog,
+    scheduleManifestWakeup,
     scheduleSourceRetry,
     setPlaybackPhaseSafe,
   ]);
@@ -3737,13 +3831,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                           onPointerMove={handleScrubberPointerMove}
                           onPointerLeave={handleScrubberPointerLeave}
                         >
-                          <div className="relative h-2 rounded-full bg-white/14">
+                          <div className="relative h-2.5 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
                             <div
-                              className="absolute inset-y-0 left-0 rounded-full bg-white/26"
+                              className="absolute inset-y-0 left-0 rounded-full bg-white/58"
                               style={{ width: `${bufferedPercent}%` }}
                             />
                             <div
-                              className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                              className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
                               style={{ width: `${playedPercent}%` }}
                             />
                             <input
@@ -3875,13 +3969,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         onPointerMove={handleScrubberPointerMove}
                         onPointerLeave={handleScrubberPointerLeave}
                       >
-                        <div className="relative h-2.5 rounded-full bg-white/10">
+                        <div className="relative h-3 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
                           <div
-                            className="absolute inset-y-0 left-0 rounded-full bg-white/25"
+                            className="absolute inset-y-0 left-0 rounded-full bg-white/58"
                             style={{ width: `${bufferedPercent}%` }}
                           />
                           <div
-                            className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                            className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
                             style={{ width: `${playedPercent}%` }}
                           />
                           <input
@@ -4141,13 +4235,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         </PlayerShellButton>
                       </div>
 
-                      <div className="relative mt-3 h-2 rounded-full bg-white/10">
+                      <div className="relative mt-3 h-2.5 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
                         <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-white/25"
+                          className="absolute inset-y-0 left-0 rounded-full bg-white/58"
                           style={{ width: `${bufferedPercent}%` }}
                         />
                         <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                          className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
                           style={{ width: `${playedPercent}%` }}
                         />
                       </div>
