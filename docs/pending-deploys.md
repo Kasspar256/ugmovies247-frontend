@@ -182,3 +182,23 @@ Verification needed before deploy:
 - Run `npm run build` in the Linux repo.
 - Test admin login, paid-user login, movie navigation, and opening several premium movies without subscription prompts.
 - Confirm expired/free users are still asked to subscribe.
+
+### Player Overlay UX Overhaul
+
+Status: code changed locally, not deployed.
+
+Purpose: replace the cluttered full-player overlay with a cleaner VOD-style control layer: centered 10-second rewind/play/forward controls, real previous/next media buttons, invisible brightness/volume swipe zones, a bottom-right screen lock, and a slimmer red seek bar with visible unplayed track.
+
+Files changed:
+
+- `src/components/player/PlaybackProvider.tsx`
+- `src/app/movie/[id]/MovieClientPage.tsx`
+
+Verification needed before deploy:
+
+- Run `npm run build` in the Linux repo.
+- Open a movie on Android portrait and landscape, confirm the old side sliders, settings, cast, and PiP clutter no longer appear on the main overlay.
+- Confirm center controls seek by 10 seconds, while the outer previous/next buttons move to previous or next episode/part/title.
+- Confirm the previous button stays visible but dimmed/disabled when no previous item exists.
+- Swipe left half vertically for brightness and right half vertically for volume, then confirm only a temporary percentage pill appears.
+- Tap the bottom-right lock, confirm all taps/swipes are ignored until the lock is tapped again.

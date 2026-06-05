@@ -992,15 +992,24 @@ const syncSeriesSelection = useCallback((seasonNumber: number, episodeNumber: nu
     router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
   }
 }, [pathname, router, searchQueryString]);
-const nextEpisodeIndex =
+const activeEpisodeIndex =
   activeEpisode && selectedSeason
     ? selectedSeasonEpisodes.findIndex(
         (episode) => episode.episodeNumber === activeEpisode.episodeNumber
-      ) + 1
+      )
     : -1;
+const previousEpisode =
+  activeEpisodeIndex > 0 ? selectedSeasonEpisodes[activeEpisodeIndex - 1] : undefined;
+const nextEpisodeIndex = activeEpisodeIndex >= 0 ? activeEpisodeIndex + 1 : -1;
 const nextEpisode =
   nextEpisodeIndex > 0 && nextEpisodeIndex < selectedSeasonEpisodes.length
     ? selectedSeasonEpisodes[nextEpisodeIndex]
+    : undefined;
+const previousPart =
+  selectedPart && selectedPartIndex > 0 ? movie?.parts?.[selectedPartIndex - 1] : undefined;
+const nextPart =
+  selectedPart && movie?.parts && selectedPartIndex + 1 < movie.parts.length
+    ? movie.parts[selectedPartIndex + 1]
     : undefined;
 const nextSeriesRecommendation =
   activeEpisode && !nextEpisode
@@ -1015,6 +1024,27 @@ const queueNextEpisode = useCallback(() => {
 
   syncSeriesSelection(selectedSeason.seasonNumber, nextEpisode.episodeNumber);
 }, [nextEpisode, selectedSeason, syncSeriesSelection]);
+const queuePreviousEpisode = useCallback(() => {
+  if (!selectedSeason || !previousEpisode) {
+    return;
+  }
+
+  syncSeriesSelection(selectedSeason.seasonNumber, previousEpisode.episodeNumber);
+}, [previousEpisode, selectedSeason, syncSeriesSelection]);
+const queueNextPart = useCallback(() => {
+  if (!nextPart) {
+    return;
+  }
+
+  syncPartSelection(selectedPartIndex + 1);
+}, [nextPart, selectedPartIndex, syncPartSelection]);
+const queuePreviousPart = useCallback(() => {
+  if (!previousPart) {
+    return;
+  }
+
+  syncPartSelection(selectedPartIndex - 1);
+}, [previousPart, selectedPartIndex, syncPartSelection]);
 const getAutoplayHrefForRecommendation = useCallback((recommendedMovie: Movie) => {
   const targetId = recommendedMovie.id || recommendedMovie.movieId;
   const nextParams = new URLSearchParams();
@@ -1053,14 +1083,22 @@ const playbackNextAction = activeEpisode
     : nextSeriesRecommendation
       ? queueRecommendedTitle
       : undefined
+  : selectedPart
+    ? nextPart
+      ? queueNextPart
+      : undefined
   : nextMovieRecommendation
     ? queueRecommendedTitle
-    : undefined
+    : undefined;
 const playbackNextActionKey = activeEpisode
   ? nextEpisode
     ? `series-${selectedSeason?.seasonNumber || 1}-${nextEpisode.episodeNumber}`
     : nextSeriesRecommendation
       ? `series-recommendation-${nextSeriesRecommendation.id || nextSeriesRecommendation.movieId}`
+      : ''
+  : selectedPart
+    ? nextPart
+      ? `part-${selectedPartIndex + 2}`
       : ''
   : nextMovieRecommendation
     ? `movie-${nextMovieRecommendation.id || nextMovieRecommendation.movieId}`
@@ -1069,12 +1107,39 @@ const playbackNextLabel = activeEpisode
   ? nextEpisode
     ? 'Next Episode'
     : 'Next Series'
-  : 'Skip Movie';
+  : selectedPart
+    ? 'Next Part'
+    : 'Skip Movie';
 const playbackNextCountdownLabel = activeEpisode
   ? nextEpisode
     ? 'Next episode starting in'
     : 'Next series starting in'
+  : selectedPart
+    ? 'Next part starting in'
   : 'Next movie starting in';
+const playbackPreviousAction = activeEpisode
+  ? previousEpisode
+    ? queuePreviousEpisode
+    : undefined
+  : selectedPart
+    ? previousPart
+      ? queuePreviousPart
+      : undefined
+    : undefined;
+const playbackPreviousActionKey = activeEpisode
+  ? previousEpisode
+    ? `series-${selectedSeason?.seasonNumber || 1}-${previousEpisode.episodeNumber}`
+    : ''
+  : selectedPart
+    ? previousPart
+      ? `part-${selectedPartIndex}`
+      : ''
+    : '';
+const playbackPreviousLabel = activeEpisode
+  ? 'Previous Episode'
+  : selectedPart
+    ? 'Previous Part'
+    : 'Previous';
 const playbackTitle = activeEpisode
   ? `${movie?.title || movie?.name} - S${selectedSeason?.seasonNumber || 1} EP ${activeEpisode.episodeNumber}`
   : selectedPart
@@ -1268,6 +1333,9 @@ useLayoutEffect(() => {
     nextLabel: playbackNextAction ? playbackNextLabel : undefined,
     nextCountdownLabel: playbackNextAction ? playbackNextCountdownLabel : undefined,
     onNext: playbackNextAction,
+    previousActionKey: playbackPreviousActionKey,
+    previousLabel: playbackPreviousAction ? playbackPreviousLabel : undefined,
+    onPrevious: playbackPreviousAction,
     disableResume: Boolean(activeEpisode || selectedPart),
   });
   }, [
@@ -1286,6 +1354,9 @@ useLayoutEffect(() => {
     playbackNextActionKey,
     playbackNextCountdownLabel,
     playbackNextLabel,
+    playbackPreviousAction,
+    playbackPreviousActionKey,
+    playbackPreviousLabel,
     playbackPoster,
     playbackTitle,
     playbackType,

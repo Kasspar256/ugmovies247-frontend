@@ -23,13 +23,19 @@ import {
   ArrowLeft,
   Cast,
   GripHorizontal,
+  Lock,
   Maximize,
   Minimize,
   Pause,
   Play,
+  RotateCcw,
+  RotateCw,
   Settings2,
   SkipBack,
   SkipForward,
+  StepBack,
+  StepForward,
+  Sun,
   Volume1,
   Volume2,
   VolumeX,
@@ -78,6 +84,9 @@ export type PlaybackSource = {
   nextLabel?: string;
   nextCountdownLabel?: string;
   onNext?: () => void;
+  previousActionKey?: string;
+  previousLabel?: string;
+  onPrevious?: () => void;
   disableResume?: boolean;
 };
 
@@ -233,6 +242,8 @@ function areSourcesEqual(current: PlaybackSource | null, next: PlaybackSource | 
     (current.nextActionKey || '') === (next.nextActionKey || '') &&
     (current.nextLabel || '') === (next.nextLabel || '') &&
     (current.nextCountdownLabel || '') === (next.nextCountdownLabel || '') &&
+    (current.previousActionKey || '') === (next.previousActionKey || '') &&
+    (current.previousLabel || '') === (next.previousLabel || '') &&
     Boolean(current.disableResume) === Boolean(next.disableResume) &&
     current.poster === next.poster &&
     current.title === next.title &&
@@ -633,6 +644,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const hardStallRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextCountdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gestureIndicatorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pipHintShownRef = useRef(false);
   const pendingAutoplayRef = useRef(false);
   const retriedCurrentSourceRef = useRef(false);
@@ -662,6 +674,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     side: 'brightness' | 'volume';
     startY: number;
     startValue: number;
+    moved: boolean;
   } | null>(null);
 
   const [activeSource, setActiveSourceState] = useState<PlaybackSource | null>(null);
@@ -688,6 +701,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [castFeedbackMessage, setCastFeedbackMessage] = useState('');
   const [castSnapshot, setCastSnapshot] = useState<CastStateSnapshot>(() => getCastStateSnapshot());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isControlsLocked, setIsControlsLocked] = useState(false);
+  const [gestureIndicator, setGestureIndicator] = useState<{
+    side: 'brightness' | 'volume';
+    value: number;
+  } | null>(null);
   const [hoverPreviewTime, setHoverPreviewTime] = useState<number | null>(null);
   const [hoverPreviewRatio, setHoverPreviewRatio] = useState<number | null>(null);
   const [miniPlayerSize, setMiniPlayerSize] = useState<MiniPlayerSize>({
@@ -793,6 +811,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setNextCountdownSeconds(null);
   }, []);
 
+  const clearGestureIndicatorTimer = useCallback(() => {
+    if (gestureIndicatorTimerRef.current) {
+      clearTimeout(gestureIndicatorTimerRef.current);
+      gestureIndicatorTimerRef.current = null;
+    }
+  }, []);
+
   const clearFatalError = useCallback(() => {
     clearFatalErrorTimer();
     setFatalErrorMessage('');
@@ -889,11 +914,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateBrightnessState = useCallback((nextBrightness: number) => {
-    setVideoBrightness(clamp(nextBrightness, 0.55, 1.45));
+    setVideoBrightness(clamp(nextBrightness, 0.18, 1));
   }, []);
 
   const showControls = useCallback(
     (keepOpen = false) => {
+      if (isControlsLocked) {
+        clearHideControlsTimer();
+        setControlsVisible(false);
+        setSettingsOpen(false);
+        return;
+      }
+
       setControlsVisible(true);
       clearHideControlsTimer();
 
@@ -913,7 +945,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }, CONTROL_HIDE_DELAY_MS);
       }
     },
-    [activeSource, clearHideControlsTimer, isDraggingMiniPlayer, settingsOpen]
+    [activeSource, clearHideControlsTimer, isControlsLocked, isDraggingMiniPlayer, settingsOpen]
   );
 
   const setVideoElement = useCallback(
@@ -1094,7 +1126,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const storedVolume = clamp(readStoredNumber(VOLUME_STORAGE_KEY, 1), 0, 1);
     const storedMuted = readStoredBoolean(MUTE_STORAGE_KEY, false);
     const storedPlaybackRate = clamp(readStoredNumber(PLAYBACK_RATE_STORAGE_KEY, 1), 0.75, 2);
-    const storedBrightness = clamp(readStoredNumber(BRIGHTNESS_STORAGE_KEY, 1), 0.55, 1.45);
+    const storedBrightness = clamp(readStoredNumber(BRIGHTNESS_STORAGE_KEY, 1), 0.18, 1);
 
     lastVolumeBeforeMuteRef.current = storedVolume > 0.001 ? storedVolume : 1;
     setVolume(storedVolume);
@@ -1248,6 +1280,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearLoadingWatchdogTimer();
     clearStallRecoveryTimers();
     clearNextCountdownTimer();
+    clearGestureIndicatorTimer();
     pendingAutoplayRef.current = false;
     retriedCurrentSourceRef.current = false;
     sourceRetryCountRef.current = 0;
@@ -1265,6 +1298,8 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     setHoverPreviewTime(null);
     setHoverPreviewRatio(null);
     setSettingsOpen(false);
+    setIsControlsLocked(false);
+    setGestureIndicator(null);
     setSoftLandscapeFullscreen(false);
     setIsFullscreen(false);
     void unlockScreenOrientation(true);
@@ -1280,6 +1315,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     clearClickIntentTimer,
     clearFatalError,
+    clearGestureIndicatorTimer,
     clearLoadingWatchdogTimer,
     clearManifestWakeupTimer,
     clearNextCountdownTimer,
@@ -1792,6 +1828,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       clearClickIntentTimer();
       clearFatalErrorTimer();
       clearHideControlsTimer();
+      clearGestureIndicatorTimer();
       clearSeekFeedbackTimer();
       clearSourceRetryTimer();
       clearStallRecoveryTimers();
@@ -1800,6 +1837,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearCastFeedbackTimer,
     clearClickIntentTimer,
     clearFatalErrorTimer,
+    clearGestureIndicatorTimer,
     clearHideControlsTimer,
     clearSeekFeedbackTimer,
     clearSourceRetryTimer,
@@ -1808,6 +1846,12 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     clearHideControlsTimer();
+
+    if (isControlsLocked) {
+      setControlsVisible(false);
+      setSettingsOpen(false);
+      return;
+    }
 
     if (!activeSource || settingsOpen || playbackPhase !== 'playing' || isDraggingMiniPlayer) {
       setControlsVisible(true);
@@ -1820,7 +1864,14 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }, CONTROL_HIDE_DELAY_MS);
 
     return clearHideControlsTimer;
-  }, [activeSource, clearHideControlsTimer, isDraggingMiniPlayer, playbackPhase, settingsOpen]);
+  }, [
+    activeSource,
+    clearHideControlsTimer,
+    isControlsLocked,
+    isDraggingMiniPlayer,
+    playbackPhase,
+    settingsOpen,
+  ]);
 
   const tryEnterFullscreen = useCallback(async () => {
     const videoElement = videoRef.current as IOSVideoElement | null;
@@ -2979,6 +3030,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (isControlsLocked) {
+        if (event.key.toLowerCase() === 'l') {
+          event.preventDefault();
+          setIsControlsLocked(false);
+        }
+
+        return;
+      }
+
       if (event.key === 'ArrowLeft') {
         event.stopPropagation();
         event.preventDefault();
@@ -3036,6 +3096,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     },
     [
       adjustVolumeBy,
+      isControlsLocked,
       isInlineMode,
       seekBy,
       toggleMute,
@@ -3064,6 +3125,15 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         targetTagName === 'button' ||
         target?.isContentEditable
       ) {
+        return;
+      }
+
+      if (isControlsLocked) {
+        if (event.key.toLowerCase() === 'l') {
+          event.preventDefault();
+          setIsControlsLocked(false);
+        }
+
         return;
       }
 
@@ -3120,6 +3190,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     activeSource,
     adjustVolumeBy,
+    isControlsLocked,
     isInlineMode,
     seekBy,
     toggleMute,
@@ -3129,6 +3200,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   ]);
 
   const handleSurfaceClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (isControlsLocked) {
+      event.stopPropagation();
+      return;
+    }
+
     if (isMiniMode) {
       showControls();
       return;
@@ -3151,6 +3227,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     showControls();
   }, [
     clearClickIntentTimer,
+    isControlsLocked,
     isMiniMode,
     isMobileInlineMode,
     seekBy,
@@ -3267,25 +3344,54 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     [isMiniMode, miniPlayerPosition, showControls]
   );
 
+  const showGestureAdjustment = useCallback(
+    (side: 'brightness' | 'volume', value: number, keepVisible = false) => {
+      clearGestureIndicatorTimer();
+      setGestureIndicator({ side, value: clamp(value, 0, 1) });
+
+      if (!keepVisible) {
+        gestureIndicatorTimerRef.current = setTimeout(() => {
+          setGestureIndicator(null);
+          gestureIndicatorTimerRef.current = null;
+        }, 780);
+      }
+    },
+    [clearGestureIndicatorTimer]
+  );
+
   const handleSideGestureStart = useCallback(
     (side: 'brightness' | 'volume', event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!isMobileInlineMode) {
+      if (!isMobileInlineMode || isControlsLocked) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Older Android WebViews can throw if capture is unavailable.
+      }
       showControls(true);
 
+      const startValue = side === 'brightness' ? videoBrightness : isMuted ? 0 : volume;
       sideGestureStateRef.current = {
         pointerId: event.pointerId,
         side,
         startY: event.clientY,
-        startValue: side === 'brightness' ? videoBrightness : isMuted ? 0 : volume,
+        startValue,
+        moved: false,
       };
     },
-    [isMobileInlineMode, isMuted, showControls, videoBrightness, volume]
+    [
+      isControlsLocked,
+      isMobileInlineMode,
+      isMuted,
+      showControls,
+      showGestureAdjustment,
+      videoBrightness,
+      volume,
+    ]
   );
 
   const handleSideGestureMove = useCallback(
@@ -3301,8 +3407,16 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
 
       const delta = (gestureState.startY - event.clientY) / 180;
 
+      if (!gestureState.moved && Math.abs(event.clientY - gestureState.startY) < 8) {
+        return;
+      }
+
+      gestureState.moved = true;
+
       if (gestureState.side === 'brightness') {
-        updateBrightnessState(gestureState.startValue + delta);
+        const nextBrightness = clamp(gestureState.startValue + delta, 0.18, 1);
+        updateBrightnessState(nextBrightness);
+        showGestureAdjustment('brightness', nextBrightness, true);
       } else {
         const nextVolume = clamp(gestureState.startValue + delta, 0, 1);
         const videoElement = videoRef.current;
@@ -3317,32 +3431,54 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         }
 
         updateVolumeState(nextVolume, nextVolume <= 0.001);
+        showGestureAdjustment('volume', nextVolume, true);
       }
 
       showControls(true);
     },
-    [showControls, updateBrightnessState, updateVolumeState]
+    [showControls, showGestureAdjustment, updateBrightnessState, updateVolumeState]
   );
 
-  const handleSideGestureEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const gestureState = sideGestureStateRef.current;
+  const handleSideGestureEnd = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const gestureState = sideGestureStateRef.current;
 
-    if (!gestureState || gestureState.pointerId !== event.pointerId) {
+      if (!gestureState || gestureState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      sideGestureStateRef.current = null;
+
+      if (gestureState.moved) {
+        showGestureAdjustment(
+          gestureState.side,
+          gestureState.side === 'brightness' ? videoBrightness : isMuted ? 0 : volume
+        );
+      } else {
+        clearGestureIndicatorTimer();
+        setGestureIndicator(null);
+      }
+    },
+    [clearGestureIndicatorTimer, isMuted, showGestureAdjustment, videoBrightness, volume]
+  );
+
+  const handleShellPointerMove = useCallback(() => {
+    if (isControlsLocked) {
       return;
     }
 
-    event.preventDefault();
-    event.stopPropagation();
-    sideGestureStateRef.current = null;
-  }, []);
-
-  const handleShellPointerMove = useCallback(() => {
     if (!isMiniMode) {
       showControls();
     }
-  }, [isMiniMode, showControls]);
+  }, [isControlsLocked, isMiniMode, showControls]);
 
   const handleShellPointerLeave = useCallback(() => {
+    if (isControlsLocked) {
+      return;
+    }
+
     if (!isMiniMode && playbackPhase === 'playing' && !settingsOpen) {
       clearHideControlsTimer();
       hideControlsTimerRef.current = setTimeout(() => {
@@ -3354,6 +3490,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
   }, [
     clearHideControlsTimer,
     handleScrubberPointerLeave,
+    isControlsLocked,
     isMiniMode,
     playbackPhase,
     settingsOpen,
@@ -3366,9 +3503,18 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     duration > 0 ? clamp((displayCurrentTime / duration) * 100, 0, 100) : 0;
   const activeTimeLabel = `${formatTime(displayCurrentTime)} / ${formatTime(duration)}`;
   const hasNextAction = Boolean(activeSource?.onNext && activeSource.nextActionKey);
+  const hasPreviousAction = Boolean(activeSource?.onPrevious && activeSource.previousActionKey);
   const nextActionLabel = activeSource?.nextLabel || 'Next';
+  const previousActionLabel = activeSource?.previousLabel || 'Previous';
+  const effectiveControlsVisible =
+    !isControlsLocked && (controlsVisible || playbackPhase !== 'playing');
+  const brightnessOverlayOpacity = clamp((1 - videoBrightness) * 0.78, 0, 0.72);
+  const gestureIndicatorPercent = gestureIndicator
+    ? Math.round(clamp(gestureIndicator.value, 0, 1) * 100)
+    : 0;
   const showCenterAction =
     !isMiniMode &&
+    !isControlsLocked &&
     (playbackPhase === 'paused' ||
       playbackPhase === 'ended' ||
       playbackPhase === 'loading' ||
@@ -3392,6 +3538,31 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearNextCountdownTimer();
     activeSource.onNext();
   }, [activeSource, clearNextCountdownTimer]);
+
+  const triggerPreviousAction = useCallback(() => {
+    if (!activeSource?.onPrevious) {
+      return;
+    }
+
+    clearNextCountdownTimer();
+    activeSource.onPrevious();
+  }, [activeSource, clearNextCountdownTimer]);
+
+  const toggleControlsLock = useCallback(() => {
+    clearHideControlsTimer();
+    clearGestureIndicatorTimer();
+    setSettingsOpen(false);
+    setGestureIndicator(null);
+
+    if (isControlsLocked) {
+      setIsControlsLocked(false);
+      setControlsVisible(true);
+      return;
+    }
+
+    setIsControlsLocked(true);
+    setControlsVisible(false);
+  }, [clearGestureIndicatorTimer, clearHideControlsTimer, isControlsLocked]);
 
   const contextValue = useMemo<PlaybackContextValue>(
     () => ({
@@ -3461,7 +3632,6 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               controls={false}
               style={{
                 WebkitTapHighlightColor: 'transparent',
-                filter: `brightness(${videoBrightness})`,
               }}
               className="h-full w-full object-contain bg-black"
               onLoadStart={handleLoadStart}
@@ -3513,6 +3683,239 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               />
             ) : null}
 
+            {isInlineMode ? (
+              <>
+                <div
+                  className="pointer-events-none absolute inset-0 z-[2] bg-black transition-opacity duration-200"
+                  style={{ opacity: brightnessOverlayOpacity }}
+                />
+
+                <div
+                  className="absolute inset-y-0 left-0 z-[3] w-1/2 touch-none"
+                  aria-label="Swipe up or down to adjust brightness"
+                  onPointerDown={(event) => handleSideGestureStart('brightness', event)}
+                  onPointerMove={handleSideGestureMove}
+                  onPointerUp={handleSideGestureEnd}
+                  onPointerCancel={handleSideGestureEnd}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!isControlsLocked) {
+                      showControls();
+                    }
+                  }}
+                />
+                <div
+                  className="absolute inset-y-0 right-0 z-[3] w-1/2 touch-none"
+                  aria-label="Swipe up or down to adjust volume"
+                  onPointerDown={(event) => handleSideGestureStart('volume', event)}
+                  onPointerMove={handleSideGestureMove}
+                  onPointerUp={handleSideGestureEnd}
+                  onPointerCancel={handleSideGestureEnd}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!isControlsLocked) {
+                      showControls();
+                    }
+                  }}
+                />
+
+                {gestureIndicator ? (
+                  <div className="pointer-events-none absolute left-1/2 top-5 z-40 flex min-w-[150px] -translate-x-1/2 items-center gap-3 rounded-full border border-white/10 bg-black/70 px-4 py-2 text-white shadow-[0_18px_44px_rgba(0,0,0,0.36)] backdrop-blur-2xl">
+                    {gestureIndicator.side === 'brightness' ? (
+                      <Sun size={18} className="text-white/90" />
+                    ) : (
+                      <Volume2 size={18} className="text-white/90" />
+                    )}
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/18">
+                      <div
+                        className="h-full rounded-full bg-[#D90429]"
+                        style={{ width: `${gestureIndicatorPercent}%` }}
+                      />
+                    </div>
+                    <span className="w-9 text-right text-[10px] font-black tabular-nums tracking-[0.12em] text-white/82">
+                      {gestureIndicatorPercent}
+                    </span>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  aria-label={isControlsLocked ? 'Unlock player controls' : 'Lock player controls'}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleControlsLock();
+                  }}
+                  className={`pointer-events-auto absolute bottom-4 right-4 z-50 inline-flex h-11 w-11 items-center justify-center rounded-full border text-white shadow-[0_16px_38px_rgba(0,0,0,0.34)] backdrop-blur-xl transition-all ${
+                    isControlsLocked
+                      ? 'border-[#D90429]/45 bg-[#D90429]/22'
+                      : 'border-white/14 bg-black/46 hover:border-white/28 hover:bg-black/62'
+                  }`}
+                >
+                  <Lock size={19} />
+                </button>
+
+                {effectiveControlsVisible ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Go back"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        router.back();
+                      }}
+                      className="pointer-events-auto absolute left-4 top-4 z-30 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-black/44 text-white shadow-[0_14px_34px_rgba(0,0,0,0.32)] backdrop-blur-xl transition-colors hover:border-white/24 hover:bg-black/62"
+                    >
+                      <ArrowLeft size={19} />
+                    </button>
+
+                    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center px-5">
+                      {playbackPhase === 'loading' || playbackPhase === 'buffering' ? (
+                        <SpinnerOrb className="h-14 w-14" />
+                      ) : (
+                        <div className="pointer-events-auto flex items-center justify-center gap-3 sm:gap-5">
+                          <button
+                            type="button"
+                            aria-label={previousActionLabel}
+                            aria-disabled={!hasPreviousAction}
+                            disabled={!hasPreviousAction}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              triggerPreviousAction();
+                            }}
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur-xl transition-all sm:h-12 sm:w-12 ${
+                              hasPreviousAction
+                                ? 'border-white/16 bg-black/42 text-white shadow-[0_14px_34px_rgba(0,0,0,0.32)] hover:border-white/28 hover:bg-black/62'
+                                : 'cursor-not-allowed border-white/8 bg-black/20 text-white/32'
+                            }`}
+                          >
+                            <StepBack size={21} />
+                          </button>
+
+                          <div className="flex items-center gap-3 rounded-full border border-white/12 bg-black/38 px-3 py-2 shadow-[0_18px_54px_rgba(0,0,0,0.34)] backdrop-blur-2xl sm:gap-4 sm:px-4 sm:py-3">
+                            <button
+                              type="button"
+                              aria-label="Rewind 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(-10);
+                              }}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/14 bg-white/10 text-white transition-transform hover:scale-[1.04] hover:bg-white/12 sm:h-12 sm:w-12"
+                            >
+                              <RotateCcw size={22} />
+                              <span className="sr-only">10 seconds</span>
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={
+                                playbackPhase === 'playing' ? 'Pause video' : 'Play video'
+                              }
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                togglePlayPause();
+                              }}
+                              className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-[0_18px_46px_rgba(0,0,0,0.42)] transition-transform hover:scale-[1.04] sm:h-16 sm:w-16"
+                            >
+                              {playbackPhase === 'playing' ? (
+                                <Pause size={27} />
+                              ) : (
+                                <Play size={27} className="translate-x-[2px]" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="Forward 10 seconds"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                seekBy(10);
+                              }}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/14 bg-white/10 text-white transition-transform hover:scale-[1.04] hover:bg-white/12 sm:h-12 sm:w-12"
+                            >
+                              <RotateCw size={22} />
+                              <span className="sr-only">10 seconds</span>
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            aria-label={nextActionLabel}
+                            aria-disabled={!hasNextAction}
+                            disabled={!hasNextAction}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              triggerNextAction();
+                            }}
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-full border backdrop-blur-xl transition-all sm:h-12 sm:w-12 ${
+                              hasNextAction
+                                ? 'border-[#D90429]/38 bg-[#D90429]/18 text-[#FFE6EB] shadow-[0_14px_34px_rgba(217,4,41,0.18)] hover:border-[#D90429]/58 hover:bg-[#D90429]/28'
+                                : 'cursor-not-allowed border-white/8 bg-black/20 text-white/32'
+                            }`}
+                          >
+                            <StepForward size={21} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div
+                      className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 pl-4 pr-16 pb-4 sm:pl-6 sm:pr-20"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 rounded-full border border-white/10 bg-black/44 px-3 py-2 shadow-[0_16px_44px_rgba(0,0,0,0.32)] backdrop-blur-xl">
+                        <span className="w-[46px] shrink-0 text-right text-[10px] font-black tabular-nums tracking-[0.08em] text-white/86 sm:w-[56px] sm:text-[11px]">
+                          {formatTime(displayCurrentTime)}
+                        </span>
+                        <div
+                          ref={scrubberRef}
+                          className="relative h-8 flex-1"
+                          onPointerMove={handleScrubberPointerMove}
+                          onPointerLeave={handleScrubberPointerLeave}
+                        >
+                          <div className="absolute left-0 right-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-white/18">
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full bg-white/25"
+                              style={{ width: `${bufferedPercent}%` }}
+                            />
+                            <div
+                              className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
+                              style={{ width: `${playedPercent}%` }}
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(duration, 0)}
+                            step={0.1}
+                            value={Math.min(displayCurrentTime, duration || 0)}
+                            className="player-range absolute inset-0 z-10 h-full w-full"
+                            aria-label="Seek video"
+                            onPointerDown={handleScrubberDragStart}
+                            onPointerUp={handleScrubberDragEnd}
+                            onPointerCancel={handleScrubberDragEnd}
+                            onChange={handleScrubberInput}
+                            onInput={handleScrubberInput}
+                            onMouseMove={handleScrubberMouseMove}
+                            onTouchMove={handleScrubberTouchMove}
+                          />
+
+                          {hoverPreviewTime !== null && hoverPreviewRatio !== null && duration > 0 ? (
+                            <div
+                              className="pointer-events-none absolute -top-8 -translate-x-1/2 rounded-full border border-white/10 bg-black/84 px-2 py-1 text-[9px] font-black tracking-[0.16em] text-white/86 backdrop-blur-xl"
+                              style={{ left: `${hoverPreviewRatio * 100}%` }}
+                            >
+                              {formatTime(hoverPreviewTime)}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="w-[46px] shrink-0 text-left text-[10px] font-black tabular-nums tracking-[0.08em] text-white/86 sm:w-[56px] sm:text-[11px]">
+                          {formatTime(duration)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+
             <div
               className={`pointer-events-none absolute inset-0 z-[2] transition-opacity duration-300 ${
                 controlsVisible || playbackPhase !== 'playing'
@@ -3532,7 +3935,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                 }`}
               />
 
-              {isInlineMode ? (
+              {false && isInlineMode ? (
                 <>
                   <div
                     className={`pointer-events-auto absolute left-3 right-3 top-3 flex items-start justify-between gap-3 transition-all duration-300 md:left-4 md:right-4 md:top-4 ${
