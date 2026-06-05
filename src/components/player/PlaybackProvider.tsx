@@ -428,9 +428,16 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
       aria-label="Loading video"
       role="status"
     >
-      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-xl" />
-      <span className="absolute inset-0 rounded-full border-[3px] border-white/90 border-t-[#D90429] shadow-[0_0_26px_rgba(217,4,41,0.42)] animate-spin" />
-      <span className="absolute inset-[6px] rounded-full border border-white/8 bg-black/22" />
+      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
+      <span
+        className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+        style={{
+          background:
+            'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+        }}
+      >
+        <span className="block h-full w-full rounded-full bg-black" />
+      </span>
     </span>
   );
 }
@@ -3831,13 +3838,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                           onPointerMove={handleScrubberPointerMove}
                           onPointerLeave={handleScrubberPointerLeave}
                         >
-                          <div className="relative h-2.5 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
+                          <div className="relative h-2 rounded-full bg-white/18">
                             <div
-                              className="absolute inset-y-0 left-0 rounded-full bg-white/58"
+                              className="absolute inset-y-0 left-0 rounded-full bg-white/24"
                               style={{ width: `${bufferedPercent}%` }}
                             />
                             <div
-                              className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
+                              className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
                               style={{ width: `${playedPercent}%` }}
                             />
                             <input
@@ -3969,13 +3976,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         onPointerMove={handleScrubberPointerMove}
                         onPointerLeave={handleScrubberPointerLeave}
                       >
-                        <div className="relative h-3 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
+                        <div className="relative h-2.5 rounded-full bg-white/16">
                           <div
-                            className="absolute inset-y-0 left-0 rounded-full bg-white/58"
+                            className="absolute inset-y-0 left-0 rounded-full bg-white/24"
                             style={{ width: `${bufferedPercent}%` }}
                           />
                           <div
-                            className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
+                            className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
                             style={{ width: `${playedPercent}%` }}
                           />
                           <input
@@ -4235,13 +4242,13 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                         </PlayerShellButton>
                       </div>
 
-                      <div className="relative mt-3 h-2.5 rounded-full bg-white/38 shadow-[0_0_18px_rgba(255,255,255,0.22)] ring-1 ring-white/24">
+                      <div className="relative mt-3 h-2 rounded-full bg-white/16">
                         <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-white/58"
+                          className="absolute inset-y-0 left-0 rounded-full bg-white/24"
                           style={{ width: `${bufferedPercent}%` }}
                         />
                         <div
-                          className="absolute inset-y-0 left-0 rounded-full bg-[#D90429] shadow-[0_0_14px_rgba(217,4,41,0.55)]"
+                          className="absolute inset-y-0 left-0 rounded-full bg-[#D90429]"
                           style={{ width: `${playedPercent}%` }}
                         />
                       </div>

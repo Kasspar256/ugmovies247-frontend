@@ -24,9 +24,16 @@ function SpinnerRing({ className = 'h-16 w-16' }: { className?: string }) {
       aria-label="Opening player"
       role="status"
     >
-      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-xl" />
-      <span className="absolute inset-0 rounded-full border-[3px] border-white/90 border-t-[#D90429] shadow-[0_0_26px_rgba(217,4,41,0.42)] animate-spin" />
-      <span className="absolute inset-[7px] rounded-full border border-white/8 bg-black/22" />
+      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
+      <span
+        className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+        style={{
+          background:
+            'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+        }}
+      >
+        <span className="block h-full w-full rounded-full bg-black" />
+      </span>
     </span>
   );
 }

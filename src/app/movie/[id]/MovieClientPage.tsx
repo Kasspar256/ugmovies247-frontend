@@ -1565,9 +1565,16 @@ if ((loading && !movie) || (!movie && isRouteActiveProviderPlayback)) {
               aria-label="Opening player"
               role="status"
             >
-              <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-xl" />
-              <span className="absolute inset-0 rounded-full border-[3px] border-white/90 border-t-[#D90429] shadow-[0_0_26px_rgba(217,4,41,0.42)] animate-spin" />
-              <span className="absolute inset-[7px] rounded-full border border-white/8 bg-black/22" />
+              <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
+              <span
+                className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+                style={{
+                  background:
+                    'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+                }}
+              >
+                <span className="block h-full w-full rounded-full bg-black" />
+              </span>
             </span>
           </div>
         )}
@@ -1681,7 +1688,22 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
               <div className="absolute inset-0 bg-gradient-to-b from-black/38 via-black/68 to-black/82" />
             </>
           ) : null}
-          <div className="relative z-10 h-14 w-14 rounded-full border-2 border-white/16 border-t-[#D90429] animate-spin shadow-[0_0_32px_rgba(217,4,41,0.24)]" />
+          <span
+            className="relative z-10 inline-flex h-14 w-14 items-center justify-center rounded-full"
+            aria-label="Opening player"
+            role="status"
+          >
+            <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
+            <span
+              className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+              style={{
+                background:
+                  'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+              }}
+            >
+              <span className="block h-full w-full rounded-full bg-black" />
+            </span>
+          </span>
         </div>
       ) : (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/34 px-6 text-center">

@@ -70,8 +70,8 @@ Final adjustments included:
 - Make the movie route bootstrap fail open to the client cache instead of throwing the app into "reconnecting your session".
 - Let the app error boundary host the live player if a route fallback ever appears during playback.
 - Make the seek bar scrub continuously on drag/touch and keep the runtime label readable in landscape mobile layouts.
-- Make the unplayed seek bar track visibly white/grey behind the red played progress in portrait and landscape.
-- Replace the default player loader with the premium red-and-white ring spinner used by the page loading state.
+- Keep the seek bar slim and subtle, with only a faint white/grey unplayed track behind the red played progress.
+- Replace the default/double player loader with a single clean red-and-white ring spinner matching the approved page loading state.
 - Add a loading watchdog so Android WebView buffering cannot sit on the spinner indefinitely without forcing a source wake-up.
 - Queue a related series/movie recommendation when the viewer finishes the absolute last episode of a series.
 
@@ -79,6 +79,9 @@ Files changed:
 
 - `src/components/player/PlaybackProvider.tsx`
 - `src/app/movie/[id]/MovieClientPage.tsx`
+- `src/app/movie/[id]/loading.tsx`
+- `src/app/movie/[id]/page.tsx`
+- `src/app/error.tsx`
 
 Verification needed before deploy:
 
@@ -92,7 +95,7 @@ Verification needed before deploy:
 - Let a series episode end and confirm the 5-second next-episode countdown appears and advances automatically.
 - Let the final episode of a series end and confirm the countdown queues a related/new series instead of stopping dead.
 - Drag the seek bar thumb forward/backward on Android portrait and landscape and confirm the runtime text remains visible.
-- Confirm the unplayed part of the seek bar remains visible over bright and dark scenes.
+- Confirm the unplayed part of the seek bar is only softly visible over bright and dark scenes, without a thick white/blue-looking strip.
 - Open a slow-loading movie and confirm the player shows the red-and-white ring spinner, then retries/wakes the stream instead of spinning forever.
 - Let a movie end with related movies available and confirm the first related title can be skipped to from the player.
 - Open a high episode number and confirm the episode rail centers the active episode thumbnail automatically.
