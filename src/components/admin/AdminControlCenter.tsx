@@ -495,6 +495,14 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         icon: <LayoutDashboard size={20} />,
       },
       {
+        id: 'executive-summary',
+        href: '/admin/executive-summary',
+        label: 'Executive Summary',
+        description: 'Read-only leadership snapshot for users, revenue, content, and operations.',
+        meta: 'Internal monitoring',
+        icon: <DollarSign size={20} />,
+      },
+      {
         id: 'movies' as AdminTab,
         href: '/admin/movies',
         label: 'Movies',
