@@ -1,4 +1,4 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { AggregateField, FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebaseAdmin';
 import { isAdminEmail } from '@/lib/auth/server';
 import { SUBSCRIPTION_PLANS } from '@/lib/subscriptions/plans';
@@ -1024,6 +1024,45 @@ export async function listPaymentsForAdminByProvider(provider: PaymentProvider, 
       .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
       .slice(0, limit);
   }
+}
+
+function normalizeAggregateAmount(value: unknown) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+export async function getCompletedPaymentAmountForProviderInRange(
+  provider: PaymentProvider,
+  startIso: string,
+  endIso: string
+) {
+  const snapshot = await adminDb
+    .collection(PAYMENTS_COLLECTION)
+    .where('paymentProvider', '==', provider)
+    .where('status', '==', 'completed')
+    .where('createdAt', '>=', startIso)
+    .where('createdAt', '<', endIso)
+    .aggregate({
+      amount: AggregateField.sum('amount'),
+    })
+    .get();
+
+  return normalizeAggregateAmount(snapshot.data().amount);
+}
+
+export async function getActiveSubscriptionValueForProvider(provider: PaymentProvider) {
+  const snapshot = await adminDb
+    .collection(SUBSCRIPTIONS_COLLECTION)
+    .where('paymentProvider', '==', provider)
+    .where('status', '==', 'active')
+    .where('isActive', '==', true)
+    .where('expiresAt', '>', new Date().toISOString())
+    .aggregate({
+      amount: AggregateField.sum('amount'),
+    })
+    .get();
+
+  return normalizeAggregateAmount(snapshot.data().amount);
 }
 
 export async function listPaymentsForUser(userId: string, limit = 20) {

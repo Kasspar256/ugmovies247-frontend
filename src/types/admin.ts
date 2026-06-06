@@ -211,10 +211,17 @@ export type AdminLibraryAsset = {
   assignments: AdminLibraryAssignment[];
 };
 
+export type AdminUserMetrics = {
+  totalUsers: number;
+  activeSubscribers: number;
+  source: 'firestore-count' | 'list-fallback';
+};
+
 export type AdminControlCenterPayload = {
   movies: Movie[];
   categories: AdminCategory[];
   users: AdminUserSummary[];
+  userMetrics: AdminUserMetrics;
   requests: AdminRequest[];
   libraryAssets: AdminLibraryAsset[];
   revenue: AdminRevenueSummary;

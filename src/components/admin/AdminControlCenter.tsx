@@ -119,6 +119,11 @@ const EMPTY_ADMIN_PAYLOAD: AdminControlCenterPayload = {
   movies: [],
   categories: [],
   users: [],
+  userMetrics: {
+    totalUsers: 0,
+    activeSubscribers: 0,
+    source: 'list-fallback',
+  },
   requests: [],
   libraryAssets: [],
   revenue: EMPTY_ADMIN_REVENUE,
@@ -288,11 +293,16 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           ),
         ]);
       } else if (activeTab === 'users') {
-        await loadResource<{ users: AdminControlCenterPayload['users'] }>(
+        await loadResource<{
+          users: AdminControlCenterPayload['users'];
+          userMetrics?: AdminControlCenterPayload['userMetrics'];
+        }>(
           'Users',
           '/api/admin/users',
           (response) => {
             nextPayload.users = response.users || [];
+            nextPayload.userMetrics =
+              response.userMetrics || EMPTY_ADMIN_PAYLOAD.userMetrics;
           }
         );
       } else if (activeTab === 'requests') {
@@ -325,11 +335,16 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           loadResource<{ movies: Movie[] }>('Movies', '/api/admin/movies', (response) => {
             nextPayload.movies = response.movies || [];
           }),
-          loadResource<{ users: AdminControlCenterPayload['users'] }>(
+          loadResource<{
+            users: AdminControlCenterPayload['users'];
+            userMetrics?: AdminControlCenterPayload['userMetrics'];
+          }>(
             'Users',
             '/api/admin/users',
             (response) => {
               nextPayload.users = response.users || [];
+              nextPayload.userMetrics =
+                response.userMetrics || EMPTY_ADMIN_PAYLOAD.userMetrics;
             }
           ),
           loadResource<{ requests: AdminRequest[] }>('Requests', '/api/admin/requests', (response) => {
@@ -358,11 +373,16 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
           loadResource<{ assets: AdminLibraryAsset[] }>('Library', '/api/admin/library', (response) => {
             nextPayload.libraryAssets = response.assets || [];
           }),
-          loadResource<{ users: AdminControlCenterPayload['users'] }>(
+          loadResource<{
+            users: AdminControlCenterPayload['users'];
+            userMetrics?: AdminControlCenterPayload['userMetrics'];
+          }>(
             'Users',
             '/api/admin/users',
             (response) => {
               nextPayload.users = response.users || [];
+              nextPayload.userMetrics =
+                response.userMetrics || EMPTY_ADMIN_PAYLOAD.userMetrics;
             }
           ),
           loadResource<{ requests: AdminRequest[] }>('Requests', '/api/admin/requests', (response) => {
@@ -484,6 +504,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
     () => movieItems.find((movie) => movie.id === editingMovieId) || null,
     [movieItems, editingMovieId]
   );
+  const totalUsers = payload?.userMetrics?.totalUsers ?? payload?.users.length ?? 0;
   const navCards = useMemo(
     () => [
       {
@@ -547,7 +568,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
         href: '/admin/users',
         label: 'Users',
         description: 'Search members, plans, and account activity.',
-        meta: `${payload?.users.length || 0} users`,
+        meta: `${totalUsers} users`,
         icon: <Users size={20} />,
       },
       {
@@ -592,7 +613,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
       payload?.libraryAssets.length,
       payload?.requests.length,
       payload?.revenue.monthLabel,
-      payload?.users.length,
+      totalUsers,
     ]
   );
 
@@ -1622,7 +1643,7 @@ export default function AdminControlCenter({ section }: AdminControlCenterProps)
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <StatTile title="Movies" value={movieItems.length} icon={<Film size={18} />} />
                     <StatTile title="Series" value={seriesItems.length} icon={<Clapperboard size={18} />} />
-                    <StatTile title="Users" value={payload?.users.length || 0} icon={<Users size={18} />} />
+                    <StatTile title="Users" value={totalUsers} icon={<Users size={18} />} />
                     <StatTile title="Mobile Money Revenue" value={`UGX ${(payload?.revenue.monthRevenue || 0).toLocaleString()}`} icon={<DollarSign size={18} />} subcopy={payload?.revenue.monthLabel || ''} />
                   </div>
                 </Card>

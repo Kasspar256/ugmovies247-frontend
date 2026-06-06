@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
-import { listUsersForAdmin } from '@/lib/server/adminControlCenter';
+import { getUserMetricsForAdmin, listUsersForAdmin } from '@/lib/server/adminControlCenter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,8 @@ export async function GET() {
     }
 
     const users = await listUsersForAdmin();
-    return NextResponse.json({ users });
+    const userMetrics = await getUserMetricsForAdmin(users);
+    return NextResponse.json({ users, userMetrics });
   } catch (error) {
     console.error('[admin-users] failed to list users', error);
     return NextResponse.json(

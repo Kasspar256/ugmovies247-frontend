@@ -46,6 +46,7 @@ import type {
   AdminRequestStatus,
   AdminRevenuePlanSummary,
   AdminRevenueSummary,
+  AdminUserMetrics,
   AdminUserSummary,
 } from '@/types/admin';
 
@@ -61,6 +62,7 @@ type TimedAdminCache<T> = {
 
 let adminCategoriesCache: TimedAdminCache<AdminCategory[]> | null = null;
 let adminUsersCache: TimedAdminCache<AdminUserSummary[]> | null = null;
+let adminUserMetricsCache: TimedAdminCache<AdminUserMetrics> | null = null;
 let adminRequestsCache: TimedAdminCache<AdminRequest[]> | null = null;
 let adminLibraryCache: TimedAdminCache<AdminLibraryAsset[]> | null = null;
 let adminRevenueCache: TimedAdminCache<AdminRevenueSummary> | null = null;
@@ -243,6 +245,7 @@ export function clearAdminPanelServerCache(
 
   if (targets.includes('users')) {
     adminUsersCache = null;
+    adminUserMetricsCache = null;
   }
 
   if (targets.includes('requests')) {
@@ -736,6 +739,56 @@ export async function listUsersForAdmin(limit = 200) {
   });
 }
 
+function createUserMetricsFallback(users: AdminUserSummary[] = []): AdminUserMetrics {
+  return {
+    totalUsers: users.length,
+    activeSubscribers: users.filter((user) => user.subscription?.isActive === true).length,
+    source: 'list-fallback',
+  };
+}
+
+async function readFirestoreCount(query: unknown) {
+  const aggregateSnapshot = await (query as {
+    count: () => {
+      get: () => Promise<{
+        data: () => {
+          count?: number;
+        };
+      }>;
+    };
+  })
+    .count()
+    .get();
+
+  const count = Number(aggregateSnapshot.data().count || 0);
+  return Number.isFinite(count) ? count : 0;
+}
+
+export async function getUserMetricsForAdmin(usersFallback: AdminUserSummary[] = []) {
+  return readCachedAdminValue({
+    resource: 'user-metrics',
+    cache: adminUserMetricsCache,
+    ttlMs: ADMIN_COLLECTION_CACHE_TTL_MS,
+    onWrite: (value) => {
+      adminUserMetricsCache = value;
+    },
+    fallback: () => createUserMetricsFallback(usersFallback),
+    allowFallbackWithoutCache: true,
+    loader: async (): Promise<AdminUserMetrics> => {
+      const [totalUsers, activeSubscribers] = await Promise.all([
+        readFirestoreCount(adminDb.collection('users')),
+        readFirestoreCount(adminDb.collection('users').where('subscription.isActive', '==', true)),
+      ]);
+
+      return {
+        totalUsers,
+        activeSubscribers,
+        source: 'firestore-count',
+      };
+    },
+  });
+}
+
 export async function listRequestsForAdmin(limit = 200) {
   return listMovieRequestsForAdmin(limit);
 }
@@ -1131,10 +1184,21 @@ export async function getAdminControlCenterPayload(): Promise<AdminControlCenter
     logAdminDataFailure('revenue', revenueResult.reason);
   }
 
+  const users = usersResult.status === 'fulfilled' ? usersResult.value : [];
+  const [userMetricsResult] = await Promise.allSettled([getUserMetricsForAdmin(users)]);
+
+  if (userMetricsResult.status === 'rejected') {
+    logAdminDataFailure('user-metrics', userMetricsResult.reason);
+  }
+
   return {
     movies,
     categories: categoriesResult.status === 'fulfilled' ? categoriesResult.value : [],
-    users: usersResult.status === 'fulfilled' ? usersResult.value : [],
+    users,
+    userMetrics:
+      userMetricsResult.status === 'fulfilled'
+        ? userMetricsResult.value
+        : createUserMetricsFallback(users),
     requests: requestsResult.status === 'fulfilled' ? requestsResult.value : [],
     libraryAssets: libraryAssetsResult.status === 'fulfilled' ? libraryAssetsResult.value : [],
     revenue:
