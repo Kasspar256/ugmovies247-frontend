@@ -245,3 +245,17 @@ Verification needed:
 
 - Configure `EXECUTIVE_SUMMARY_READ_TOKEN` on production.
 - Run `RON_EXECUTIVE_SUMMARY_TOKEN=... node scripts/ron-executive-summary.js`.
+
+
+### Video Job Failures Summary Endpoint
+
+Status: deployed separately.
+
+Purpose: add a read-only aggregate endpoint for failed video job investigation.
+
+Files changed:
+
+- `src/app/api/admin/video-job-failures-summary/route.ts`
+
+Verification:
+- GET /api/admin/video-job-failures-summary returns failed job counts, oldest/latest timestamps, reason counts, and 24h/7d/30d windows.
