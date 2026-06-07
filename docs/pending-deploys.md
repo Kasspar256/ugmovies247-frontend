@@ -227,3 +227,21 @@ Verification needed before deploy:
 - Confirm previous/next media buttons only appear in landscape/full player mode.
 - Confirm the previous button stays visible but dimmed/disabled when no previous item exists.
 - Swipe left half vertically for brightness and right half vertically for volume in landscape; the zones must stay invisible and only show a temporary percentage indicator.
+
+
+### Ron Executive Summary CLI and Read-Only Token
+
+Status: deployed separately.
+
+Purpose: add a read-only bearer-token path for `/api/admin/executive-summary` and update Ron CLI to use `RON_EXECUTIVE_SUMMARY_TOKEN`.
+
+Files changed:
+
+- `src/app/api/admin/executive-summary/route.ts`
+- `scripts/ron-executive-summary.js`
+- `docs/pending-deploys.md`
+
+Verification needed:
+
+- Configure `EXECUTIVE_SUMMARY_READ_TOKEN` on production.
+- Run `RON_EXECUTIVE_SUMMARY_TOKEN=... node scripts/ron-executive-summary.js`.

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import { getCurrentAuthSession, isAdminEmail } from '@/lib/auth/server';
 import { adminDb } from '@/lib/firebaseAdmin';
@@ -40,6 +41,7 @@ type RequestJobSummary = {
 const ACTIVE_VIDEO_JOB_STATUSES = new Set(['queued', 'downloading', 'inspecting', 'processing', 'uploading']);
 const PENDING_REQUEST_STATUSES = new Set(['pending', 'new']);
 const ADMIN_USERS_LIST_LIMIT = 200;
+const READ_ONLY_TOKEN_MIN_LENGTH = 32;
 
 async function requireAdmin() {
   const session = await getCurrentAuthSession();
@@ -49,6 +51,67 @@ async function requireAdmin() {
   }
 
   return session;
+}
+
+
+function getConfiguredReadOnlyToken() {
+  return (
+    process.env.EXECUTIVE_SUMMARY_READ_TOKEN ||
+    process.env.RON_EXECUTIVE_SUMMARY_TOKEN ||
+    process.env.UGMOVIES_EXECUTIVE_SUMMARY_READ_TOKEN ||
+    ''
+  ).trim();
+}
+
+function constantTimeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getRequestReadOnlyToken(request: Request) {
+  const authorization = request.headers.get('authorization') || '';
+  const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
+
+  return (
+    bearerMatch?.[1] ||
+    request.headers.get('x-executive-summary-token') ||
+    request.headers.get('x-ugmovies-executive-summary-token') ||
+    ''
+  ).trim();
+}
+
+function hasValidReadOnlyToken(request: Request) {
+  const configuredToken = getConfiguredReadOnlyToken();
+  const requestToken = getRequestReadOnlyToken(request);
+
+  if (
+    configuredToken.length < READ_ONLY_TOKEN_MIN_LENGTH ||
+    requestToken.length < READ_ONLY_TOKEN_MIN_LENGTH
+  ) {
+    return false;
+  }
+
+  return constantTimeEqual(requestToken, configuredToken);
+}
+
+async function requireExecutiveSummaryReadAccess(request: Request) {
+  if (hasValidReadOnlyToken(request)) {
+    return { type: 'read-only-token' as const };
+  }
+
+  const session = await requireAdmin();
+
+  if (!session) {
+    return null;
+  }
+
+  return { type: 'admin-session' as const, session };
 }
 
 function getCurrentMonthRangeIso() {
@@ -181,11 +244,11 @@ function buildWarnings(input: {
   return warnings.slice(0, 5);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await requireAdmin();
+    const access = await requireExecutiveSummaryReadAccess(request);
 
-    if (!session) {
+    if (!access) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

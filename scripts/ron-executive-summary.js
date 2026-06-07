@@ -3,6 +3,11 @@
 const DEFAULT_ENDPOINT = 'https://ugmovies247.com/api/admin/executive-summary';
 
 const endpoint = process.env.RON_EXECUTIVE_SUMMARY_URL || DEFAULT_ENDPOINT;
+const readOnlyToken =
+  process.env.RON_EXECUTIVE_SUMMARY_TOKEN ||
+  process.env.EXECUTIVE_SUMMARY_READ_TOKEN ||
+  process.env.UGMOVIES_EXECUTIVE_SUMMARY_READ_TOKEN ||
+  '';
 const cookieHeader =
   process.env.RON_EXECUTIVE_SUMMARY_COOKIE ||
   process.env.UGMOVIES_EXECUTIVE_SUMMARY_COOKIE ||
@@ -36,14 +41,13 @@ function printAuthHelp() {
   console.error('UGMOVIES247 Executive Summary\n');
   console.error('Could not authenticate to the production admin endpoint.\n');
   console.error('Current codebase authentication:');
-  console.error('- /api/admin/executive-summary requires the existing admin web session cookie.');
-  console.error('- The codebase does not currently expose a dedicated read-only API token for Ron/Hermes.\n');
-  console.error('Safe read-only gap:');
-  console.error('- A true read-only integration needs a dedicated server-side read-only token or role.');
-  console.error('- That token should be accepted only by this GET endpoint and never by write routes.\n');
-  console.error('Temporary current-codebase method:');
-  console.error('- Run with RON_EXECUTIVE_SUMMARY_COOKIE set to a valid admin Cookie header.');
-  console.error('- Do not paste or print that cookie into Ron, chats, logs, or screenshots.');
+  console.error('- /api/admin/executive-summary accepts a dedicated read-only bearer token.');
+  console.error('- The token must be configured on the server as EXECUTIVE_SUMMARY_READ_TOKEN.\n');
+  console.error('Safe read-only method:');
+  console.error('- Run this script with RON_EXECUTIVE_SUMMARY_TOKEN set to the same token value.');
+  console.error('- The token is only used against the executive-summary GET endpoint.\n');
+  console.error('Example:');
+  console.error("RON_EXECUTIVE_SUMMARY_TOKEN='your-read-only-token' node scripts/ron-executive-summary.js");
 }
 
 function printReport(summary) {
@@ -55,30 +59,24 @@ function printReport(summary) {
   console.log('UGMOVIES247 EXECUTIVE SUMMARY');
   console.log('============================');
   console.log(`Timestamp: ${summary.timestamp || new Date().toISOString()}\n`);
-
   console.log('Audience');
   console.log(`- Users total: ${formatNumber(summary.usersTotal)}`);
   console.log(`- Active subscribers: ${formatNumber(summary.activeSubscribers)}`);
   console.log(`- Active subscription value: ${formatMoney(summary.activeSubscriptionValue, summary.activeSubscriptionValueCurrency || 'UGX')}\n`);
-
   console.log('Revenue This Month');
   console.log(`- Mobile money: ${formatMoney(summary.mobileMoneyRevenueThisMonth, summary.mobileMoneyCurrency || 'UGX')}`);
   console.log(`- Card revenue: ${formatMoney(summary.cardRevenueThisMonth, summary.cardCurrency || 'ZAR')}`);
   console.log(`- Combined revenue: ${combinedRevenue}\n`);
-
   console.log('Content');
   console.log(`- Movies: ${formatNumber(summary.movieCount)}`);
   console.log(`- Series: ${formatNumber(summary.seriesCount)}\n`);
-
   console.log('Requests');
   console.log(`- Requests: ${formatNumber(summary.requestCount)}`);
   console.log(`- Pending requests: ${formatNumber(summary.pendingRequests)}`);
   console.log(`- Failed request jobs: ${formatNumber(summary.failedRequestJobs)}\n`);
-
   console.log('Operations');
   console.log(`- Active video jobs: ${formatNumber(summary.activeVideoJobs)}`);
   console.log(`- Failed video jobs: ${formatNumber(summary.failedVideoJobs)}\n`);
-
   console.log('Warnings');
   console.log(formatList(summary.topOperationalWarnings, 'None reported'));
   console.log('\nMissing Metrics');
@@ -97,7 +95,11 @@ async function main() {
     'User-Agent': 'ugmovies247-ron-executive-summary/1.0',
   };
 
-  if (cookieHeader.trim()) headers.Cookie = cookieHeader.trim();
+  if (readOnlyToken.trim()) {
+    headers.Authorization = `Bearer ${readOnlyToken.trim()}`;
+  } else if (cookieHeader.trim()) {
+    headers.Cookie = cookieHeader.trim();
+  }
 
   const response = await fetch(endpoint, { method: 'GET', headers, redirect: 'manual' });
   const text = await response.text();
