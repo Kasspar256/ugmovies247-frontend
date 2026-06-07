@@ -433,22 +433,25 @@ function PlayerShellButton({
 }
 
 function SpinnerOrb({ className = '' }: { className?: string }) {
+  const ringStyle = {
+    background:
+      'conic-gradient(from 145deg, #D90429 0deg 64deg, rgba(255,255,255,0.98) 64deg 360deg)',
+    WebkitMask:
+      'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+    mask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+  };
+
   return (
     <span
       className={`relative inline-flex h-12 w-12 items-center justify-center rounded-full ${className}`}
       aria-label="Loading video"
       role="status"
     >
-      <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
       <span
-        className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
-        style={{
-          background:
-            'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
-        }}
-      >
-        <span className="block h-full w-full rounded-full bg-transparent" />
-      </span>
+        className="absolute inset-0 animate-spin rounded-full"
+        style={ringStyle}
+        aria-hidden="true"
+      />
     </span>
   );
 }
@@ -3867,7 +3870,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             event.stopPropagation();
                             togglePlayPause();
                           }}
-                          className="pointer-events-auto inline-flex h-16 w-16 items-center justify-center rounded-full bg-white text-black shadow-[0_16px_44px_rgba(0,0,0,0.38)] transition-transform active:scale-95"
+                          className="pointer-events-auto inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_16px_44px_rgba(0,0,0,0.38)] transition-transform active:scale-95"
                         >
                           {playbackPhase === 'playing' ? (
                             <Pause size={27} />
@@ -3914,7 +3917,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                               event.stopPropagation();
                               togglePlayPause();
                             }}
-                            className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-white text-black shadow-[0_18px_46px_rgba(0,0,0,0.42)] transition-transform active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
+                            className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_18px_46px_rgba(0,0,0,0.42)] transition-transform active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
                           >
                             {playbackPhase === 'playing' ? (
                               <Pause size={30} />
@@ -4414,7 +4417,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                                 event.stopPropagation();
                                 togglePlayPause();
                               }}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
                             >
                               {playbackPhase === 'playing' ? (
                                 <Pause size={18} />
