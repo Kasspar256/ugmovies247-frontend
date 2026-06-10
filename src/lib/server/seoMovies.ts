@@ -8,7 +8,7 @@ import {
 } from '@/lib/server/movieCatalogCache';
 import { normalizeMovie, type Movie } from '@/types/movie';
 
-const SEO_MOVIE_LIMIT = 1000;
+const SEO_MOVIE_LIMIT = 5000;
 
 function normalizeMovies(movies: Array<Record<string, unknown>>) {
   return movies

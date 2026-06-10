@@ -1,15 +1,17 @@
 import type { MetadataRoute } from 'next';
-import { VJ_DIRECTORY } from '@/config/constants';
+import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
 import { getSeoMovieCatalog } from '@/lib/server/seoMovies';
 import { absoluteUrl } from '@/lib/seo';
 
 const staticRoutes = [
   '/',
   '/browse',
+  '/movies',
   '/genres',
   '/series',
   '/search',
   '/vjs',
+  '/request',
   '/category/latest',
   '/category/uganda-movies',
   '/category/luganda-translated-movies',
@@ -18,6 +20,14 @@ const staticRoutes = [
   '/category/action',
   '/category/comedy',
   '/category/trending',
+  '/category/romance',
+  '/category/drama',
+  '/category/horror',
+  '/category/indian-movies',
+  '/category/vj-junior',
+  '/category/vj-emmy',
+  '/category/vj-jingo',
+  '/category/omutaka-ice-p',
   '/privacy',
   '/terms',
   '/account-deletion',
@@ -25,21 +35,11 @@ const staticRoutes = [
   '/dmca',
 ];
 
-const genreRoutes = [
-  'Action',
-  'Comedy',
-  'Drama',
-  'Horror',
-  'Indian',
-  'K-Drama',
-  'Romance',
-  'Sci-Fi',
-  'Thriller',
-].map((genre) => `/genres/${encodeURIComponent(genre)}`);
+const genreRoutes = GENRE_DIRECTORY.map((genre) => `/genres/${encodeURIComponent(genre)}`);
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const movies = await getSeoMovieCatalog(1000);
+  const movies = await getSeoMovieCatalog(5000);
   const movieRoutes = movies.map((movie) => ({
     url: absoluteUrl(`/movie/${encodeURIComponent(movie.id)}`),
     lastModified: movie.updatedAt || movie.date_added || movie.createdAt || now,
