@@ -32,6 +32,7 @@ import {
   fetchPublicMovieById,
   fetchPublicMovies,
   primePublicMovieCatalog,
+  PUBLIC_MOVIE_PAGE_LIMIT,
   readCachedPublicMovies,
 } from '@/lib/publicMovies';
 import { startCasting } from '@/lib/cast';
@@ -43,6 +44,7 @@ import TrailerEmbedPlayer from '@/components/TrailerEmbedPlayer';
 import { isAppInReview } from '@/lib/appReview';
 import { getReviewTrailerUrl } from '@/lib/reviewTrailers';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { PENDING_MOVIE_NAVIGATION_KEY } from '@/lib/movieNavigationHint';
 
 function inferSeasonEpisodeFromSeriesEntry(
   entry: Movie,
@@ -145,6 +147,44 @@ function movieHasAnyPlaybackSource(movie: Movie) {
   return hasPlaybackSource(movie);
 }
 
+function readPendingRouteMovie(movieId: string) {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_MOVIE_NAVIGATION_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as {
+      movie?: Record<string, unknown>;
+      cachedAt?: number;
+    };
+    const pendingMovie = parsed.movie;
+
+    if (!pendingMovie || (parsed.cachedAt && Date.now() - parsed.cachedAt > 1000 * 60)) {
+      return null;
+    }
+
+    const pendingId = String(pendingMovie.id || pendingMovie.movieId || '');
+
+    if (pendingId !== movieId) {
+      return null;
+    }
+
+    return normalizeMovie(movieId, {
+      ...pendingMovie,
+      id: movieId,
+      movieId,
+    });
+  } catch {
+    return null;
+  }
+}
+
 function hasCachedPremiumAccess() {
   return readLocalPremiumAccessSnapshot().hasPremiumAccess;
 }
@@ -233,7 +273,19 @@ const cachedInitialMovies = useMemo(() => {
     return [];
   }
 
-  return readCachedPublicMovies();
+  const pendingMovie = readPendingRouteMovie(params.id);
+  const cachedMovies = readCachedPublicMovies();
+
+  if (!pendingMovie) {
+    return cachedMovies;
+  }
+
+  return [
+    pendingMovie,
+    ...cachedMovies.filter(
+      (candidate) => candidate.id !== pendingMovie.id && candidate.movieId !== pendingMovie.movieId
+    ),
+  ];
 }, [initialMovie, params.id]);
 const routeInitialMovie = useMemo(
   () =>
@@ -392,7 +444,7 @@ if (routeInitialMovie) {
       });
   } else if (!shouldBypassCatalogCache) {
     setIsSourceHydrating(false);
-    void fetchPublicMovies()
+    void fetchPublicMovies({ limit: PUBLIC_MOVIE_PAGE_LIMIT })
       .then((catalogMovies) => {
         if (!active) {
           return;
@@ -456,7 +508,10 @@ const freshMovie = await fetchPublicMovieById(params.id).catch((error) => {
 if (freshMovie) {
 setIsSourceHydrating(false);
 applyResolvedMovie(freshMovie, cachedMovies.length ? cachedMovies : [freshMovie]);
-void fetchPublicMovies({ force: shouldBypassCatalogCache })
+void fetchPublicMovies({
+  force: shouldBypassCatalogCache,
+  limit: PUBLIC_MOVIE_PAGE_LIMIT,
+})
   .then((catalogMovies) => applyResolvedMovie(freshMovie, catalogMovies))
   .catch((error) => {
     console.warn('[movie-page] catalog refresh failed after movie render', error);
@@ -469,7 +524,10 @@ if (renderedMovie) {
   return;
 }
 
-const allMovies = await fetchPublicMovies({ force: shouldBypassCatalogCache });
+const allMovies = await fetchPublicMovies({
+  force: shouldBypassCatalogCache,
+  limit: PUBLIC_MOVIE_PAGE_LIMIT,
+});
 const matchedMovie = allMovies.find((candidate) =>
   candidate.id === params.id || candidate.movieId === params.id
 );
@@ -1636,27 +1694,20 @@ if ((loading && !movie) || (!movie && isRouteActiveProviderPlayback)) {
               aria-label="Opening player"
               role="status"
             >
-              <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
               <span
-                className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+                className="absolute inset-0 animate-spin rounded-full shadow-[0_0_18px_rgba(217,4,41,0.28)]"
                 style={{
                   background:
-                    'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+                    'conic-gradient(from 145deg, #D90429 0deg 64deg, rgba(255,255,255,0.98) 64deg 360deg)',
+                  WebkitMask:
+                    'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+                  mask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
                 }}
-              >
-                <span className="block h-full w-full rounded-full bg-black" />
-              </span>
+                aria-hidden="true"
+              />
             </span>
           </div>
         )}
-      </div>
-      <div className="px-7 pt-8 text-center">
-        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-white/46">
-          Opening player
-        </p>
-        <h1 className="mx-auto mt-4 max-w-xl text-4xl font-black leading-tight tracking-[-0.05em] text-white">
-          {activeSource?.title || 'UGMOVIES247'}
-        </h1>
       </div>
     </main>
   );
@@ -1764,16 +1815,17 @@ return ( <main className="min-h-screen bg-[#0B0C10] text-white font-sans pb-[cal
             aria-label="Opening player"
             role="status"
           >
-            <span className="absolute inset-0 rounded-full bg-[#D90429]/18 blur-lg" />
             <span
-              className="absolute inset-0 animate-spin rounded-full p-[3px] shadow-[0_0_22px_rgba(217,4,41,0.34)]"
+              className="absolute inset-0 animate-spin rounded-full shadow-[0_0_18px_rgba(217,4,41,0.28)]"
               style={{
                 background:
-                  'conic-gradient(from 300deg, #D90429 0deg 64deg, rgba(255,255,255,0.96) 64deg 360deg)',
+                  'conic-gradient(from 145deg, #D90429 0deg 64deg, rgba(255,255,255,0.98) 64deg 360deg)',
+                WebkitMask:
+                  'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+                mask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
               }}
-            >
-              <span className="block h-full w-full rounded-full bg-black" />
-            </span>
+              aria-hidden="true"
+            />
           </span>
         </div>
       ) : (

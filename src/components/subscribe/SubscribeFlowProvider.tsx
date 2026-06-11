@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -17,7 +18,7 @@ import {
   useRouter,
   useSearchParams,
 } from 'next/navigation';
-import { fetchPublicMovies } from '@/lib/publicMovies';
+import { fetchPublicMovies, PUBLIC_MOVIE_BOOTSTRAP_LIMIT } from '@/lib/publicMovies';
 import { SUBSCRIPTION_PLAN_LIST } from '@/lib/subscriptions/plans';
 import { readCachedAccountProfile } from '@/lib/accountProfile';
 import { getHydratedClientDeviceHeaders } from '@/lib/auth/deviceIdentity';
@@ -217,7 +218,11 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 
 async function refreshUnlockedCatalog() {
   try {
-    await fetchPublicMovies({ force: true, refreshEntitlement: true });
+    await fetchPublicMovies({
+      force: true,
+      refreshEntitlement: true,
+      limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
+    });
   } catch (error) {
     console.warn('[subscribe] failed to refresh public movie catalog after subscription change', error);
   }

@@ -33,6 +33,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
+const MAX_PUBLIC_CATALOG_PAGE_SIZE = 240;
 let movieCatalogBackgroundRefreshPromise: Promise<CachedMovieCatalog | null> | null = null;
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
@@ -402,6 +403,16 @@ function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
   return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
 }
 
+function readBoundedInteger(value: string | null, options: { min: number; max: number }) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.max(options.min, Math.min(options.max, Math.floor(parsed)));
+}
+
 function compactPartForCatalog(part: Record<string, unknown>) {
   return {
     id: String(part.id || ''),
@@ -641,6 +652,18 @@ export async function GET(request: Request) {
     const shouldReturnCompactCatalog = requestUrl.searchParams.get('compact') === '1';
     const sinceTimestamp = sinceParam ? new Date(sinceParam).getTime() : 0;
     const shouldReturnDelta = Number.isFinite(sinceTimestamp) && sinceTimestamp > 0;
+    const limit = shouldReturnDelta
+      ? null
+      : readBoundedInteger(requestUrl.searchParams.get('limit'), {
+          min: 1,
+          max: MAX_PUBLIC_CATALOG_PAGE_SIZE,
+        });
+    const offset = limit
+      ? readBoundedInteger(requestUrl.searchParams.get('offset'), {
+          min: 0,
+          max: Number.MAX_SAFE_INTEGER,
+        }) || 0
+      : 0;
     const session = await getRequestAuthSession(request);
     const entitlement = session
       ? await getViewerEntitlement(session.uid, {
@@ -666,9 +689,12 @@ export async function GET(request: Request) {
       .filter((movieDoc) =>
         isAppInReview ? movieDoc.is_for_review === true : hasVisibleCatalogAsset(movieDoc, collectionName)
       );
-    const movieDocs = shouldReturnDelta
+    const filteredMovieDocs = shouldReturnDelta
       ? visibleMovieDocs.filter((movieDoc) => getMovieTimestamp(movieDoc) > sinceTimestamp)
       : visibleMovieDocs;
+    const movieDocs = limit
+      ? filteredMovieDocs.slice(offset, offset + limit)
+      : filteredMovieDocs;
     const movies = movieDocs
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
@@ -683,6 +709,11 @@ export async function GET(request: Request) {
       entitlement,
       delta: shouldReturnDelta,
       since: shouldReturnDelta ? sinceParam : undefined,
+      limit: limit || undefined,
+      offset: limit ? offset : undefined,
+      total: limit ? filteredMovieDocs.length : undefined,
+      hasMore: limit ? offset + movieDocs.length < filteredMovieDocs.length : false,
+      partial: Boolean(limit),
       serverTime: new Date().toISOString(),
     });
   } catch (error) {

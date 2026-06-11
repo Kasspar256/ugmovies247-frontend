@@ -9,7 +9,11 @@ import {
 } from './status-client';
 import { clearAccountProfileCache } from '@/lib/accountProfile';
 import { refreshLocalPremiumAccessSnapshot } from '@/lib/clientAccessState';
-import { clearPublicMovieCache, fetchPublicMovies } from '@/lib/publicMovies';
+import {
+  clearPublicMovieCache,
+  fetchPublicMovies,
+  PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
+} from '@/lib/publicMovies';
 import { fetchHomePageCategories, warmHomePageArtwork } from '@/lib/homePageClient';
 import { buildHomeCollections } from '@/lib/homeRows';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
@@ -278,7 +282,10 @@ async function warmPostLoginAppData(role: 'user' | 'admin') {
 
   try {
     const [movies, homePageCategories] = await Promise.all([
-      fetchPublicMovies({ refreshEntitlement: true }),
+      fetchPublicMovies({
+        refreshEntitlement: true,
+        limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
+      }),
       fetchHomePageCategories(),
     ]);
     const normalizedMovies = dedupeSeriesMovies(movies);

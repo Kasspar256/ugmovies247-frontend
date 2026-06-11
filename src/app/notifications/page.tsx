@@ -4,7 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Bell, BellRing, CheckCheck, Clapperboard, RefreshCw } from 'lucide-react';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import {
   getLatestUploadedMovies,
   getMovieTimestamp,
@@ -62,7 +66,11 @@ export default function NotificationsPage() {
   };
 
   const loadLatestMovies = async (force = false) => {
-    const movies = await fetchPublicMovies({ force, refreshEntitlement: true });
+    const movies = await fetchPublicMovies({
+      force,
+      refreshEntitlement: true,
+      limit: PUBLIC_MOVIE_PAGE_LIMIT,
+    });
     const latestUploads = getLatestUploadedMovies(movies);
 
     setLatestMovies(latestUploads);

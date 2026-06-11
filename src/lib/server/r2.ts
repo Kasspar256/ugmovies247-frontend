@@ -113,6 +113,23 @@ export function getR2PublicUrl(key: string) {
   return `${getPublicR2BaseUrl()}/${key.replace(/^\/+/, '')}`;
 }
 
+const STREAMING_OBJECT_CACHE_CONTROL = 'private, no-store, max-age=0, must-revalidate';
+
+function getStreamingObjectCacheControl(contentType: string, key: string) {
+  const normalizedContentType = contentType.toLowerCase();
+
+  if (
+    normalizedContentType.startsWith('video/') ||
+    normalizedContentType.includes('mpegurl') ||
+    normalizedContentType.includes('mp2t') ||
+    /\.(m3u8|ts|mp4|m4v|mov|webm)$/i.test(key)
+  ) {
+    return STREAMING_OBJECT_CACHE_CONTROL;
+  }
+
+  return undefined;
+}
+
 function decodeR2ObjectKey(value: string) {
   const normalizedValue = value.replace(/^\/+/, '');
 
@@ -518,6 +535,7 @@ export async function uploadFileToR2(options: {
 }) {
   const stats = await fs.stat(options.localPath);
   const contentType = options.contentType || 'application/octet-stream';
+  const cacheControl = getStreamingObjectCacheControl(contentType, options.key);
 
   if (stats.size > R2_MULTIPART_UPLOAD_THRESHOLD_BYTES) {
     const uploadId = await sendR2Command<CreateMultipartUploadCommandOutput>(
@@ -525,6 +543,7 @@ export async function uploadFileToR2(options: {
         Bucket: process.env.R2_BUCKET_NAME,
         Key: options.key,
         ContentType: contentType,
+        CacheControl: cacheControl,
       }),
       `multipart:create:${options.key}`
     );
@@ -654,6 +673,7 @@ export async function uploadFileToR2(options: {
       Key: options.key,
       Body: body,
       ContentType: contentType,
+      CacheControl: cacheControl,
     }),
     `put:${options.key}`
   );
@@ -721,6 +741,7 @@ export async function uploadDirectoryToR2(
       : fullPath.endsWith('.ts')
         ? 'video/mp2t'
         : 'application/octet-stream';
+    const cacheControl = getStreamingObjectCacheControl(contentType, key);
 
     await sendR2Command(
       new PutObjectCommand({
@@ -728,6 +749,7 @@ export async function uploadDirectoryToR2(
         Key: key,
         Body: body,
         ContentType: contentType,
+        CacheControl: cacheControl,
       }),
       `put:${key}`
     );
@@ -763,3 +785,4 @@ export async function uploadDirectoryToR2(
 
   return uploadedFiles;
 }
+

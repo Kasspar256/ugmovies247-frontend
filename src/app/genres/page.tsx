@@ -3,10 +3,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import { type Movie } from '@/types/movie';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getOptimizedArtworkUrl } from '@/lib/artwork';
+import { hasMatureExclusiveCategory } from '@/lib/matureContent';
 import { isIndianCatalogMovie } from '@/lib/regionalCatalog';
 
 const GENRES = [
@@ -17,7 +22,8 @@ const GENRES = [
 ];
 
 const getGenreImage = (genreName: string, movies: Movie[]) => {
-  const movie = movies.find(
+  const safeMovies = movies.filter((movie) => !hasMatureExclusiveCategory(movie.category || []));
+  const movie = safeMovies.find(
     (m) =>
       m.genres?.includes(genreName) ||
       m.country === genreName ||
@@ -46,7 +52,7 @@ export default function GenresDirectory() {
 
     const fetchMovies = async () => {
       try {
-        const data = await fetchPublicMovies();
+        const data = await fetchPublicMovies({ limit: PUBLIC_MOVIE_PAGE_LIMIT });
         setMovies(data);
       } catch (err) {
         console.error("Error fetching movies:", err);

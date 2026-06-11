@@ -18,12 +18,12 @@ export type PublicCatalogBootstrapPayload = {
   source: 'memory' | 'disk' | 'empty';
 };
 
-const BOOTSTRAP_MOVIE_LIMIT = 360;
-const BOOTSTRAP_LATEST_LIMIT = 96;
-const BOOTSTRAP_TRENDING_LIMIT = 24;
-const BOOTSTRAP_FEATURED_LIMIT = 48;
-const BOOTSTRAP_ROW_MOVIE_LIMIT = 18;
-const BOOTSTRAP_ROW_SERIES_LIMIT = 12;
+const BOOTSTRAP_MOVIE_LIMIT = 48;
+const BOOTSTRAP_LATEST_LIMIT = 24;
+const BOOTSTRAP_TRENDING_LIMIT = 12;
+const BOOTSTRAP_FEATURED_LIMIT = 16;
+const BOOTSTRAP_ROW_MOVIE_LIMIT = 8;
+const BOOTSTRAP_ROW_SERIES_LIMIT = 6;
 const BOOTSTRAP_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
 let inMemoryPublicBootstrapCatalog: PublicCatalogBootstrapPayload | null = null;
@@ -330,4 +330,3 @@ export function createEmptyPublicBootstrapPayload(): PublicCatalogBootstrapPaylo
     source: 'empty',
   };
 }
-

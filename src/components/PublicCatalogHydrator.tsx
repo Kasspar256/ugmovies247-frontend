@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { fetchHomePageCategories } from '@/lib/homePageClient';
 import {
   fetchPublicMovies,
+  PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
   refreshPublicMoviesInBackground,
   readCachedPublicMovies,
 } from '@/lib/publicMovies';
@@ -21,9 +22,9 @@ export default function PublicCatalogHydrator() {
       const hasCachedCatalog = readCachedPublicMovies().length > 0;
 
       if (hasCachedCatalog) {
-        refreshPublicMoviesInBackground();
+        refreshPublicMoviesInBackground({ limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
       } else {
-        void fetchPublicMovies().catch(() => undefined);
+        void fetchPublicMovies({ limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT }).catch(() => undefined);
       }
 
       void fetchHomePageCategories().catch(() => undefined);
@@ -33,7 +34,7 @@ export default function PublicCatalogHydrator() {
           return;
         }
 
-        refreshPublicMoviesInBackground();
+        refreshPublicMoviesInBackground({ limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
         void fetchHomePageCategories().catch(() => undefined);
       };
 
@@ -48,7 +49,7 @@ export default function PublicCatalogHydrator() {
       };
     };
 
-    const timer = window.setTimeout(startHydration, 900);
+    const timer = window.setTimeout(startHydration, 1800);
 
     return () => {
       cancelled = true;

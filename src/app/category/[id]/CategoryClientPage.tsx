@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { Play, ArrowLeft, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
@@ -114,7 +118,7 @@ export default function CategoryClientPage({
 
     const fetchMovies = async () => {
       try {
-        const data = await fetchPublicMovies();
+        const data = await fetchPublicMovies({ limit: PUBLIC_MOVIE_PAGE_LIMIT });
 
         setMovies(dedupeSeriesMovies(getCategoryMovies(categorySlug, data)));
       } catch (err) {

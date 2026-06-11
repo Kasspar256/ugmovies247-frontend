@@ -5,7 +5,11 @@ import { VJ_DIRECTORY } from '@/config/constants';
 import { ArrowLeft, Play } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { isSeriesMovie } from '@/lib/moviePresentation';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import { ensureReviewMinimumMovies } from '@/lib/reviewCatalogFill';
 import { isAppInReview } from '@/lib/appReview';
@@ -63,7 +67,7 @@ export default function VJDetail({ params }: { params: { id: string } }) {
 
     const fetchMovies = async () => {
       try {
-        const allMovies = await fetchPublicMovies();
+        const allMovies = await fetchPublicMovies({ limit: PUBLIC_MOVIE_PAGE_LIMIT });
 
         setMovies(
           ensureReviewMinimumMovies(

@@ -36,6 +36,16 @@ const PUBLIC_MOVIE_CACHE_LEGACY_KEYS = [
 ];
 const PUBLIC_MOVIE_CACHE_TTL_MS = 1000 * 60 * 60 * 2;
 const CLIENT_PUBLIC_READINESS_OPTIONS = { allowLockedPlaceholder: true };
+export const PUBLIC_MOVIE_BOOTSTRAP_LIMIT = 48;
+export const PUBLIC_MOVIE_PAGE_LIMIT = 120;
+const MAX_PUBLIC_MOVIE_PAGE_LIMIT = 240;
+
+type FetchPublicMoviesOptions = {
+  force?: boolean;
+  refreshEntitlement?: boolean;
+  limit?: number;
+  offset?: number;
+};
 
 let inMemoryMovieCatalog: CachedPublicMovieCatalog | null = null;
 let inFlightMovieCatalogRequest: Promise<Movie[]> | null = null;
@@ -393,6 +403,37 @@ function getCatalogSyncIso(cache: CachedPublicMovieCatalog | null) {
   return timestamp > 0 ? new Date(timestamp).toISOString() : '';
 }
 
+function normalizePageLimit(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(1, Math.min(MAX_PUBLIC_MOVIE_PAGE_LIMIT, Math.floor(value)));
+}
+
+function normalizePageOffset(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+function hasEnoughCatalogForRequest(
+  cache: CachedPublicMovieCatalog | null,
+  requestedLimit: number | null
+) {
+  if (!cache?.movies?.length) {
+    return false;
+  }
+
+  if (!requestedLimit) {
+    return cache.partial !== true;
+  }
+
+  return cache.partial !== true || cache.movies.length >= requestedLimit;
+}
+
 function mergeCatalogMovies(existingMovies: Movie[], incomingMovies: Movie[]) {
   const existingOrder = new Map<string, number>();
   const moviesById = new Map<string, Movie>();
@@ -505,7 +546,7 @@ function findCachedPublicMovie(movieId: string) {
 
 async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
   if (cache.partial) {
-    return fetchPublicMovies({ force: true });
+    return fetchPublicMovies({ force: true, limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
   }
 
   if (inFlightMovieDeltaRequest) {
@@ -515,7 +556,7 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
   const since = getCatalogSyncIso(cache);
 
   if (!since) {
-    return fetchPublicMovies({ force: true });
+    return fetchPublicMovies({ force: true, limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
   }
 
   const headers = await getHydratedClientDeviceHeaders();
@@ -561,6 +602,7 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
 export function refreshPublicMoviesInBackground(options?: {
   refreshEntitlement?: boolean;
   forceFull?: boolean;
+  limit?: number;
 }) {
   if (typeof window === 'undefined') {
     return;
@@ -580,37 +622,46 @@ export function refreshPublicMoviesInBackground(options?: {
   const cache = getAnyAvailableCatalog();
 
   if (options?.forceFull || options?.refreshEntitlement || !cache?.movies?.length || cache.partial) {
-    void fetchPublicMovies({ force: true, refreshEntitlement: options?.refreshEntitlement }).catch(() => undefined);
+    void fetchPublicMovies({
+      force: true,
+      refreshEntitlement: options?.refreshEntitlement,
+      limit: options?.forceFull ? undefined : options?.limit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
+    }).catch(() => undefined);
     return;
   }
 
   void fetchPublicMovieDelta(cache).catch(() => undefined);
 }
 
-export async function fetchPublicMovies(options?: { force?: boolean; refreshEntitlement?: boolean }): Promise<Movie[]> {
+export async function fetchPublicMovies(options?: FetchPublicMoviesOptions): Promise<Movie[]> {
   const forceRefresh = options?.force === true;
   const shouldRefreshEntitlement = options?.refreshEntitlement === true;
+  const requestedLimit = normalizePageLimit(options?.limit);
+  const requestedOffset = normalizePageOffset(options?.offset);
+  const isPagedRequest = requestedLimit !== null;
 
-  if (forceRefresh && inFlightMovieCatalogRequest) {
+  if (forceRefresh && !isPagedRequest && inFlightMovieCatalogRequest) {
     return inFlightMovieCatalogRequest;
   }
 
-  if (!forceRefresh && !shouldRefreshEntitlement) {
-    const cachedCatalog = getBestAvailableCatalog();
+  if (!forceRefresh && !shouldRefreshEntitlement && requestedOffset === 0) {
+    const cachedCatalog = getBestAvailableCatalog({ allowPartial: isPagedRequest });
 
-    if (cachedCatalog) {
+    if (hasEnoughCatalogForRequest(cachedCatalog, requestedLimit)) {
       refreshPublicMoviesInBackground({
         refreshEntitlement: shouldRefreshEntitlement,
+        limit: requestedLimit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
       });
       return filterPublicReadyMovies(cachedCatalog.movies);
     }
 
     const staleCatalog = getAnyAvailableCatalog();
 
-    if (staleCatalog?.movies?.length) {
+    if (hasEnoughCatalogForRequest(staleCatalog, requestedLimit)) {
       refreshPublicMoviesInBackground({
         refreshEntitlement: shouldRefreshEntitlement,
-        forceFull: staleCatalog.partial === true,
+        forceFull: !isPagedRequest && staleCatalog.partial === true,
+        limit: requestedLimit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
       });
       return filterPublicReadyMovies(staleCatalog.movies);
     }
@@ -620,24 +671,16 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     if (persistentCatalog?.movies?.length) {
       inMemoryMovieCatalog = persistentCatalog;
 
-      if (
-        isFreshCatalog(persistentCatalog) &&
-        (persistentCatalog.partial !== true || isAuthoritativeCatalog(persistentCatalog))
-      ) {
+      if (isFreshCatalog(persistentCatalog) && hasEnoughCatalogForRequest(persistentCatalog, requestedLimit)) {
         refreshPublicMoviesInBackground({
           refreshEntitlement: shouldRefreshEntitlement,
+          limit: requestedLimit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
         });
-      } else {
-        refreshPublicMoviesInBackground({
-          refreshEntitlement: shouldRefreshEntitlement,
-          forceFull: persistentCatalog.partial === true,
-        });
+        return filterPublicReadyMovies(persistentCatalog.movies);
       }
-
-      return filterPublicReadyMovies(persistentCatalog.movies);
     }
 
-    if (inFlightMovieCatalogRequest) {
+    if (!isPagedRequest && inFlightMovieCatalogRequest) {
       return inFlightMovieCatalogRequest;
     }
   }
@@ -652,10 +695,18 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
     moviesParams.set('force', '1');
   }
 
+  if (requestedLimit) {
+    moviesParams.set('limit', String(requestedLimit));
+
+    if (requestedOffset > 0) {
+      moviesParams.set('offset', String(requestedOffset));
+    }
+  }
+
   const moviesUrl = `/api/movies?${moviesParams.toString()}`;
   const headers = await getHydratedClientDeviceHeaders();
 
-  inFlightMovieCatalogRequest = fetch(moviesUrl, {
+  const catalogRequest = fetch(moviesUrl, {
     headers,
     credentials: 'include',
     cache: 'no-store',
@@ -675,14 +726,23 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
         return filterPublicReadyMovies(staleCatalog.movies);
       }
 
+      const nextMovies = staleCatalog?.movies?.length
+        ? mergeCatalogMovies(staleCatalog.movies, movies)
+        : movies;
+      const shouldPreserveAuthoritativeCatalog = Boolean(
+        staleCatalog?.movies?.length &&
+          staleCatalog.partial !== true &&
+          (payload.partial === true || requestedLimit)
+      );
+
       persistCatalog({
-        movies,
+        movies: nextMovies,
         cachedAt: Date.now(),
-        lastSyncedAt: getCatalogSyncIso({ movies, cachedAt: Date.now() }),
-        partial: false,
+        lastSyncedAt: getCatalogSyncIso({ movies: nextMovies, cachedAt: Date.now() }),
+        partial: shouldPreserveAuthoritativeCatalog ? false : payload.partial === true,
       });
 
-      return movies;
+      return filterPublicReadyMovies(nextMovies);
     })
     .catch((error) => {
       const staleCatalog = inMemoryMovieCatalog;
@@ -694,10 +754,16 @@ export async function fetchPublicMovies(options?: { force?: boolean; refreshEnti
       throw error;
     })
     .finally(() => {
-      inFlightMovieCatalogRequest = null;
+      if (!isPagedRequest) {
+        inFlightMovieCatalogRequest = null;
+      }
     });
 
-  return inFlightMovieCatalogRequest;
+  if (!isPagedRequest) {
+    inFlightMovieCatalogRequest = catalogRequest;
+  }
+
+  return catalogRequest;
 }
 
 export async function fetchPublicMovieById(movieId: string): Promise<Movie | null> {

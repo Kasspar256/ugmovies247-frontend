@@ -59,6 +59,11 @@ import {
   writeCachedPlaybackProgress,
 } from '@/lib/playbackProgress';
 
+import {
+  releaseVideoElementMedia,
+  trimStreamingCachePressure,
+} from '@/lib/mobile/streamingCache';
+
 export type PlaybackPhase =
   | 'idle'
   | 'loading'
@@ -1317,13 +1322,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     const videoElement = videoRef.current;
 
     if (videoElement) {
-      if (!videoElement.paused) {
-        suppressNextPauseIntentRef.current = true;
-        videoElement.pause();
-      }
-      videoElement.removeAttribute('src');
-      videoElement.load();
+      releaseVideoElementMedia(videoElement);
     }
+
+    void trimStreamingCachePressure('clear-playback');
   }, [
     clearClickIntentTimer,
     clearFatalError,
@@ -1749,10 +1751,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         videoElement.pause();
       }
       videoElement.currentTime = 0;
-      videoElement.removeAttribute('src');
-      videoElement.load();
+      releaseVideoElementMedia(videoElement);
+      videoElement.preload = 'metadata';
       videoElement.src = activeSource.sourceUrl;
       videoElement.load();
+      void trimStreamingCachePressure('source-switch');
       scheduleManifestWakeup('manifest-timeout');
       scheduleLoadingWatchdog('source-assignment-watchdog');
     } catch (error) {
@@ -3050,10 +3053,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
         suppressNextPauseIntentRef.current = true;
         videoElement.pause();
       }
-      videoElement.removeAttribute('src');
-      videoElement.load();
+      releaseVideoElementMedia(videoElement);
+      videoElement.preload = 'metadata';
       videoElement.src = fallbackUrl;
       videoElement.load();
+      void trimStreamingCachePressure('fallback-source');
       scheduleManifestWakeup('fallback-manifest-timeout');
       scheduleLoadingWatchdog('fallback-loading-watchdog');
       return;
@@ -3692,7 +3696,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
               key={getPlaybackSourceKey(activeSource) || 'idle'}
               ref={setVideoElement}
               poster={activeSource.poster || ''}
-              preload="auto"
+              preload="metadata"
               playsInline
               autoPlay={Boolean(activeSource.autoplay)}
               controls={false}

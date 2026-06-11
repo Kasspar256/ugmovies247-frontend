@@ -9,7 +9,11 @@ import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid'
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getCatalogPosterCandidates } from '@/lib/catalogArtwork';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   CATALOG_FILTER_ALL,
@@ -219,7 +223,10 @@ export default function SeriesClientPage({ initialMovies = [] }: { initialMovies
 
     const loadSeries = async () => {
       try {
-        const catalog = await fetchPublicMovies({ force: cachedSeries.length === 0 });
+        const catalog = await fetchPublicMovies({
+          force: cachedSeries.length === 0,
+          limit: PUBLIC_MOVIE_PAGE_LIMIT,
+        });
         setSeries(getAllSeries(catalog));
         setLoadError('');
       } catch (error) {

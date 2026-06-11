@@ -19,6 +19,7 @@ import {
   hasAuthoritativePublicMovieCatalog,
   hasPartialPublicMovieCatalog,
   primePublicMovieCatalog,
+  PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
   readCachedPublicMovies,
 } from '@/lib/publicMovies';
 import {
@@ -433,10 +434,18 @@ export default function BrowseClientPage({
               authenticated: false,
             } satisfies ClientAuthStatus));
 
-        const moviesPromise = fetchPublicMovies({
-          force: shouldForceMovieFetch,
-          refreshEntitlement: shouldForceMovieFetch && !localPremiumAccess,
-        }).then((movieData) => dedupeSeriesMovies(movieData));
+        const visibleMovieSeed = hasCachedMovies
+          ? cachedMovies
+          : hasMemoryMovies
+            ? memoryMovies
+            : seedMovies;
+        const moviesPromise = shouldForceMovieFetch
+          ? fetchPublicMovies({
+              force: true,
+              refreshEntitlement: !localPremiumAccess,
+              limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
+            }).then((movieData) => dedupeSeriesMovies(movieData))
+          : Promise.resolve(dedupeSeriesMovies(visibleMovieSeed));
 
         const categoriesPromise = fetchHomePageCategories({
           force: !hasCachedCategories,
@@ -1414,6 +1423,7 @@ const MovieRow = memo(function MovieRow({
     <Link
       href={cardHref}
       key={m.id}
+      onPointerDown={() => rememberPendingMovieNavigation(m)}
       onClick={() => rememberPendingMovieNavigation(m)}
       className="w-[110px] cursor-pointer snap-start shrink-0 md:w-[220px] lg:w-[228px] xl:w-[236px]"
       style={
@@ -1483,6 +1493,7 @@ const MovieRow = memo(function MovieRow({
     <Link
       href={`/movie/${m.id}`}
       key={m.id}
+      onPointerDown={() => rememberPendingMovieNavigation(m)}
       onClick={() => rememberPendingMovieNavigation(m)}
       className="group/card w-[62vw] min-w-[244px] max-w-[320px] cursor-pointer snap-start shrink-0 sm:w-[48vw] sm:min-w-[270px] md:w-[430px] md:max-w-none lg:w-[480px] xl:w-[520px]"
     >

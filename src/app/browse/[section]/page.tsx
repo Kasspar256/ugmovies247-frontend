@@ -5,7 +5,11 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import { fetchPublicMovies, readCachedPublicMovies } from '@/lib/publicMovies';
+import {
+  fetchPublicMovies,
+  PUBLIC_MOVIE_PAGE_LIMIT,
+  readCachedPublicMovies,
+} from '@/lib/publicMovies';
 import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
 import {
   DEFAULT_HOME_PAGE_CATEGORIES,
@@ -38,7 +42,10 @@ export default function BrowseSectionPage() {
       try {
         const shouldRefreshEntitlement = readCachedPublicMovies().length === 0;
         const [nextMovies, categoryResponse] = await Promise.all([
-          fetchPublicMovies({ refreshEntitlement: shouldRefreshEntitlement }),
+          fetchPublicMovies({
+            refreshEntitlement: shouldRefreshEntitlement,
+            limit: PUBLIC_MOVIE_PAGE_LIMIT,
+          }),
           fetch('/api/categories/home', {
             cache: 'no-store',
           }).catch(() => null),
