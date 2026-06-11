@@ -46,6 +46,22 @@ type DownloadTicket = {
 };
 
 type DownloadListener = () => void;
+type NativeDownloadProgress = {
+  type?: string;
+  source?: string;
+  url?: string;
+  bytes?: number;
+  contentLength?: number;
+  lengthComputable?: boolean;
+};
+type NativeDownloadListener = { remove: () => Promise<void> | void };
+type NativeDownloadPlugin = {
+  addListener?: (
+    eventName: 'progress',
+    listener: (progress: NativeDownloadProgress) => void
+  ) => Promise<NativeDownloadListener>;
+  downloadFile?: (options: Record<string, unknown>) => Promise<unknown>;
+};
 
 const activeDownloads = new Map<string, ActiveOfflineDownload>();
 const cancelledDownloadRunIds = new Set<string>();
@@ -108,6 +124,19 @@ function isAndroidStoragePermissionError(error: unknown) {
   );
 }
 
+function isRecoverableNativeTransferError(error: unknown) {
+  const message = getErrorMessage(error);
+
+  return (
+    isAndroidStoragePermissionError(error) ||
+    /file\s*transfer/i.test(message) ||
+    /plugin.*(?:not\s+implemented|unavailable|not\s+available|missing|not\s+found)/i.test(message) ||
+    /(?:not\s+implemented|unimplemented)/i.test(message) ||
+    /native-file-transfer-unavailable/i.test(message) ||
+    /no\s+plugin\s+found/i.test(message)
+  );
+}
+
 function getUserFacingDownloadError(error: unknown) {
   const message = getErrorMessage(error);
 
@@ -117,6 +146,10 @@ function getUserFacingDownloadError(error: unknown) {
 
   if (isAndroidStoragePermissionError(error)) {
     return 'Offline downloads need an app update before saving on this Android device. You can still stream this title for now.';
+  }
+
+  if (isRecoverableNativeTransferError(error)) {
+    return 'Offline downloads could not start on this app install. Please update the app once, then retry this download.';
   }
 
   return message || 'Download failed. Please check your connection and try again.';
@@ -473,6 +506,104 @@ function updateActiveDownload(downloadKey: string, updater: (job: ActiveOfflineD
   notifyDownloadListeners();
 }
 
+async function addNativeDownloadProgressListener(downloadKey: string, candidateDownloadUrls: string[]) {
+  const plugin = FileTransfer as unknown as NativeDownloadPlugin;
+
+  if (typeof plugin.addListener !== 'function') {
+    return undefined;
+  }
+
+  try {
+    return await plugin.addListener('progress', (progress) => {
+      if (progress.type && progress.type !== 'download') return;
+
+      const progressSource = String(progress.source || progress.url || '');
+
+      if (progressSource && !candidateDownloadUrls.includes(progressSource)) return;
+
+      if (!progressSource) {
+        const activeDownloadCount = Array.from(activeDownloads.values()).filter(
+          (activeJob) => activeJob.status === 'downloading'
+        ).length;
+
+        if (activeDownloadCount > 1) return;
+      }
+
+      updateActiveDownload(downloadKey, (latestJob) => ({
+        ...latestJob,
+        downloadedBytes: Math.max(latestJob.downloadedBytes, Number(progress.bytes) || 0),
+        totalBytes: progress.lengthComputable
+          ? Number(progress.contentLength) || latestJob.totalBytes
+          : latestJob.totalBytes,
+        updatedAtIso: nowIso(),
+      }));
+    });
+  } catch (error) {
+    console.warn('[offline-downloads] native progress listener unavailable', {
+      downloadKey,
+      error,
+    });
+    return undefined;
+  }
+}
+
+async function downloadToPrivateDataFile(options: {
+  url: string;
+  fileUri: string;
+  storagePath: string;
+  downloadKey: string;
+  title: string;
+}) {
+  const headers = {
+    Accept: 'video/mp4,application/octet-stream,*/*',
+  };
+  const fileTransfer = FileTransfer as unknown as NativeDownloadPlugin;
+  let fileTransferError: unknown = null;
+
+  if (typeof fileTransfer.downloadFile === 'function') {
+    try {
+      await fileTransfer.downloadFile({
+        url: options.url,
+        path: options.fileUri,
+        progress: true,
+        headers,
+      });
+      return 'file-transfer';
+    } catch (error) {
+      fileTransferError = error;
+
+      if (!isRecoverableNativeTransferError(error)) {
+        throw error;
+      }
+
+      console.warn('[offline-downloads] file transfer unavailable; retrying with filesystem downloader', {
+        downloadKey: options.downloadKey,
+        title: options.title,
+        error,
+      });
+    }
+  } else {
+    fileTransferError = new Error('native-file-transfer-unavailable');
+  }
+
+  const filesystemDownloader = Filesystem as unknown as NativeDownloadPlugin;
+
+  if (typeof filesystemDownloader.downloadFile !== 'function') {
+    throw fileTransferError || new Error('native-file-transfer-unavailable');
+  }
+
+  await filesystemDownloader.downloadFile({
+    url: options.url,
+    directory: Directory.Data,
+    path: options.storagePath,
+    progress: true,
+    recursive: true,
+    headers,
+  });
+
+  return 'filesystem';
+}
+
 export function supportsNativeOfflineDownloads() {
   return isNative();
 }
@@ -571,7 +702,7 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
   activeDownloads.set(downloadInput.downloadKey, job);
   notifyDownloadListeners();
 
-  let progressListener: { remove: () => Promise<void> } | undefined;
+  let progressListener: NativeDownloadListener | undefined;
 
   console.info('[offline-downloads] download started', {
     downloadKey: downloadInput.downloadKey,
@@ -620,34 +751,10 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       path: tempStoragePath,
     });
 
-    progressListener = await FileTransfer.addListener('progress', (progress) => {
-      if (progress.type !== 'download') return;
-
-      const progressSource = String(
-        (progress as { source?: string; url?: string }).source ||
-          (progress as { source?: string; url?: string }).url ||
-        ''
-      );
-
-      if (progressSource && !candidateDownloadUrls.includes(progressSource)) return;
-
-      if (!progressSource) {
-        const activeDownloadCount = Array.from(activeDownloads.values()).filter(
-          (activeJob) => activeJob.status === 'downloading'
-        ).length;
-
-        if (activeDownloadCount > 1) return;
-      }
-
-      updateActiveDownload(downloadInput.downloadKey, (latestJob) => ({
-        ...latestJob,
-        downloadedBytes: Math.max(latestJob.downloadedBytes, Number(progress.bytes) || 0),
-        totalBytes: progress.lengthComputable
-          ? Number(progress.contentLength) || latestJob.totalBytes
-          : latestJob.totalBytes,
-        updatedAtIso: nowIso(),
-      }));
-    });
+    progressListener = await addNativeDownloadProgressListener(
+      downloadInput.downloadKey,
+      candidateDownloadUrls
+    );
 
     let transferError: unknown = null;
     let downloaded = false;
@@ -656,13 +763,17 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
       await deleteDataFile(tempStoragePath).catch(() => undefined);
 
       try {
-        await FileTransfer.downloadFile({
+        const method = await downloadToPrivateDataFile({
           url: transferUrl,
-          path: fileInfo.uri,
-          progress: true,
-          headers: {
-            Accept: 'video/mp4,application/octet-stream,*/*',
-          },
+          fileUri: fileInfo.uri,
+          storagePath: tempStoragePath,
+          downloadKey: downloadInput.downloadKey,
+          title: downloadInput.title,
+        });
+        console.info('[offline-downloads] file transfer completed', {
+          downloadKey: downloadInput.downloadKey,
+          title: downloadInput.title,
+          method,
         });
         downloaded = true;
         break;
@@ -775,7 +886,9 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
 
     throw new Error(userFacingError);
   } finally {
-    await progressListener?.remove().catch(() => undefined);
+    if (progressListener) {
+      await Promise.resolve(progressListener.remove()).catch(() => undefined);
+    }
   }
 }
 

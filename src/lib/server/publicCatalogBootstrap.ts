@@ -14,16 +14,10 @@ export type PublicCatalogBootstrapPayload = {
   movies: Movie[];
   homePageCategories: HomePageCategoryRecord[];
   cachedAt: string;
-  partial: true;
+  partial: boolean;
   source: 'memory' | 'disk' | 'empty';
 };
 
-const BOOTSTRAP_MOVIE_LIMIT = 48;
-const BOOTSTRAP_LATEST_LIMIT = 24;
-const BOOTSTRAP_TRENDING_LIMIT = 12;
-const BOOTSTRAP_FEATURED_LIMIT = 16;
-const BOOTSTRAP_ROW_MOVIE_LIMIT = 8;
-const BOOTSTRAP_ROW_SERIES_LIMIT = 6;
 const BOOTSTRAP_READINESS_OPTIONS = { allowLockedPlaceholder: true };
 
 let inMemoryPublicBootstrapCatalog: PublicCatalogBootstrapPayload | null = null;
@@ -239,29 +233,14 @@ function pickBootstrapMovies(movieDocs: RawMovie[]) {
     homePageCategories: DEFAULT_HOME_PAGE_CATEGORIES,
     activeCategory: 'ALL',
   });
-  const latestMovies = compactVisibleMovies.slice(0, BOOTSTRAP_LATEST_LIMIT);
-  const rowCoverageMovies = homeRows.flatMap((row) =>
-    row.movies.slice(
-      0,
-      row.usesSeriesBackdropCards ? BOOTSTRAP_ROW_SERIES_LIMIT : BOOTSTRAP_ROW_MOVIE_LIMIT
-    )
-  );
-  const trendingMovies = compactVisibleMovies
-    .filter((movie) => movie.is_trending_tiktok === true)
-    .slice(0, BOOTSTRAP_TRENDING_LIMIT);
-  const featuredMovies = compactVisibleMovies
-    .filter((movie) => Array.isArray(movie.category) && movie.category.length > 0)
-    .slice(0, BOOTSTRAP_FEATURED_LIMIT);
 
   return dedupeSeriesMovies(
     [
-      ...latestMovies,
-      ...rowCoverageMovies,
-      ...trendingMovies,
-      ...featuredMovies,
-      ...unmatchedMovies.slice(0, BOOTSTRAP_FEATURED_LIMIT),
+      ...compactVisibleMovies,
+      ...homeRows.flatMap((row) => row.movies),
+      ...unmatchedMovies,
     ]
-  ).slice(0, BOOTSTRAP_MOVIE_LIMIT);
+  );
 }
 
 export function setPublicBootstrapCatalogFromMovieCache(
@@ -286,7 +265,7 @@ export function setPublicBootstrapCatalogFromMovieCache(
     movies,
     homePageCategories: DEFAULT_HOME_PAGE_CATEGORIES,
     cachedAt: cache.cachedAt || new Date().toISOString(),
-    partial: true,
+    partial: false,
     source,
   };
 
@@ -305,14 +284,13 @@ export function upsertPublicBootstrapMovie(movie: RawMovie) {
   const nextMovie = compactMovieForPublicBootstrap(movie);
   const currentMovies = inMemoryPublicBootstrapCatalog?.movies || [];
   const nextMovies = dedupeSeriesMovies([nextMovie, ...currentMovies])
-    .sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left))
-    .slice(0, BOOTSTRAP_MOVIE_LIMIT);
+    .sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
 
   inMemoryPublicBootstrapCatalog = {
     movies: nextMovies,
     homePageCategories: DEFAULT_HOME_PAGE_CATEGORIES,
     cachedAt: new Date().toISOString(),
-    partial: true,
+    partial: false,
     source: 'memory',
   };
 }
@@ -326,7 +304,7 @@ export function createEmptyPublicBootstrapPayload(): PublicCatalogBootstrapPaylo
     movies: [],
     homePageCategories: DEFAULT_HOME_PAGE_CATEGORIES,
     cachedAt: new Date().toISOString(),
-    partial: true,
+    partial: false,
     source: 'empty',
   };
 }

@@ -419,6 +419,13 @@ function normalizePageOffset(value: unknown) {
   return Math.max(0, Math.floor(value));
 }
 
+function shouldUsePagedCatalogRequests() {
+  // Keep the async IndexedDB cache, but restore full-catalog loading.
+  // The paged catalog experiment left home/category rows empty whenever
+  // the requested slice did not include movies for those sections.
+  return false;
+}
+
 function hasEnoughCatalogForRequest(
   cache: CachedPublicMovieCatalog | null,
   requestedLimit: number | null
@@ -546,7 +553,7 @@ function findCachedPublicMovie(movieId: string) {
 
 async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
   if (cache.partial) {
-    return fetchPublicMovies({ force: true, limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
+    return fetchPublicMovies({ force: true });
   }
 
   if (inFlightMovieDeltaRequest) {
@@ -556,7 +563,7 @@ async function fetchPublicMovieDelta(cache: CachedPublicMovieCatalog) {
   const since = getCatalogSyncIso(cache);
 
   if (!since) {
-    return fetchPublicMovies({ force: true, limit: PUBLIC_MOVIE_BOOTSTRAP_LIMIT });
+    return fetchPublicMovies({ force: true });
   }
 
   const headers = await getHydratedClientDeviceHeaders();
@@ -625,7 +632,6 @@ export function refreshPublicMoviesInBackground(options?: {
     void fetchPublicMovies({
       force: true,
       refreshEntitlement: options?.refreshEntitlement,
-      limit: options?.forceFull ? undefined : options?.limit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
     }).catch(() => undefined);
     return;
   }
@@ -636,8 +642,8 @@ export function refreshPublicMoviesInBackground(options?: {
 export async function fetchPublicMovies(options?: FetchPublicMoviesOptions): Promise<Movie[]> {
   const forceRefresh = options?.force === true;
   const shouldRefreshEntitlement = options?.refreshEntitlement === true;
-  const requestedLimit = normalizePageLimit(options?.limit);
-  const requestedOffset = normalizePageOffset(options?.offset);
+  const requestedLimit = shouldUsePagedCatalogRequests() ? normalizePageLimit(options?.limit) : null;
+  const requestedOffset = shouldUsePagedCatalogRequests() ? normalizePageOffset(options?.offset) : 0;
   const isPagedRequest = requestedLimit !== null;
 
   if (forceRefresh && !isPagedRequest && inFlightMovieCatalogRequest) {
