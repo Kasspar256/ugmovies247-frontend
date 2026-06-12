@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { GENRE_DIRECTORY, VJ_DIRECTORY } from '@/config/constants';
+import { AUTO_HOME_ROW_CONFIG } from '@/lib/homeCategories';
+import { DEFAULT_HOME_PAGE_CATEGORIES, slugifyHomeSection } from '@/lib/homeRows';
 import { getSeoMovieCatalog } from '@/lib/server/seoMovies';
 import { absoluteUrl } from '@/lib/seo';
 
@@ -36,6 +38,13 @@ const staticRoutes = [
 ];
 
 const genreRoutes = GENRE_DIRECTORY.map((genre) => `/genres/${encodeURIComponent(genre)}`);
+const browseSectionRoutes = Array.from(
+  new Set([
+    ...DEFAULT_HOME_PAGE_CATEGORIES.map((category) => `/browse/${encodeURIComponent(category.id)}`),
+    ...AUTO_HOME_ROW_CONFIG.map((row) => `/browse/${encodeURIComponent(slugifyHomeSection(row.title))}`),
+    '/browse/more-movies',
+  ])
+);
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
@@ -61,6 +70,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: route === '/' ? 1 : 0.78,
     })),
     ...genreRoutes.map((route) => ({
+      url: absoluteUrl(route),
+      lastModified: now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.72,
+    })),
+    ...browseSectionRoutes.map((route) => ({
       url: absoluteUrl(route),
       lastModified: now,
       changeFrequency: 'weekly' as const,

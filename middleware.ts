@@ -10,6 +10,30 @@ import {
 } from '@/lib/appReview';
 
 const authPages = ['/login', '/signup', '/forgot-password'];
+const CANONICAL_HOST = 'ugmovies247.com';
+const DUPLICATE_QUERY_PARAMS = new Set([
+  'fresh',
+  'recovered',
+  't',
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'fbclid',
+  'gclid',
+  'msclkid',
+  'mc_cid',
+  'mc_eid',
+]);
+const CRAWLER_QUERY_CANONICAL_PATHS = [
+  '/login',
+  '/signup',
+  '/forgot-password',
+  '/reset-password',
+  '/verify-email',
+  '/subscribe',
+];
 
 function isNativeAppRequest(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || '';
@@ -32,6 +56,42 @@ function isCrawlerRequest(request: NextRequest) {
   );
 }
 
+
+function hasDuplicateQueryParam(name: string) {
+  return DUPLICATE_QUERY_PARAMS.has(name.toLowerCase()) || name.toLowerCase().startsWith('utm_');
+}
+
+function maybeRedirectToCanonicalRequest(request: NextRequest, pathname: string) {
+  const url = request.nextUrl.clone();
+  let changed = false;
+
+  if (url.hostname.toLowerCase() === `www.${CANONICAL_HOST}`) {
+    url.hostname = CANONICAL_HOST;
+    changed = true;
+  }
+
+  if (pathname !== '/' && pathname.endsWith('/')) {
+    url.pathname = pathname.replace(/\/+$/, '');
+    changed = true;
+  }
+
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (hasDuplicateQueryParam(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+
+  if (isCrawlerRequest(request) && CRAWLER_QUERY_CANONICAL_PATHS.includes(pathname)) {
+    if (url.search) {
+      url.search = '';
+      changed = true;
+    }
+  }
+
+  return changed ? NextResponse.redirect(url, 308) : null;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const hasSession = request.cookies.getAll(AUTH_SESSION_COOKIE).some((cookie) => Boolean(cookie.value));
@@ -47,6 +107,11 @@ export function middleware(request: NextRequest) {
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/favicon') || pathname.includes('.')) {
     return NextResponse.next();
+  }
+
+  const canonicalRedirect = maybeRedirectToCanonicalRequest(request, pathname);
+  if (canonicalRedirect) {
+    return canonicalRedirect;
   }
 
   if (pathname === '/' && (hasSession || isNativeAppRequest(request) || isMobileRequest(request))) {
@@ -113,6 +178,8 @@ export const config = {
     '/signup',
     '/forgot-password',
     '/browse/:path*',
+    '/movies/:path*',
+    '/series/:path*',
     '/movie/:path*',
     '/downloads/:path*',
     '/likes/:path*',

@@ -259,7 +259,11 @@ export function buildPageMetadata(options: {
     robots: options.noIndex
       ? {
           index: false,
-          follow: false,
+          follow: true,
+          googleBot: {
+            index: false,
+            follow: true,
+          },
         }
       : {
           index: true,
