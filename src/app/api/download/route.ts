@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { getRequestAuthSession } from '@/lib/auth/server';
 import { createPresignedR2Download, getR2ObjectKeyFromPublicUrl } from '@/lib/server/r2';
 import { getViewerEntitlement } from '@/lib/server/subscriptions';
@@ -14,6 +15,73 @@ function sanitizeFilename(value: string) {
     .slice(0, 120) || 'ugmovies247-video';
 
   return base.toLowerCase().endsWith('.mp4') ? base : `${base}.mp4`;
+}
+
+function getDownloadTicketSecret() {
+  return (
+    process.env.DOWNLOAD_TICKET_SECRET ||
+    process.env.REQUEST_WORKER_SECRET ||
+    process.env.R2_SECRET_ACCESS_KEY ||
+    process.env.FIREBASE_PRIVATE_KEY ||
+    process.env.NEXTAUTH_SECRET ||
+    ''
+  );
+}
+
+function signProxyDownload(sourceUrl: string, filename: string, expiresAt: number) {
+  const secret = getDownloadTicketSecret();
+
+  if (!secret) {
+    throw new Error('Missing server download ticket secret.');
+  }
+
+  return createHmac('sha256', secret)
+    .update(`${expiresAt}.${filename}.${sourceUrl}`)
+    .digest('hex');
+}
+
+function isValidProxyDownloadSignature(options: {
+  sourceUrl: string;
+  filename: string;
+  expiresAt: number;
+  signature: string;
+}) {
+  if (!options.sourceUrl || !options.filename || !options.expiresAt || !options.signature) {
+    return false;
+  }
+
+  if (options.expiresAt < Date.now()) {
+    return false;
+  }
+
+  const expected = signProxyDownload(options.sourceUrl, options.filename, options.expiresAt);
+  const receivedBuffer = Buffer.from(options.signature, 'hex');
+  const expectedBuffer = Buffer.from(expected, 'hex');
+
+  return (
+    receivedBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(receivedBuffer, expectedBuffer)
+  );
+}
+
+function createProxyDownloadUrl(request: Request, sourceUrl: string, filename: string) {
+  const expiresAt = Date.now() + 1000 * 60 * 20;
+  const url = new URL('/api/download', request.url);
+
+  url.searchParams.set('source', sourceUrl);
+  url.searchParams.set('filename', filename);
+  url.searchParams.set('expiresAt', String(expiresAt));
+  url.searchParams.set('signature', signProxyDownload(sourceUrl, filename, expiresAt));
+
+  return {
+    downloadUrl: url.toString(),
+    expiresAt: new Date(expiresAt).toISOString(),
+    expiresIn: 60 * 20,
+  };
+}
+
+function isDownloadableMp4Url(value: string) {
+  return /^https?:\/\//i.test(value) && !/\.m3u8(?:[?#]|$)/i.test(value);
 }
 
 async function requirePremiumDownloadAccess(request: Request) {
@@ -55,15 +123,28 @@ export async function POST(request: Request) {
   }
 
   const objectKey = getR2ObjectKeyFromPublicUrl(sourceUrl);
+  const filename = sanitizeFilename(`${title}-${movieId}`);
 
   if (!objectKey) {
-    return NextResponse.json(
-      { error: 'This video source is not available for protected offline download yet.' },
-      { status: 400 }
-    );
+    if (!isDownloadableMp4Url(sourceUrl)) {
+      return NextResponse.json(
+        { error: 'This video source is not available for protected offline download yet.' },
+        { status: 400 }
+      );
+    }
+
+    const proxyTicket = createProxyDownloadUrl(request, sourceUrl, filename);
+
+    return NextResponse.json({
+      movieId,
+      filename,
+      downloadUrl: proxyTicket.downloadUrl,
+      expiresAt: proxyTicket.expiresAt,
+      expiresIn: proxyTicket.expiresIn,
+      delivery: 'proxy',
+    });
   }
 
-  const filename = sanitizeFilename(`${title}-${movieId}`);
   const ticket = await createPresignedR2Download({
     key: objectKey,
     filename,
@@ -75,41 +156,77 @@ export async function POST(request: Request) {
     downloadUrl: ticket.downloadUrl,
     expiresAt: ticket.expiresAt,
     expiresIn: ticket.expiresIn,
+    delivery: 'r2',
   });
 }
 
 export async function GET(req: NextRequest) {
-  const access = await requirePremiumDownloadAccess(req);
-
-  if (access.error) {
-    return access.error;
-  }
-
-  const url = req.nextUrl.searchParams.get('url');
+  const signedSourceUrl = req.nextUrl.searchParams.get('source') || '';
   const filename = sanitizeFilename(req.nextUrl.searchParams.get('filename') || 'movie.mp4');
+  const expiresAt = Number(req.nextUrl.searchParams.get('expiresAt') || 0);
+  const signature = req.nextUrl.searchParams.get('signature') || '';
+  const legacyUrl = req.nextUrl.searchParams.get('url') || '';
+  let url = signedSourceUrl;
+
+  if (signedSourceUrl) {
+    if (
+      !isValidProxyDownloadSignature({
+        sourceUrl: signedSourceUrl,
+        filename,
+        expiresAt,
+        signature,
+      })
+    ) {
+      return new NextResponse('Download ticket expired or invalid', { status: 403 });
+    }
+  } else {
+    const access = await requirePremiumDownloadAccess(req);
+
+    if (access.error) {
+      return access.error;
+    }
+
+    url = legacyUrl;
+  }
 
   if (!url) {
     return new NextResponse('Missing url', { status: 400 });
   }
 
   try {
-    const response = await fetch(url);
+    const headers = new Headers();
+    const range = req.headers.get('range');
+
+    if (range) {
+      headers.set('range', range);
+    }
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       return new NextResponse('Failed to fetch source file', { status: 502 });
     }
 
     const contentType = response.headers.get('content-type') || 'video/mp4';
+    const responseHeaders = new Headers({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    });
+
+    for (const headerName of ['content-length', 'content-range', 'accept-ranges']) {
+      const headerValue = response.headers.get(headerName);
+
+      if (headerValue) {
+        responseHeaders.set(headerName, headerValue);
+      }
+    }
 
     return new NextResponse(response.body, {
-      status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-        'Cache-Control': 'no-store',
-      },
+      status: response.status,
+      headers: responseHeaders,
     });
-  } catch (error) {
+  } catch {
     return new NextResponse('Download proxy failed', { status: 500 });
   }
 }

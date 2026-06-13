@@ -43,6 +43,9 @@ type OfflineManifest = {
 type DownloadTicket = {
   downloadUrl: string;
   filename: string;
+  expiresAt?: string;
+  expiresIn?: number;
+  delivery?: 'r2' | 'proxy';
 };
 
 type DownloadListener = () => void;
@@ -142,6 +145,10 @@ function getUserFacingDownloadError(error: unknown) {
 
   if (message === 'Download cancelled.') {
     return message;
+  }
+
+  if (/error\s+downloading\s+file/i.test(message) || /https?:\/\/\S+/i.test(message)) {
+    return 'Download failed. Please check your connection and tap Retry.';
   }
 
   if (isAndroidStoragePermissionError(error)) {
@@ -714,36 +721,28 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
 
   try {
     let ticket: DownloadTicket | null = null;
-    let ticketError: unknown = null;
 
     try {
       ticket = await requestDownloadTicket(downloadInput);
     } catch (error) {
-      if (/unauthorized|subscription required/i.test(getErrorMessage(error))) {
-        throw error;
-      }
-
-      ticketError = error;
-      console.warn('[offline-downloads] protected ticket unavailable; trying direct source', {
+      console.warn('[offline-downloads] protected ticket unavailable', {
         downloadKey: downloadInput.downloadKey,
         title: downloadInput.title,
         error,
       });
+      throw error;
     }
 
     const candidateDownloadUrls = Array.from(
       new Set(
-        [ticket?.downloadUrl, downloadInput.video_url]
+        [ticket?.downloadUrl]
           .map((candidate) => String(candidate || '').trim())
           .filter((candidate) => isHttpUrl(candidate) && !isLikelyHlsUrl(candidate))
       )
     );
 
     if (!candidateDownloadUrls.length) {
-      throw (
-        ticketError ||
-        new Error('No downloadable MP4 source was found for offline playback.')
-      );
+      throw new Error('No protected download ticket was created for offline playback.');
     }
 
     const fileInfo = await Filesystem.getUri({
@@ -789,7 +788,7 @@ export async function downloadMovieOffline(movie: DownloadMovieInput) {
     }
 
     if (!downloaded) {
-      throw transferError || ticketError || new Error('The offline file transfer failed.');
+      throw transferError || new Error('The offline file transfer failed.');
     }
 
     if (cancelledDownloadRunIds.has(runId)) {
