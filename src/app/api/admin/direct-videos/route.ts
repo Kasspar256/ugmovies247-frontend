@@ -10,7 +10,7 @@ import {
 import { validateDirectMp4ImportSource } from '@/lib/server/downloadSource';
 import { MOVIES_COLLECTION } from '@/lib/server/firestoreNamespaces';
 import { applyTmdbMatureExclusiveCategory } from '@/lib/server/tmdbMaturity';
-import { mergeMatureExclusiveCategory } from '@/lib/matureContent';
+import { MATURE_EXCLUSIVES_CATEGORY, mergeMatureExclusiveCategory } from '@/lib/matureContent';
 import { createVideoJob } from '@/lib/server/videoJobs';
 import { sendLatestUploadPushNotification } from '@/lib/server/uploadNotifications';
 import type { MovieDocument, Season } from '@/types/movie';
@@ -60,8 +60,32 @@ type SeriesSeasonInput = {
   episodes: SeriesEpisodeInput[];
 };
 
+type MatureSeriesEpisodeInput = {
+  seriesId?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  episodeTitle?: string;
+  episodeDescription?: string;
+  episodePoster?: string;
+  episodeThumbnail?: string;
+  episodeBackdrop?: string;
+  episodeTrailerUrl?: string;
+  playbackUrl: string;
+  sourceFileName?: string;
+};
+
 function isoNow() {
   return new Date().toISOString();
+}
+
+function normalizeComparableTitle(value: unknown) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeImportedSourceFileName(fileName: string, fallback: string) {
@@ -245,6 +269,225 @@ async function createDirectSeriesDocument(options: {
   };
 }
 
+async function findExistingMatureSeriesByTitle(title: string) {
+  const normalizedTitle = normalizeComparableTitle(title);
+
+  if (!normalizedTitle) {
+    return null;
+  }
+
+  const snapshot = await adminDb.collection(MOVIES_COLLECTION).get();
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data() as MovieDocument;
+    const categories = Array.isArray(data.category) ? data.category : [];
+    const isMatureSeries =
+      data.contentType === 'series' &&
+      categories.some(
+        (category) =>
+          String(category || '').trim().toLowerCase() ===
+          MATURE_EXCLUSIVES_CATEGORY.toLowerCase()
+      );
+
+    if (!isMatureSeries) {
+      continue;
+    }
+
+    if (normalizeComparableTitle(data.title || data.name || data.original_title) === normalizedTitle) {
+      return {
+        id: doc.id,
+        data,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function upsertMatureSeriesEpisode(options: {
+  metadata: AdminMovieMetadata;
+  episode: MatureSeriesEpisodeInput;
+}) {
+  const timestamp = isoNow();
+  const metadata = await prepareDirectMetadata({
+    ...options.metadata,
+    contentType: 'series',
+    category: mergeMatureExclusiveCategory(
+      Array.isArray(options.metadata.category) && options.metadata.category.length
+        ? options.metadata.category
+        : [MATURE_EXCLUSIVES_CATEGORY],
+      true
+    ),
+    isMatureExclusive: true,
+  });
+  const title = String(metadata.title || '').trim();
+  const seriesId = String(options.episode.seriesId || '').trim();
+  const seasonNumber = Math.max(1, Math.round(Number(options.episode.seasonNumber || 1)));
+  const episodeNumber = Math.max(1, Math.round(Number(options.episode.episodeNumber || 1)));
+  const playbackUrl = String(options.episode.playbackUrl || '').trim();
+  const episodeTitle =
+    String(options.episode.episodeTitle || '').trim() || `Episode ${episodeNumber}`;
+  const episodeDescription =
+    String(options.episode.episodeDescription || '').trim() ||
+    String(metadata.description || '').trim();
+  const episodePoster =
+    String(options.episode.episodePoster || '').trim() || String(metadata.poster || '').trim();
+  const episodeBackdrop =
+    String(options.episode.episodeBackdrop || '').trim() ||
+    String(metadata.overriddenPlayerBackdrop || '').trim() ||
+    episodePoster;
+
+  if (!title) {
+    throw new Error('Series title is required for a Mature split series episode.');
+  }
+
+  if (!playbackUrl) {
+    throw new Error('Episode playback URL is required.');
+  }
+
+  const existingSeries = seriesId
+    ? await adminDb.collection(MOVIES_COLLECTION).doc(seriesId).get().then((snapshot) =>
+        snapshot.exists
+          ? {
+              id: snapshot.id,
+              data: snapshot.data() as MovieDocument,
+            }
+          : null
+      )
+    : await findExistingMatureSeriesByTitle(title);
+  const movieRef = existingSeries
+    ? adminDb.collection(MOVIES_COLLECTION).doc(existingSeries.id)
+    : adminDb.collection(MOVIES_COLLECTION).doc();
+  const movieId = movieRef.id;
+  const nextEpisode = {
+    episodeNumber,
+    title: episodeTitle,
+    description: episodeDescription,
+    overview: episodeDescription,
+    video_url: playbackUrl,
+    poster: episodePoster,
+    thumbnail: String(options.episode.episodeThumbnail || '').trim() || episodePoster,
+    overriddenBackdrop: episodeBackdrop,
+    episodeTrailerUrl: String(options.episode.episodeTrailerUrl || '').trim(),
+    sourceType: 'direct_upload' as const,
+    sourcePipeline: 'direct_upload' as const,
+    sourceUrl: playbackUrl,
+    sourceFileName:
+      String(options.episode.sourceFileName || '').trim() ||
+      playbackUrl.split('/').pop() ||
+      `${movieId}-s${seasonNumber}-e${episodeNumber}.mp4`,
+    playbackType: 'mp4' as const,
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    accessTier: 'premium' as const,
+    subscriptionRequired: true,
+    isLocked: false,
+    jobStatus: 'queued' as const,
+    processingProgress: 0,
+    errorMessage: '',
+    processedAt: '',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const existingMovie = existingSeries?.data;
+  const currentSeasons = Array.isArray(existingMovie?.seasons) ? existingMovie.seasons : [];
+  const hasSeason = currentSeasons.some((season) => Number(season.seasonNumber) === seasonNumber);
+  const nextSeasons: Season[] = hasSeason
+    ? currentSeasons.map((season) => {
+        if (Number(season.seasonNumber) !== seasonNumber) {
+          return season;
+        }
+
+        const episodes = Array.isArray(season.episodes) ? season.episodes : [];
+        const remainingEpisodes = episodes.filter(
+          (episode) => Number(episode.episodeNumber) !== episodeNumber
+        );
+
+        return {
+          ...season,
+          poster: season.poster || episodePoster,
+          overriddenBackdrop: season.overriddenBackdrop || episodeBackdrop,
+          episodes: [...remainingEpisodes, nextEpisode].sort(
+            (left, right) => Number(left.episodeNumber) - Number(right.episodeNumber)
+          ),
+        };
+      })
+    : [
+        ...currentSeasons,
+        {
+          seasonNumber,
+          title: `Season ${seasonNumber}`,
+          overview: '',
+          poster: episodePoster,
+          overriddenBackdrop: episodeBackdrop,
+          tmdb_id: null,
+          episodes: [nextEpisode],
+        },
+      ].sort((left, right) => Number(left.seasonNumber) - Number(right.seasonNumber));
+  const rawMoviePayload: MovieDocument = {
+    ...(existingMovie || normalizeDirectMetadata(metadata)),
+    movieId,
+    contentType: 'series',
+    title,
+    original_title: String(metadata.originalTitle || title),
+    name: title,
+    description: String(metadata.description || existingMovie?.description || ''),
+    overview: String(metadata.description || existingMovie?.overview || ''),
+    poster: String(metadata.poster || existingMovie?.poster || episodePoster || ''),
+    heroPoster: String(metadata.heroPoster || existingMovie?.heroPoster || ''),
+    trailerUrl: String(metadata.trailerUrl || existingMovie?.trailerUrl || ''),
+    mainSeriesTrailerUrl: String(
+      metadata.mainSeriesTrailerUrl || existingMovie?.mainSeriesTrailerUrl || ''
+    ),
+    overriddenBackdrop: String(existingMovie?.overriddenBackdrop || episodeBackdrop || ''),
+    overriddenPlayerBackdrop: String(
+      metadata.overriddenPlayerBackdrop || existingMovie?.overriddenPlayerBackdrop || episodeBackdrop || ''
+    ),
+    genres: Array.isArray(metadata.genres) ? metadata.genres : existingMovie?.genres || [],
+    category: mergeMatureExclusiveCategory(
+      metadata.category || existingMovie?.category || [MATURE_EXCLUSIVES_CATEGORY],
+      true
+    ),
+    vj: String(metadata.vj || existingMovie?.vj || 'Unknown'),
+    release_date: String(metadata.releaseDate || existingMovie?.release_date || ''),
+    country: String(metadata.country || existingMovie?.country || 'Unknown'),
+    language: String(metadata.language || existingMovie?.language || ''),
+    tmdb_id: typeof metadata.tmdbId === 'number' ? metadata.tmdbId : existingMovie?.tmdb_id || null,
+    status: 'published',
+    is_trending_tiktok: Boolean(metadata.isTrendingTikTok || existingMovie?.is_trending_tiktok),
+    accessTier: 'premium',
+    subscriptionRequired: true,
+    isLocked: false,
+    sourceType: 'direct_upload',
+    sourcePipeline: 'direct_upload',
+    video_url: '',
+    sourceUrl: '',
+    sourceFileName: '',
+    playbackType: 'mp4',
+    masterPlaylistUrl: '',
+    availableRenditions: [],
+    jobStatus: 'ready',
+    processingProgress: 100,
+    errorMessage: '',
+    processedAt: existingMovie?.processedAt || '',
+    createdAt: existingMovie?.createdAt || timestamp,
+    date_added: existingMovie?.date_added || timestamp,
+    updatedAt: timestamp,
+    seasons: nextSeasons,
+  };
+  const preparedMovie = prepareMovieDocumentForDirectUploadProcessing(rawMoviePayload, movieId);
+
+  await movieRef.set(preparedMovie.movie, { merge: false });
+  await upsertMovieInCatalogCache({ id: movieId, ...preparedMovie.movie });
+  await queuePreparedDirectUploadJobs(preparedMovie.queuedJobs);
+
+  return {
+    movieId,
+    queuedNormalizationCount: preparedMovie.queuedJobs.length,
+    appendedToExistingSeries: Boolean(existingSeries),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getCurrentAuthSession();
@@ -398,6 +641,69 @@ export async function POST(request: Request) {
         queuedNormalizationCount: result.queuedNormalizationCount,
         status: 'queued',
         warningMessage: Array.from(warningMessages).join(' '),
+      });
+    }
+
+    if (mode === 'mature_series_episode') {
+      const incomingCategories = Array.isArray(body.metadata?.category)
+        ? body.metadata.category
+        : [];
+      const metadata = {
+        ...(body.metadata || {}),
+        contentType: 'series',
+        isMatureExclusive: true,
+        category: mergeMatureExclusiveCategory(
+          incomingCategories.length ? incomingCategories : [MATURE_EXCLUSIVES_CATEGORY],
+          true
+        ),
+      } as AdminMovieMetadata;
+      const rawPlaybackUrl = String(body.playbackUrl || body.sourceUrl || '').trim();
+      const useExistingUploadedAsset = /^https?:\/\//i.test(rawPlaybackUrl);
+      const validation =
+        body.sourceKind === 'local_upload'
+          ? { finalUrl: rawPlaybackUrl, sourceFileName: String(body.sourceFileName || ''), warningMessage: '' }
+          : await validateDirectMp4ImportSource(rawPlaybackUrl);
+
+      if (!useExistingUploadedAsset) {
+        return NextResponse.json({ error: 'Missing episode playback URL.' }, { status: 400 });
+      }
+
+      const result = await upsertMatureSeriesEpisode({
+        metadata,
+        episode: {
+          seriesId: String(body.seriesId || ''),
+          seasonNumber: Number(body.seasonNumber || 1),
+          episodeNumber: Number(body.episodeNumber || 1),
+          episodeTitle: String(body.episodeTitle || ''),
+          episodeDescription: String(body.episodeDescription || ''),
+          episodePoster: String(body.episodePoster || metadata.poster || ''),
+          episodeThumbnail: String(body.episodeThumbnail || metadata.poster || ''),
+          episodeBackdrop: String(
+            body.episodeBackdrop || metadata.overriddenPlayerBackdrop || metadata.poster || ''
+          ),
+          episodeTrailerUrl: String(body.episodeTrailerUrl || ''),
+          playbackUrl: validation.finalUrl,
+          sourceFileName: normalizeImportedSourceFileName(
+            validation.sourceFileName || String(body.sourceFileName || ''),
+            `${Date.now()}.mp4`
+          ),
+        },
+      });
+
+      void sendLatestUploadPushNotification(result.movieId).catch((error) => {
+        console.warn(
+          `[direct-videos] latest mature split series notification failed for ${result.movieId}`,
+          error instanceof Error ? error.message : error
+        );
+      });
+
+      return NextResponse.json({
+        success: true,
+        movieId: result.movieId,
+        queuedNormalizationCount: result.queuedNormalizationCount,
+        status: 'queued',
+        appendedToExistingSeries: result.appendedToExistingSeries,
+        warningMessage: validation.warningMessage || '',
       });
     }
 

@@ -16,8 +16,14 @@ import {
   uploadTrailerVideoToAdmin,
 } from '@/lib/admin/directUploadClient';
 import { fetchAdminJson } from '@/lib/admin/fetchAdminJson';
-import { Card, FieldLabel, TextArea, TextInput } from '@/components/admin/controlCenterFields';
+import { Card, FieldLabel, SelectInput, TextArea, TextInput } from '@/components/admin/controlCenterFields';
 import { CategoryChecklist } from '@/components/admin/controlCenterEditors';
+import { MANUAL_HOME_CATEGORIES } from '@/lib/homeCategories';
+import {
+  isTmdbMatureExclusive,
+  MATURE_EXCLUSIVES_CATEGORY,
+  mergeMatureExclusiveCategory,
+} from '@/lib/matureContent';
 import {
   isIndianCatalogMovie,
   mergeUniqueRegionalValues,
@@ -25,6 +31,12 @@ import {
 import type { VideoJobStatus } from '@/types/videoJobs';
 
 type PublishMode = 'upload' | 'link';
+type MaturePublishMode = 'single' | 'split-series';
+
+type ExistingMatureSeriesOption = {
+  id: string;
+  title: string;
+};
 
 type TmdbResult = {
   id: number;
@@ -35,6 +47,9 @@ type TmdbResult = {
   backdrop_path?: string | null;
   release_date?: string;
   original_language?: string;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
 };
 
 type TmdbMovieDetails = {
@@ -59,21 +74,16 @@ type TmdbMovieDetails = {
     iso_639_1?: string;
     name?: string;
   }>;
+  adult?: boolean;
+  isMatureExclusive?: boolean;
+  matureRatings?: string[];
+  release_dates?: unknown;
+  certification?: string;
+  rating?: string;
 };
 
 const TRENDING_CATEGORY = 'Trending on tiktok';
-const MANUAL_CATEGORY_ORDER = [
-  'Trending on tiktok',
-  'Mature Exclusives (18+)',
-  'Latest movies on UGMOVIES247',
-  'Ongoing Series',
-  'Recently added',
-  'Latest series',
-  'VJ JUNIOR SERIES',
-  'Asian series',
-  'Other vjs',
-  'Western series',
-] as const;
+const MANUAL_CATEGORY_ORDER = MANUAL_HOME_CATEGORIES;
 
 function buildTmdbPosterUrl(path?: string | null) {
   return path ? `https://image.tmdb.org/t/p/w780${path}` : '';
@@ -196,6 +206,24 @@ function splitCommaList(value: string) {
     .filter(Boolean);
 }
 
+function parsePositiveInteger(value: string, fallback: number) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.round(parsed);
+}
+
+function inferSplitSeriesTitle(value: string) {
+  return value
+    .replace(/\b(?:s\d+\s*)?(?:ep|episode|part)\s*\d+\b/gi, '')
+    .replace(/\s+\d+\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function AdminMovieCreateView() {
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const [movieFileInputKey, setMovieFileInputKey] = useState(0);
@@ -236,6 +264,14 @@ export function AdminMovieCreateView() {
   const [latestJobId, setLatestJobId] = useState('');
   const [latestMovieId, setLatestMovieId] = useState('');
   const [latestJobStatus, setLatestJobStatus] = useState<VideoJobStatus | ''>('');
+  const [maturePublishMode, setMaturePublishMode] = useState<MaturePublishMode>('single');
+  const [matureSeriesTitle, setMatureSeriesTitle] = useState('');
+  const [matureSeasonNumber, setMatureSeasonNumber] = useState('1');
+  const [matureEpisodeNumber, setMatureEpisodeNumber] = useState('1');
+  const [matureEpisodeTitle, setMatureEpisodeTitle] = useState('');
+  const [matureExistingSeriesId, setMatureExistingSeriesId] = useState('');
+  const [existingMatureSeries, setExistingMatureSeries] = useState<ExistingMatureSeriesOption[]>([]);
+  const [loadingMatureSeries, setLoadingMatureSeries] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -321,6 +357,98 @@ export function AdminMovieCreateView() {
       (category): category is AdminCategory => Boolean(category)
     );
   }, [categories]);
+  const isMatureCategorySelected = useMemo(
+    () =>
+      selectedCategories.some(
+        (category) => category.toLowerCase() === MATURE_EXCLUSIVES_CATEGORY.toLowerCase()
+      ),
+    [selectedCategories]
+  );
+
+  useEffect(() => {
+    if (!isMatureCategorySelected) {
+      setMaturePublishMode('single');
+      return;
+    }
+
+    if (maturePublishMode !== 'split-series') {
+      return;
+    }
+
+    if (!matureSeriesTitle.trim()) {
+      const inferredTitle = inferSplitSeriesTitle(title);
+
+      if (inferredTitle) {
+        setMatureSeriesTitle(inferredTitle);
+      }
+    }
+
+    if (!matureEpisodeTitle.trim() && title.trim()) {
+      setMatureEpisodeTitle(title.trim());
+    }
+  }, [isMatureCategorySelected, maturePublishMode, matureEpisodeTitle, matureSeriesTitle, title]);
+
+  useEffect(() => {
+    if (!isMatureCategorySelected || maturePublishMode !== 'split-series') {
+      return;
+    }
+
+    let mounted = true;
+
+    const loadExistingMatureSeries = async () => {
+      setLoadingMatureSeries(true);
+
+      try {
+        const payload = await fetchAdminJson<{
+          movies?: Array<{
+            id?: string;
+            movieId?: string;
+            title?: string;
+            contentType?: string;
+            category?: string[];
+          }>;
+        }>('/api/admin/movies');
+        const options = (payload.movies || [])
+          .filter(
+            (movie) =>
+              movie.contentType === 'series' &&
+              Array.isArray(movie.category) &&
+              movie.category.some(
+                (category) =>
+                  category.toLowerCase() === MATURE_EXCLUSIVES_CATEGORY.toLowerCase()
+              )
+          )
+          .map((movie) => ({
+            id: String(movie.id || movie.movieId || ''),
+            title: String(movie.title || 'Untitled series'),
+          }))
+          .filter((movie) => movie.id)
+          .sort((left, right) => left.title.localeCompare(right.title));
+
+        if (mounted) {
+          setExistingMatureSeries(options);
+        }
+      } catch (error) {
+        if (mounted) {
+          appendLogLine(
+            `[NOTE] Could not load existing Mature series: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoadingMatureSeries(false);
+        }
+      }
+    };
+
+    void loadExistingMatureSeries();
+
+    return () => {
+      mounted = false;
+    };
+  }, [isMatureCategorySelected, maturePublishMode]);
 
   const appendLogLine = (message: string) => {
     const cleanedMessage = message.trim();
@@ -362,6 +490,12 @@ export function AdminMovieCreateView() {
     setLatestJobId('');
     setLatestMovieId('');
     setLatestJobStatus('');
+    setMaturePublishMode('single');
+    setMatureSeriesTitle('');
+    setMatureSeasonNumber('1');
+    setMatureEpisodeNumber('1');
+    setMatureEpisodeTitle('');
+    setMatureExistingSeriesId('');
     setMovieFileInputKey((current) => current + 1);
     setPosterFileInputKey((current) => current + 1);
     setPlayerBackdropFileInputKey((current) => current + 1);
@@ -458,6 +592,12 @@ export function AdminMovieCreateView() {
     setDescription(details.overview || result?.overview || description);
     setReleaseYear(details.release_date?.slice(0, 4) || result?.release_date?.slice(0, 4) || releaseYear);
     setGenres(nextGenres.join(', ') || genres);
+    setSelectedCategories((current) =>
+      mergeMatureExclusiveCategory(
+        current,
+        isTmdbMatureExclusive(details) || isTmdbMatureExclusive(result)
+      )
+    );
     setShowTmdbResults(false);
   };
 
@@ -506,8 +646,22 @@ export function AdminMovieCreateView() {
   };
 
   const handlePublishMovie = async () => {
-    if (!title.trim()) {
+    const isMatureSplitSeries =
+      isMatureCategorySelected && maturePublishMode === 'split-series';
+    const splitSeriesTitle =
+      matureSeriesTitle.trim() || inferSplitSeriesTitle(title.trim());
+    const splitSeasonNumber = parsePositiveInteger(matureSeasonNumber, 1);
+    const splitEpisodeNumber = parsePositiveInteger(matureEpisodeNumber, 1);
+    const splitEpisodeTitle =
+      matureEpisodeTitle.trim() || title.trim() || `Episode ${splitEpisodeNumber}`;
+
+    if (!isMatureSplitSeries && !title.trim()) {
       setErrorMessage('Movie title is required.');
+      return;
+    }
+
+    if (isMatureSplitSeries && !splitSeriesTitle) {
+      setErrorMessage('Series title is required for a Mature VJ split series.');
       return;
     }
 
@@ -559,17 +713,21 @@ export function AdminMovieCreateView() {
         category: selectedCategories,
       });
       const finalGenres = mergeUniqueRegionalValues(baseGenres, isIndianTitle ? ['Indian'] : []);
-      const finalCategories = mergeUniqueRegionalValues(
-        selectedCategories,
-        isIndianTitle ? ['Indian movies'] : []
+      const finalCategories = mergeMatureExclusiveCategory(
+        mergeUniqueRegionalValues(selectedCategories, isIndianTitle ? ['Indian movies'] : []),
+        false
+      );
+      const isMatureTitle = finalCategories.some(
+        (category) => category.toLowerCase() === MATURE_EXCLUSIVES_CATEGORY.toLowerCase()
       );
       const metadata = {
-        title: title.trim(),
-        originalTitle: selectedTmdb?.original_title || title.trim(),
+        title: isMatureSplitSeries ? splitSeriesTitle : title.trim(),
+        originalTitle: selectedTmdb?.original_title || (isMatureSplitSeries ? splitSeriesTitle : title.trim()),
         description: description.trim(),
         poster: uploadedPoster?.publicUrl || currentPoster,
         trailerUrl: uploadedTrailer?.publicUrl || '',
-        overriddenPlayerBackdrop: uploadedPlayerBackdrop?.publicUrl || '',
+        overriddenPlayerBackdrop:
+          uploadedPlayerBackdrop?.publicUrl || (isMatureSplitSeries ? uploadedPoster?.publicUrl || currentPoster : ''),
         genres: finalGenres,
         category: finalCategories,
         vj: vj.trim() || 'Unknown',
@@ -578,7 +736,8 @@ export function AdminMovieCreateView() {
         language: tmdbLanguage,
         tmdbId: typeof selectedTmdb?.id === 'number' ? selectedTmdb.id : null,
         isTrendingTikTok,
-        contentType: 'movie' as const,
+        isMatureExclusive: isMatureTitle,
+        contentType: isMatureSplitSeries ? 'series' as const : 'movie' as const,
       };
 
       let response: Response;
@@ -595,23 +754,62 @@ export function AdminMovieCreateView() {
         response = await fetch('/api/admin/direct-videos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'local_upload',
-            metadata,
-            playbackUrl: uploadedAsset.publicUrl,
-            sourceFileName: uploadedAsset.fileName,
-            sourceUrl: uploadedAsset.publicUrl,
-          }),
+          body: JSON.stringify(
+            isMatureSplitSeries
+              ? {
+                  mode: 'mature_series_episode',
+                  sourceKind: 'local_upload',
+                  metadata,
+                  seriesId: matureExistingSeriesId,
+                  seasonNumber: splitSeasonNumber,
+                  episodeNumber: splitEpisodeNumber,
+                  episodeTitle: splitEpisodeTitle,
+                  episodeDescription: description.trim(),
+                  episodePoster: uploadedPoster?.publicUrl || currentPoster,
+                  episodeThumbnail: uploadedPoster?.publicUrl || currentPoster,
+                  episodeBackdrop:
+                    uploadedPlayerBackdrop?.publicUrl || uploadedPoster?.publicUrl || currentPoster,
+                  episodeTrailerUrl: uploadedTrailer?.publicUrl || '',
+                  playbackUrl: uploadedAsset.publicUrl,
+                  sourceFileName: uploadedAsset.fileName,
+                  sourceUrl: uploadedAsset.publicUrl,
+                }
+              : {
+                  mode: 'local_upload',
+                  metadata,
+                  playbackUrl: uploadedAsset.publicUrl,
+                  sourceFileName: uploadedAsset.fileName,
+                  sourceUrl: uploadedAsset.publicUrl,
+                }
+          ),
         });
       } else {
         response = await fetch('/api/admin/direct-videos', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode: 'import_link',
-            metadata,
-            playbackUrl: movieUrl.trim(),
-          }),
+          body: JSON.stringify(
+            isMatureSplitSeries
+              ? {
+                  mode: 'mature_series_episode',
+                  metadata,
+                  seriesId: matureExistingSeriesId,
+                  seasonNumber: splitSeasonNumber,
+                  episodeNumber: splitEpisodeNumber,
+                  episodeTitle: splitEpisodeTitle,
+                  episodeDescription: description.trim(),
+                  episodePoster: uploadedPoster?.publicUrl || currentPoster,
+                  episodeThumbnail: uploadedPoster?.publicUrl || currentPoster,
+                  episodeBackdrop:
+                    uploadedPlayerBackdrop?.publicUrl || uploadedPoster?.publicUrl || currentPoster,
+                  episodeTrailerUrl: uploadedTrailer?.publicUrl || '',
+                  playbackUrl: movieUrl.trim(),
+                }
+              : {
+                  mode: 'import_link',
+                  metadata,
+                  playbackUrl: movieUrl.trim(),
+                }
+          ),
         });
       }
 
@@ -624,7 +822,9 @@ export function AdminMovieCreateView() {
       const queuedNormalizationCount = Number(result.payload.queuedNormalizationCount || 0);
 
       appendLogLine(
-        mode === 'link'
+        isMatureSplitSeries
+          ? `[DONE] Mature split series episode queued for ${splitSeriesTitle} S${splitSeasonNumber}E${splitEpisodeNumber}.`
+          : mode === 'link'
           ? '[DONE] Direct MP4 import job queued. The VPS will now download, inspect, process, and upload the final file to R2.'
           : queuedNormalizationCount > 0
             ? '[DONE] Movie uploaded and queued for compatibility processing.'
@@ -634,13 +834,15 @@ export function AdminMovieCreateView() {
         appendLogLine(`[NOTE] ${String(result.payload.warningMessage)}`);
       }
       setStatusMessage(
-        mode === 'link'
+        isMatureSplitSeries
+          ? `Queued ${splitSeriesTitle} S${splitSeasonNumber}E${splitEpisodeNumber}. It will appear as one Mature series card after processing.`
+          : mode === 'link'
           ? `Queued "${title.trim()}" for VPS import. We will only mark it ready after the final R2 upload succeeds.`
           : queuedNormalizationCount > 0
             ? `Uploaded "${title.trim()}". We are now processing it into an iPhone-safe MP4 before it goes live.`
             : `Uploaded "${title.trim()}".`
       );
-      setUploadedMovieTitle(title.trim());
+      setUploadedMovieTitle(isMatureSplitSeries ? `${splitSeriesTitle} - ${splitEpisodeTitle}` : title.trim());
       setQueuedForProcessing(queuedNormalizationCount > 0);
       setLastSubmittedMode(mode);
       setLatestJobId(String(result.payload.jobId || ''));
@@ -878,10 +1080,14 @@ export function AdminMovieCreateView() {
               >
                 <UploadCloud size={14} />
                 {publishing
-                  ? mode === 'link'
+                  ? isMatureCategorySelected && maturePublishMode === 'split-series'
+                    ? 'Queueing Episode...'
+                    : mode === 'link'
                     ? 'Queueing Import...'
                     : 'Uploading...'
-                  : mode === 'link'
+                  : isMatureCategorySelected && maturePublishMode === 'split-series'
+                    ? 'Publish Mature Episode'
+                    : mode === 'link'
                     ? 'Import Movie'
                     : 'Upload Movie'}
               </button>
@@ -1156,6 +1362,122 @@ export function AdminMovieCreateView() {
                   className="grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-3"
                 />
               </div>
+
+              {isMatureCategorySelected && (
+                <div className="rounded-[24px] border border-[#D90429]/20 bg-[#17070B]/55 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.22em] text-[#FFB3C0]">
+                        Mature Exclusives Format
+                      </div>
+                      <p className="mt-2 max-w-2xl text-xs leading-5 text-white/58">
+                        Use Single movie for normal titles. Use VJ split series only when a VJ
+                        cut one title into numbered episodes like Tubero 1, Tubero 2, or Taboo 18.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMaturePublishMode('single')}
+                        className={`rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] ${
+                          maturePublishMode === 'single'
+                            ? 'bg-[#D90429] text-white'
+                            : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        Single Movie
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMaturePublishMode('split-series');
+                          if (!matureSeriesTitle.trim()) {
+                            setMatureSeriesTitle(inferSplitSeriesTitle(title));
+                          }
+                          if (!matureEpisodeTitle.trim()) {
+                            setMatureEpisodeTitle(title.trim());
+                          }
+                        }}
+                        className={`rounded-full px-4 py-2 text-[11px] font-black uppercase tracking-[0.18em] ${
+                          maturePublishMode === 'split-series'
+                            ? 'bg-[#D90429] text-white'
+                            : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        VJ Split Series
+                      </button>
+                    </div>
+                  </div>
+
+                  {maturePublishMode === 'split-series' && (
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                      <div className="md:col-span-2">
+                        <FieldLabel>Append To Existing Mature Series</FieldLabel>
+                        <SelectInput
+                          value={matureExistingSeriesId}
+                          onChange={(event) => {
+                            const nextSeriesId = event.target.value;
+                            setMatureExistingSeriesId(nextSeriesId);
+
+                            const selectedSeries = existingMatureSeries.find(
+                              (series) => series.id === nextSeriesId
+                            );
+
+                            if (selectedSeries) {
+                              setMatureSeriesTitle(selectedSeries.title);
+                            }
+                          }}
+                        >
+                          <option value="">
+                            {loadingMatureSeries
+                              ? 'Loading mature series...'
+                              : 'Create new series or auto-match by title'}
+                          </option>
+                          {existingMatureSeries.map((series) => (
+                            <option key={series.id} value={series.id}>
+                              {series.title}
+                            </option>
+                          ))}
+                        </SelectInput>
+                      </div>
+                      <div>
+                        <FieldLabel>Series Title</FieldLabel>
+                        <TextInput
+                          value={matureSeriesTitle}
+                          onChange={(event) => setMatureSeriesTitle(event.target.value)}
+                          placeholder="Tubero"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Episode Title</FieldLabel>
+                        <TextInput
+                          value={matureEpisodeTitle}
+                          onChange={(event) => setMatureEpisodeTitle(event.target.value)}
+                          placeholder="Tubero 6"
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Season Number</FieldLabel>
+                        <TextInput
+                          type="number"
+                          min="1"
+                          value={matureSeasonNumber}
+                          onChange={(event) => setMatureSeasonNumber(event.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Episode Number</FieldLabel>
+                        <TextInput
+                          type="number"
+                          min="1"
+                          value={matureEpisodeNumber}
+                          onChange={(event) => setMatureEpisodeNumber(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
         </div>

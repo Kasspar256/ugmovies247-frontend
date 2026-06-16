@@ -73,6 +73,10 @@ function hasExplicitUnreadyStatus(asset: PublicAsset) {
 }
 
 export function isPublicMovieReady(movie: PublicAsset, options: PublicReadinessOptions = {}) {
+  if (String(movie.status || '').trim().toLowerCase() === 'converted_to_series') {
+    return false;
+  }
+
   const seasons = Array.isArray(movie.seasons) ? movie.seasons : [];
 
   if (movie.contentType === 'series' || seasons.length > 0) {
