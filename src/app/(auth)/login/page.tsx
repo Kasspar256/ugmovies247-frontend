@@ -16,8 +16,7 @@ import {
   loginWithEmailPassword,
   restoreServerSessionFromClientAuth,
 } from '@/lib/auth/client';
-import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
-import { isNativeAndroidApp } from '@/lib/mobile/nativeApp';
+import { fetchAuthStatus } from '@/lib/auth/status-client';
 
 function getSessionNoticeFromReason(reason: string) {
   if (reason === 'session-replaced') {
@@ -46,14 +45,6 @@ function hasReviewSessionCookie() {
     .some((entry) => entry === `${APP_REVIEW_SESSION_COOKIE}=1`);
 }
 
-function shouldHideLoginWhileRestoring() {
-  return (
-    isNativeAndroidApp() ||
-    readCachedAuthStatus()?.authenticated === true ||
-    hasPendingGoogleRedirectSignIn()
-  );
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -65,9 +56,9 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [checkingExistingSession, setCheckingExistingSession] = useState(() =>
-    shouldHideLoginWhileRestoring()
-  );
+  // Browser session storage is checked in the effect below. Reading it during
+  // the first render makes server and iPhone Safari markup disagree.
+  const [checkingExistingSession, setCheckingExistingSession] = useState(false);
   const [sessionNotice, setSessionNotice] = useState('');
   const [error, setError] = useState('');
   const [devDiagnostics, setDevDiagnostics] = useState<string[]>([]);

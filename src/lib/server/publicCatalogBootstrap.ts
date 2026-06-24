@@ -19,6 +19,9 @@ export type PublicCatalogBootstrapPayload = {
 };
 
 const BOOTSTRAP_READINESS_OPTIONS = { allowLockedPlaceholder: true };
+const HOME_BOOTSTRAP_LATEST_LIMIT = 48;
+const HOME_BOOTSTRAP_ROW_LIMIT = 10;
+const HOME_BOOTSTRAP_FALLBACK_LIMIT = 12;
 
 let inMemoryPublicBootstrapCatalog: PublicCatalogBootstrapPayload | null = null;
 
@@ -297,6 +300,34 @@ export function upsertPublicBootstrapMovie(movie: RawMovie) {
 
 export function readPublicBootstrapCatalogFromMemory() {
   return inMemoryPublicBootstrapCatalog;
+}
+
+export function createHomePublicBootstrapPayload(
+  payload: PublicCatalogBootstrapPayload
+): PublicCatalogBootstrapPayload {
+  const cardMovies = payload.movies.map((movie) => ({
+    ...movie,
+    // Browse cards do not need playback trees. Movie details fetch the selected
+    // title separately, so serializing every episode into /browse only bloats HTML.
+    parts: [],
+    seasons: [],
+  }));
+  const { homeRows, unmatchedMovies } = buildHomeCollections({
+    movies: cardMovies,
+    homePageCategories: payload.homePageCategories,
+    activeCategory: 'ALL',
+  });
+  const movies = dedupeSeriesMovies([
+    ...cardMovies.slice(0, HOME_BOOTSTRAP_LATEST_LIMIT),
+    ...homeRows.flatMap((row) => row.movies.slice(0, HOME_BOOTSTRAP_ROW_LIMIT)),
+    ...unmatchedMovies.slice(0, HOME_BOOTSTRAP_FALLBACK_LIMIT),
+  ]);
+
+  return {
+    ...payload,
+    movies,
+    partial: true,
+  };
 }
 
 export function createEmptyPublicBootstrapPayload(): PublicCatalogBootstrapPayload {

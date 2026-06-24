@@ -339,7 +339,9 @@ const [isLiked, setIsLiked] = useState(false);
 const [actionMessage, setActionMessage] = useState('');
 const [showPremiumDownloadModal, setShowPremiumDownloadModal] = useState(false);
 const [relatedMovies, setRelatedMovies] = useState<Movie[]>([]);
-const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(() => hasCachedPremiumAccess());
+// Read device access after hydration so subscribed users get the same first
+// render as the server and a refresh cannot trigger React hydration error #418.
+const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(false);
 const [isSourceHydrating, setIsSourceHydrating] = useState(
   () => Boolean(routeInitialMovie && !movieHasAnyPlaybackSource(routeInitialMovie))
 );

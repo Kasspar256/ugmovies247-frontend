@@ -1,4 +1,5 @@
 import {
+  createHomePublicBootstrapPayload,
   createEmptyPublicBootstrapPayload,
   readPublicBootstrapCatalogFromMemory,
   setPublicBootstrapCatalogFromMovieCache,
@@ -58,6 +59,10 @@ export async function getPublicCatalogBootstrapPayload(): Promise<PublicCatalogB
   const diskBootstrap = await warmBootstrapFromDiskOnce();
 
   return diskBootstrap?.movies.length ? diskBootstrap : createEmptyPublicBootstrapPayload();
+}
+
+export async function getPublicHomeCatalogBootstrapPayload(): Promise<PublicCatalogBootstrapPayload> {
+  return createHomePublicBootstrapPayload(await getPublicCatalogBootstrapPayload());
 }
 
 export async function getMovieCatalogCacheForBootstrap(): Promise<CachedMovieCatalog | null> {

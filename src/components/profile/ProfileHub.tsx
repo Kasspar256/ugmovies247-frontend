@@ -26,7 +26,7 @@ import {
   readCachedAccountProfile,
   type AccountProfile,
 } from '@/lib/accountProfile';
-import { readCachedAuthStatus } from '@/lib/auth/status-client';
+import { fetchAuthStatus, readCachedAuthStatus } from '@/lib/auth/status-client';
 import { logoutCurrentUser } from '@/lib/auth/client';
 import EmailVerificationWarning from '@/components/EmailVerificationWarning';
 import { isAppInReview } from '@/lib/appReview';
@@ -365,7 +365,10 @@ function readCachedProfileFallback() {
 
 export default function ProfileHub() {
   const router = useRouter();
-  const [profile, setProfile] = useState<AccountProfile | null>(() => readCachedProfileFallback());
+  // Keep the server and first client render identical. Reading localStorage in
+  // the initializer caused React hydration error #418 after refresh/sign-out.
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [profileState, setProfileState] = useState<'loading' | 'ready' | 'signed-out' | 'error'>('loading');
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState('');
 
@@ -375,6 +378,7 @@ export default function ProfileHub() {
 
     if (fallbackProfile) {
       setProfile(fallbackProfile);
+      setProfileState('ready');
     }
 
     const loadProfile = async () => {
@@ -386,8 +390,22 @@ export default function ProfileHub() {
         }
 
         setProfile(nextProfile);
+        setProfileState('ready');
       } catch (loadError) {
         console.warn('[profile] background account refresh failed', loadError);
+
+        const status = await fetchAuthStatus({ force: true }).catch(() => null);
+
+        if (!mounted) {
+          return;
+        }
+
+        if (status && !status.authenticated) {
+          setProfile(null);
+          setProfileState('signed-out');
+        } else if (!fallbackProfile) {
+          setProfileState('error');
+        }
       }
     };
 
@@ -497,24 +515,41 @@ export default function ProfileHub() {
                 <ProfileSummary profile={profile} />
                 <EmailVerificationWarning emailVerified={profile.emailVerified} />
               </>
+            ) : profileState === 'signed-out' ? (
+              <section className="rounded-[28px] border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_22px_50px_rgba(0,0,0,0.35)]">
+                <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
+                  Account
+                </div>
+                <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">
+                  You are signed out
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-white/62">
+                  Sign in to open your subscription, saved titles, and watch history.
+                </p>
+                <Link
+                  href="/login"
+                  className="mt-5 flex min-h-12 items-center justify-center rounded-2xl bg-[#D90429] px-5 text-sm font-black uppercase tracking-[0.18em] text-white"
+                >
+                  Sign in
+                </Link>
+              </section>
             ) : (
               <section className="rounded-[28px] border border-white/10 bg-[#11141C]/85 p-5 shadow-[0_22px_50px_rgba(0,0,0,0.35)]">
                 <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
                   Account
                 </div>
                 <h2 className="mt-3 text-2xl font-black tracking-[-0.04em] text-white">
-                  Reconnecting your account
+                  {profileState === 'error' ? 'Account unavailable' : 'Checking your account'}
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-white/62">
-                  Your saved app data remains available on this device while we refresh the account session in the background.
+                  {profileState === 'error'
+                    ? 'We could not reach your account right now. Check your connection and try again.'
+                    : 'This should only take a moment.'}
                 </p>
               </section>
             )}
 
-            <NavigationGroup
-              title="Account"
-              items={accountItems}
-            />
+            {profile ? <NavigationGroup title="Account" items={accountItems} /> : null}
 
             <NavigationGroup
               title="Support"
@@ -528,7 +563,7 @@ export default function ProfileHub() {
               ]}
             />
 
-            <section className="rounded-[24px] border border-white/10 bg-[#11141C]/72 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
+            {profile ? <section className="rounded-[24px] border border-white/10 bg-[#11141C]/72 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.24)]">
               <div className="text-[11px] font-black uppercase tracking-[0.24em] text-white/40">
                 Session
               </div>
@@ -556,7 +591,7 @@ export default function ProfileHub() {
                   {signOutError}
                 </div>
               ) : null}
-            </section>
+            </section> : null}
         </div>
       </div>
     </main>

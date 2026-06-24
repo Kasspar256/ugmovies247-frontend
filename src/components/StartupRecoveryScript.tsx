@@ -171,7 +171,11 @@ const STARTUP_RECOVERY_SCRIPT = `
   function handleFatal(message, source) {
     reportStartupError(message, source);
 
-    if (isChunkOrStartupError(message) && safeSessionGet(CHUNK_RETRY_KEY) !== '1') {
+    if (!isChunkOrStartupError(message)) {
+      return;
+    }
+
+    if (safeSessionGet(CHUNK_RETRY_KEY) !== '1') {
       safeSessionSet(CHUNK_RETRY_KEY, '1');
       clearShellCaches().then(function () {
         var separator = window.location.search ? '&' : '?';
@@ -229,7 +233,7 @@ const STARTUP_RECOVERY_SCRIPT = `
       var bodyText = document.body && document.body.innerText ? document.body.innerText : '';
       if (bodyText.indexOf('Application error: a client-side exception has occurred') !== -1) {
         window.clearInterval(scanTimer);
-        handleFatal('Application error screen reached startup.', 'screen-scan');
+        reportStartupError('Application error screen reached startup.', 'screen-scan');
       }
     } catch (error) {}
 

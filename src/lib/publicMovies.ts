@@ -420,10 +420,7 @@ function normalizePageOffset(value: unknown) {
 }
 
 function shouldUsePagedCatalogRequests() {
-  // Keep the async IndexedDB cache, but restore full-catalog loading.
-  // The paged catalog experiment left home/category rows empty whenever
-  // the requested slice did not include movies for those sections.
-  return false;
+  return true;
 }
 
 function hasEnoughCatalogForRequest(
@@ -632,6 +629,7 @@ export function refreshPublicMoviesInBackground(options?: {
     void fetchPublicMovies({
       force: true,
       refreshEntitlement: options?.refreshEntitlement,
+      limit: options?.forceFull ? undefined : options?.limit || PUBLIC_MOVIE_BOOTSTRAP_LIMIT,
     }).catch(() => undefined);
     return;
   }

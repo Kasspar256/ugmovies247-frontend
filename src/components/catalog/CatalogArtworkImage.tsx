@@ -43,13 +43,8 @@ const CatalogArtworkImage = memo(function CatalogArtworkImage({
 }: CatalogArtworkImageProps) {
   const candidates = useMemo(() => normalizeArtworkCandidates(src, variant), [src, variant]);
   const candidateKey = candidates.join('\n');
-  const [candidateIndex, setCandidateIndex] = useState(() => {
-    const loadedIndex = candidates.findIndex((candidate) => hasLoadedArtworkUrl(candidate));
-    return loadedIndex >= 0 ? loadedIndex : 0;
-  });
-  const [isLoaded, setIsLoaded] = useState(() =>
-    Boolean(candidates[candidateIndex] && hasLoadedArtworkUrl(candidates[candidateIndex]))
-  );
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const normalizedSrc = candidates[candidateIndex] || '';
 
@@ -72,7 +67,10 @@ const CatalogArtworkImage = memo(function CatalogArtworkImage({
     setIsLoaded(false);
     setHasError(false);
 
-    if (!normalizedSrc || typeof window === 'undefined') {
+    // Non-priority cards must stay genuinely lazy. Creating an Image object here
+    // bypasses the browser's loading="lazy" scheduler and previously caused every
+    // poster on the browse page to start downloading at once on mobile Safari.
+    if (!priority || !normalizedSrc || typeof window === 'undefined') {
       return;
     }
 
@@ -123,7 +121,7 @@ const CatalogArtworkImage = memo(function CatalogArtworkImage({
     return () => {
       active = false;
     };
-  }, [candidateIndex, candidates.length, normalizedSrc]);
+  }, [candidateIndex, candidates.length, normalizedSrc, priority]);
 
   const showLoadingShimmer = Boolean(normalizedSrc && !isLoaded && !hasError);
   const showPlaceholder = !normalizedSrc || hasError;
@@ -154,7 +152,7 @@ const CatalogArtworkImage = memo(function CatalogArtworkImage({
           alt={alt}
           className={`${imageClassName} ${isLoaded && !hasError ? 'opacity-100' : 'opacity-0'}`}
           loading={priority ? 'eager' : 'lazy'}
-          fetchPriority={priority ? 'high' : 'auto'}
+          fetchPriority={priority ? 'high' : 'low'}
           decoding="async"
           onLoad={() => {
             markArtworkUrlLoaded(normalizedSrc);
