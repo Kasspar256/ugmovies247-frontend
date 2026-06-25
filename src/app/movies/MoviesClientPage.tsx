@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
@@ -9,12 +9,8 @@ import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid'
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getCatalogPosterCandidates } from '@/lib/catalogArtwork';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import {
-  fetchPublicMovies,
-  PUBLIC_MOVIE_PAGE_LIMIT,
-  readCachedPublicMovies,
-} from '@/lib/publicMovies';
-import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
+import { useInfinitePublicCatalog } from '@/hooks/useInfinitePublicCatalog';
+import { rememberPendingMovieNavigation } from '@/lib/movieNavigationHint';
 import {
   CATALOG_FILTER_ALL,
   buildCatalogEmptyMessage,
@@ -134,7 +130,12 @@ function CatalogSkeletonGrid() {
 
 function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean }) {
   return (
-    <Link href={`/movie/${movie.id}`} className="group min-w-0">
+    <Link
+      href={`/movie/${movie.id}`}
+      onPointerDown={() => rememberPendingMovieNavigation(movie)}
+      onClick={() => rememberPendingMovieNavigation(movie)}
+      className="group min-w-0"
+    >
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
         <CatalogArtworkImage
           src={getCatalogPosterCandidates(movie)}
@@ -167,19 +168,23 @@ function CatalogMovieCard({ movie, priority }: { movie: Movie; priority: boolean
 
 export default function MoviesClientPage({ initialMovies = [] }: { initialMovies?: Movie[] }) {
   const initialSnapshot = moviesPageSnapshot;
-  const serverMovies = useMemo(() => getStandaloneMovies(initialMovies), [initialMovies]);
-  const [movies, setMovies] = useState<Movie[]>(() => initialSnapshot?.movies || serverMovies);
-  const [loading, setLoading] = useState(
-    () => !initialSnapshot?.movies?.length && !serverMovies.length
-  );
-  const [loadError, setLoadError] = useState('');
+  const selectStandaloneMovies = useCallback((catalog: Movie[]) => getStandaloneMovies(catalog), []);
+  const {
+    items: movies,
+    loading,
+    loadError,
+    isFetchingMore,
+    hasMore,
+    sentinelRef,
+  } = useInfinitePublicCatalog({
+    initialMovies: initialSnapshot?.movies?.length ? initialSnapshot.movies : initialMovies,
+    pageSize: 25,
+    logLabel: 'movies-page',
+    selectItems: selectStandaloneMovies,
+  });
   const [selectedVj, setSelectedVj] = useState(() => initialSnapshot?.selectedVj || CATALOG_FILTER_ALL);
   const [selectedGenre, setSelectedGenre] = useState(() => initialSnapshot?.selectedGenre || CATALOG_FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<CatalogFilterKind | null>(null);
-
-  usePublicMovieCatalogUpdates((catalog) => {
-    setMovies(getStandaloneMovies(catalog));
-  });
 
   useEffect(() => {
     moviesPageSnapshot = {
@@ -210,37 +215,7 @@ export default function MoviesClientPage({ initialMovies = [] }: { initialMovies
       window.removeEventListener('scroll', rememberScroll);
       window.removeEventListener('pagehide', rememberScroll);
     };
-  }, [serverMovies]);
-
-  useEffect(() => {
-    const cachedMovies = getStandaloneMovies(readCachedPublicMovies());
-
-    if (cachedMovies.length) {
-      setMovies(cachedMovies);
-      setLoading(false);
-    } else if (serverMovies.length) {
-      setMovies(serverMovies);
-      setLoading(false);
-    }
-
-    const loadMovies = async () => {
-      try {
-        const catalog = await fetchPublicMovies({
-          force: cachedMovies.length === 0,
-          limit: PUBLIC_MOVIE_PAGE_LIMIT,
-        });
-        setMovies(getStandaloneMovies(catalog));
-        setLoadError('');
-      } catch (error) {
-        console.error('[movies-page] failed to load movie catalog', error);
-        setLoadError('We could not refresh the movies right now. Showing any cached movies available.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadMovies();
-  }, [serverMovies]);
+  }, []);
 
   useEffect(() => {
     if (!openFilter || typeof window === 'undefined') {
@@ -402,6 +377,13 @@ export default function MoviesClientPage({ initialMovies = [] }: { initialMovies
             )}
           />
         )}
+
+        <div
+          ref={sentinelRef}
+          className="mt-10 min-h-16 text-center text-xs font-black uppercase tracking-[0.22em] text-white/45"
+        >
+          {isFetchingMore ? 'Loading more movies...' : hasMore ? 'More movies are loading before you reach the end.' : 'End of movies.'}
+        </div>
       </section>
     </main>
   );

@@ -52,6 +52,10 @@ export async function trimStreamingCachePressure(reason: string) {
         maxBytes: STREAMING_CACHE_LIMIT_BYTES,
         reason,
       });
+      console.info(
+        `[streaming-cache] native video cache trimmed to ${(STREAMING_CACHE_LIMIT_BYTES / 1024 / 1024).toFixed(0)}MB`,
+        { reason }
+      );
       return;
     } catch (error) {
       console.warn('[streaming-cache] native trim failed', error);
@@ -69,7 +73,51 @@ export async function trimStreamingCachePressure(reason: string) {
     );
 
     await Promise.all(mediaCacheNames.map((cacheName) => window.caches.delete(cacheName)));
+
+    if (mediaCacheNames.length) {
+      console.info('[streaming-cache] browser media caches cleared for trim', {
+        reason,
+        caches: mediaCacheNames.length,
+        maxBytes: STREAMING_CACHE_LIMIT_BYTES,
+      });
+    }
   } catch (error) {
     console.warn('[streaming-cache] browser cache trim failed', error);
+  }
+}
+
+export async function clearStreamingVideoCache(reason: string) {
+  const nativeCachePlugin = getNativeStreamingCachePlugin();
+
+  if (nativeCachePlugin?.clearVideoCache) {
+    try {
+      await nativeCachePlugin.clearVideoCache({ reason });
+      console.info('[streaming-cache] native video cache cleared', { reason });
+      return;
+    } catch (error) {
+      console.warn('[streaming-cache] native clear failed', error);
+    }
+  }
+
+  if (typeof window === 'undefined' || !('caches' in window)) {
+    return;
+  }
+
+  try {
+    const cacheNames = await window.caches.keys();
+    const mediaCacheNames = cacheNames.filter((cacheName) =>
+      /video|media|stream|hls|m3u8|segment/i.test(cacheName)
+    );
+
+    await Promise.all(mediaCacheNames.map((cacheName) => window.caches.delete(cacheName)));
+
+    if (mediaCacheNames.length) {
+      console.info('[streaming-cache] browser media caches cleared', {
+        reason,
+        caches: mediaCacheNames.length,
+      });
+    }
+  } catch (error) {
+    console.warn('[streaming-cache] browser cache clear failed', error);
   }
 }

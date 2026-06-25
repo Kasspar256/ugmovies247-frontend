@@ -1,15 +1,11 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback } from 'react';
 import Link from 'next/link';
 import { Play, ArrowLeft, Film } from 'lucide-react';
 import { type Movie } from '@/types/movie';
 import { dedupeSeriesMovies, isSeriesMovie } from '@/lib/moviePresentation';
-import {
-  fetchPublicMovies,
-  PUBLIC_MOVIE_PAGE_LIMIT,
-  readCachedPublicMovies,
-} from '@/lib/publicMovies';
-import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
+import { rememberPendingMovieNavigation } from '@/lib/movieNavigationHint';
+import { useInfinitePublicCatalog } from '@/hooks/useInfinitePublicCatalog';
 import MobilePageHeader from '@/components/MobilePageHeader';
 import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
 import { isAppInReview } from '@/lib/appReview';
@@ -49,7 +45,7 @@ function movieHasCategorySignal(movie: Movie, categorySlug: string) {
 
 function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
   if (categorySlug === 'latest') {
-    return catalog.slice(0, 24);
+    return catalog;
   }
 
   if (categorySlug === 'tiktok-trending') {
@@ -57,7 +53,7 @@ function getCategoryMovies(categorySlug: string, catalog: Movie[]) {
   }
 
   if (categorySlug === 'most-liked') {
-    return catalog.slice(2, 22);
+    return catalog.slice(2);
   }
 
   return catalog.filter((movie) => movieHasCategorySignal(movie, categorySlug));
@@ -94,41 +90,23 @@ export default function CategoryClientPage({
 }) {
   const categorySlug = decodeURIComponent(params.id);
   const displayTitle = categorySlug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  const serverCategoryMovies = useMemo(
-    () => dedupeSeriesMovies(getCategoryMovies(categorySlug, initialMovies)),
-    [categorySlug, initialMovies]
+  const selectCategoryMovies = useCallback(
+    (catalog: Movie[]) => dedupeSeriesMovies(getCategoryMovies(categorySlug, catalog)),
+    [categorySlug]
   );
-  const [movies, setMovies] = useState<Movie[]>(serverCategoryMovies);
-  const [loading, setLoading] = useState(serverCategoryMovies.length === 0);
-
-  usePublicMovieCatalogUpdates((catalog) => {
-    setMovies(dedupeSeriesMovies(getCategoryMovies(categorySlug, catalog)));
+  const {
+    items: movies,
+    loading,
+    loadError,
+    isFetchingMore,
+    hasMore,
+    sentinelRef,
+  } = useInfinitePublicCatalog({
+    initialMovies,
+    pageSize: 25,
+    logLabel: `category:${categorySlug}`,
+    selectItems: selectCategoryMovies,
   });
-
-  useEffect(() => {
-    const cachedMovies = dedupeSeriesMovies(getCategoryMovies(categorySlug, readCachedPublicMovies()));
-
-    if (cachedMovies.length) {
-      setMovies(cachedMovies);
-      setLoading(false);
-    } else if (serverCategoryMovies.length) {
-      setMovies(serverCategoryMovies);
-      setLoading(false);
-    }
-
-    const fetchMovies = async () => {
-      try {
-        const data = await fetchPublicMovies({ limit: PUBLIC_MOVIE_PAGE_LIMIT });
-
-        setMovies(dedupeSeriesMovies(getCategoryMovies(categorySlug, data)));
-      } catch (err) {
-        console.error("Error fetching category movies:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMovies();
-  }, [categorySlug, serverCategoryMovies]);
 
   if (loading) {
     return (
@@ -163,6 +141,11 @@ export default function CategoryClientPage({
 
       {/* Massive Cinematic Grid of Category Movies */}
       <div className="mt-4 max-w-[1380px] mx-auto md:mt-0">
+        {loadError && (
+          <div className="mb-4 rounded-3xl border border-amber-200/20 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100">
+            {loadError}
+          </div>
+        )}
         <VirtualizedCatalogGrid
           items={movies}
           getKey={(movie) => movie.id}
@@ -170,7 +153,12 @@ export default function CategoryClientPage({
           rowHeight={{ base: 242, sm: 286, md: 344, lg: 318, xl: 320 }}
           rowClassName="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 md:gap-5 lg:grid-cols-6 xl:grid-cols-8"
           renderItem={(movie, index) => (
-            <Link href={`/movie/${movie.id}`} className="relative group bg-[#1F2833]/10 md:bg-[#1F2833]/30 p-1 md:p-3 rounded-lg md:rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg flex flex-col h-full">
+            <Link
+              href={`/movie/${movie.id}`}
+              onPointerDown={() => rememberPendingMovieNavigation(movie)}
+              onClick={() => rememberPendingMovieNavigation(movie)}
+              className="relative group bg-[#1F2833]/10 md:bg-[#1F2833]/30 p-1 md:p-3 rounded-lg md:rounded-xl border border-transparent hover:border-white/10 transition-colors shadow-lg flex flex-col h-full"
+            >
               <div className="aspect-[2/3] w-full rounded-md bg-[#1F2833] overflow-hidden mb-2 md:mb-3 relative flex-shrink-0">
                 {isSeriesMovie(movie) && (
                   <div className="absolute top-1 right-1 md:top-2 md:right-2 bg-white/95 text-[#0B0C10] text-[7px] md:text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full z-20 shadow-[0_2px_10px_rgba(0,0,0,0.4)]">
@@ -210,7 +198,14 @@ export default function CategoryClientPage({
         />
       </div>
 
-      <div className="mt-12 md:mt-16 text-center max-w-2xl mx-auto border-t border-[#1F2833] pt-8 md:pt-10">
+      <div
+        ref={sentinelRef}
+        className="mt-10 min-h-16 text-center text-xs font-black uppercase tracking-[0.22em] text-white/45"
+      >
+        {isFetchingMore ? 'Loading more titles...' : hasMore ? 'More titles are loading before you reach the end.' : ''}
+      </div>
+
+      <div className="mt-6 md:mt-10 text-center max-w-2xl mx-auto border-t border-[#1F2833] pt-8 md:pt-10">
         <div className="w-10 h-10 md:w-14 md:h-14 bg-[#1F2833]/30 rounded-full mx-auto flex items-center justify-center mb-4">
            <span className="text-[#D90429] font-black text-xs md:text-base">END</span>
         </div>

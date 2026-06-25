@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search as SearchIcon } from 'lucide-react';
 import CatalogFilterDropdown from '@/components/catalog/CatalogFilterDropdown';
@@ -9,12 +9,8 @@ import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid'
 import MobilePageHeader from '@/components/MobilePageHeader';
 import { getCatalogPosterCandidates } from '@/lib/catalogArtwork';
 import { dedupeSeriesMovies } from '@/lib/moviePresentation';
-import {
-  fetchPublicMovies,
-  PUBLIC_MOVIE_PAGE_LIMIT,
-  readCachedPublicMovies,
-} from '@/lib/publicMovies';
-import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
+import { useInfinitePublicCatalog } from '@/hooks/useInfinitePublicCatalog';
+import { rememberPendingMovieNavigation } from '@/lib/movieNavigationHint';
 import {
   CATALOG_FILTER_ALL,
   buildCatalogEmptyMessage,
@@ -132,7 +128,12 @@ function CatalogSkeletonGrid() {
 
 function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) {
   return (
-    <Link href={`/movie/${series.id}`} className="group min-w-0">
+    <Link
+      href={`/movie/${series.id}`}
+      onPointerDown={() => rememberPendingMovieNavigation(series)}
+      onClick={() => rememberPendingMovieNavigation(series)}
+      className="group min-w-0"
+    >
       <div className="relative aspect-[2/3] overflow-hidden rounded-[14px] border border-white/8 bg-[#11141C] shadow-[0_10px_22px_rgba(0,0,0,0.32)] md:rounded-[17px]">
         <CatalogArtworkImage
           src={getCatalogPosterCandidates(series)}
@@ -165,19 +166,23 @@ function SeriesCard({ series, priority }: { series: Movie; priority: boolean }) 
 
 export default function SeriesClientPage({ initialMovies = [] }: { initialMovies?: Movie[] }) {
   const initialSnapshot = seriesPageSnapshot;
-  const serverSeries = useMemo(() => getAllSeries(initialMovies), [initialMovies]);
-  const [series, setSeries] = useState<Movie[]>(() => initialSnapshot?.series || serverSeries);
-  const [loading, setLoading] = useState(
-    () => !initialSnapshot?.series?.length && !serverSeries.length
-  );
-  const [loadError, setLoadError] = useState('');
+  const selectSeries = useCallback((catalog: Movie[]) => getAllSeries(catalog), []);
+  const {
+    items: series,
+    loading,
+    loadError,
+    isFetchingMore,
+    hasMore,
+    sentinelRef,
+  } = useInfinitePublicCatalog({
+    initialMovies: initialSnapshot?.series?.length ? initialSnapshot.series : initialMovies,
+    pageSize: 25,
+    logLabel: 'series-page',
+    selectItems: selectSeries,
+  });
   const [selectedVj, setSelectedVj] = useState(() => initialSnapshot?.selectedVj || CATALOG_FILTER_ALL);
   const [selectedGenre, setSelectedGenre] = useState(() => initialSnapshot?.selectedGenre || CATALOG_FILTER_ALL);
   const [openFilter, setOpenFilter] = useState<CatalogFilterKind | null>(null);
-
-  usePublicMovieCatalogUpdates((catalog) => {
-    setSeries(getAllSeries(catalog));
-  });
 
   useEffect(() => {
     seriesPageSnapshot = {
@@ -208,37 +213,7 @@ export default function SeriesClientPage({ initialMovies = [] }: { initialMovies
       window.removeEventListener('scroll', rememberScroll);
       window.removeEventListener('pagehide', rememberScroll);
     };
-  }, [serverSeries]);
-
-  useEffect(() => {
-    const cachedSeries = getAllSeries(readCachedPublicMovies());
-
-    if (cachedSeries.length) {
-      setSeries(cachedSeries);
-      setLoading(false);
-    } else if (serverSeries.length) {
-      setSeries(serverSeries);
-      setLoading(false);
-    }
-
-    const loadSeries = async () => {
-      try {
-        const catalog = await fetchPublicMovies({
-          force: cachedSeries.length === 0,
-          limit: PUBLIC_MOVIE_PAGE_LIMIT,
-        });
-        setSeries(getAllSeries(catalog));
-        setLoadError('');
-      } catch (error) {
-        console.error('[series-page] failed to load series catalog', error);
-        setLoadError('We could not refresh the series right now. Showing any cached series available.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void loadSeries();
-  }, [serverSeries]);
+  }, []);
 
   useEffect(() => {
     if (!openFilter || typeof window === 'undefined') {
@@ -398,6 +373,13 @@ export default function SeriesClientPage({ initialMovies = [] }: { initialMovies
             renderItem={(item, index) => <SeriesCard series={item} priority={index < 6} />}
           />
         )}
+
+        <div
+          ref={sentinelRef}
+          className="mt-10 min-h-16 text-center text-xs font-black uppercase tracking-[0.22em] text-white/45"
+        >
+          {isFetchingMore ? 'Loading more series...' : hasMore ? 'More series are loading before you reach the end.' : 'End of series.'}
+        </div>
       </section>
     </main>
   );

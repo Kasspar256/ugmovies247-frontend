@@ -58,8 +58,8 @@ import {
   getCachedPlaybackProgress,
   writeCachedPlaybackProgress,
 } from '@/lib/playbackProgress';
-
 import {
+  clearStreamingVideoCache,
   releaseVideoElementMedia,
   trimStreamingCachePressure,
 } from '@/lib/mobile/streamingCache';
@@ -453,7 +453,7 @@ function SpinnerOrb({ className = '' }: { className?: string }) {
       role="status"
     >
       <span
-        className="absolute inset-0 animate-spin rounded-full"
+        className="absolute inset-0 animate-spin rounded-full shadow-[0_0_18px_rgba(217,4,41,0.28)]"
         style={ringStyle}
         aria-hidden="true"
       />
@@ -1190,7 +1190,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const persistBeforeExit = () => rememberPlaybackPosition();
+    const persistBeforeExit = () => {
+      rememberPlaybackPosition();
+      void clearStreamingVideoCache('page-exit');
+    };
 
     window.addEventListener('pagehide', persistBeforeExit);
     window.addEventListener('beforeunload', persistBeforeExit);
@@ -1198,6 +1201,25 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('pagehide', persistBeforeExit);
       window.removeEventListener('beforeunload', persistBeforeExit);
+    };
+  }, [rememberPlaybackPosition]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const clearWhenBackgrounded = () => {
+      if (document.visibilityState === 'hidden') {
+        rememberPlaybackPosition();
+        void clearStreamingVideoCache('app-background');
+      }
+    };
+
+    document.addEventListener('visibilitychange', clearWhenBackgrounded);
+
+    return () => {
+      document.removeEventListener('visibilitychange', clearWhenBackgrounded);
     };
   }, [rememberPlaybackPosition]);
 
@@ -1325,7 +1347,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       releaseVideoElementMedia(videoElement);
     }
 
-    void trimStreamingCachePressure('clear-playback');
+    void clearStreamingVideoCache('clear-playback');
   }, [
     clearClickIntentTimer,
     clearFatalError,
@@ -1385,10 +1407,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
           suppressNextPauseIntentRef.current = true;
           videoElement.pause();
         }
-        videoElement.removeAttribute('src');
-        videoElement.load();
+        releaseVideoElementMedia(videoElement);
+        videoElement.preload = 'metadata';
         videoElement.src = activeUrl;
         videoElement.load();
+        void trimStreamingCachePressure(`source-reload:${reason}`);
       } catch (error) {
         console.warn('[player] source reload failed', {
           reason,
@@ -1752,10 +1775,10 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
       }
       videoElement.currentTime = 0;
       releaseVideoElementMedia(videoElement);
+      void clearStreamingVideoCache('source-switch');
       videoElement.preload = 'metadata';
       videoElement.src = activeSource.sourceUrl;
       videoElement.load();
-      void trimStreamingCachePressure('source-switch');
       scheduleManifestWakeup('manifest-timeout');
       scheduleLoadingWatchdog('source-assignment-watchdog');
     } catch (error) {
@@ -2887,6 +2910,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     clearNextCountdownTimer();
 
     if (!activeSource?.onNext || !activeSource.nextActionKey) {
+      void trimStreamingCachePressure('playback-ended');
       return;
     }
 
@@ -3874,7 +3898,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                             event.stopPropagation();
                             togglePlayPause();
                           }}
-                          className="pointer-events-auto inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_16px_44px_rgba(0,0,0,0.38)] transition-transform active:scale-95"
+                          className="pointer-events-auto inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_16px_44px_rgba(217,4,41,0.38)] transition-transform active:scale-95"
                         >
                           {playbackPhase === 'playing' ? (
                             <Pause size={27} />
@@ -3921,7 +3945,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                               event.stopPropagation();
                               togglePlayPause();
                             }}
-                            className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_18px_46px_rgba(0,0,0,0.42)] transition-transform active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
+                            className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_18px_46px_rgba(217,4,41,0.42)] transition-transform active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
                           >
                             {playbackPhase === 'playing' ? (
                               <Pause size={30} />
@@ -4421,7 +4445,7 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
                                 event.stopPropagation();
                                 togglePlayPause();
                               }}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#D90429] text-white shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-[0_12px_30px_rgba(0,0,0,0.32)]"
                             >
                               {playbackPhase === 'playing' ? (
                                 <Pause size={18} />

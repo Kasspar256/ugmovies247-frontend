@@ -400,7 +400,15 @@ function getMovieTimestamp(movie: Record<string, unknown>) {
 }
 
 function sortMovieDocsByUploadDate(movies: Array<Record<string, unknown>>) {
-  return [...movies].sort((left, right) => getMovieTimestamp(right) - getMovieTimestamp(left));
+  return [...movies].sort((left, right) => {
+    const timestampDifference = getMovieTimestamp(right) - getMovieTimestamp(left);
+
+    if (timestampDifference !== 0) {
+      return timestampDifference;
+    }
+
+    return String(right.id || right.movieId || '').localeCompare(String(left.id || left.movieId || ''));
+  });
 }
 
 function readBoundedInteger(value: string | null, options: { min: number; max: number }) {
@@ -411,6 +419,67 @@ function readBoundedInteger(value: string | null, options: { min: number; max: n
   }
 
   return Math.max(options.min, Math.min(options.max, Math.floor(parsed)));
+}
+
+type CatalogPageCursor = {
+  id: string;
+  timestamp: number;
+};
+
+function encodeCatalogCursor(movieDoc: Record<string, unknown> | null | undefined) {
+  if (!movieDoc) {
+    return '';
+  }
+
+  const id = String(movieDoc.id || movieDoc.movieId || '').trim();
+
+  if (!id) {
+    return '';
+  }
+
+  return Buffer.from(
+    JSON.stringify({
+      id,
+      timestamp: getMovieTimestamp(movieDoc),
+    } satisfies CatalogPageCursor),
+    'utf8'
+  ).toString('base64url');
+}
+
+function decodeCatalogCursor(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Partial<CatalogPageCursor>;
+    const id = typeof parsed.id === 'string' ? parsed.id.trim() : '';
+    const timestamp = typeof parsed.timestamp === 'number' && Number.isFinite(parsed.timestamp)
+      ? parsed.timestamp
+      : 0;
+
+    return id ? { id, timestamp } satisfies CatalogPageCursor : null;
+  } catch {
+    return null;
+  }
+}
+
+function getCatalogPageStartIndex(
+  movies: Array<Record<string, unknown>>,
+  cursor: CatalogPageCursor | null,
+  fallbackOffset: number
+) {
+  if (!cursor) {
+    return fallbackOffset;
+  }
+
+  const cursorIndex = movies.findIndex((movieDoc) => {
+    const id = String(movieDoc.id || movieDoc.movieId || '').trim();
+
+    return id === cursor.id;
+  });
+
+  return cursorIndex >= 0 ? cursorIndex + 1 : fallbackOffset;
 }
 
 function compactPartForCatalog(part: Record<string, unknown>) {
@@ -646,6 +715,7 @@ export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const sinceParam = requestUrl.searchParams.get('since') || '';
+    const cursor = decodeCatalogCursor(requestUrl.searchParams.get('cursor'));
     const shouldForceFreshCatalog =
       requestUrl.searchParams.get('force') === '1' ||
       requestUrl.searchParams.get('fresh') === '1';
@@ -692,9 +762,16 @@ export async function GET(request: Request) {
     const filteredMovieDocs = shouldReturnDelta
       ? visibleMovieDocs.filter((movieDoc) => getMovieTimestamp(movieDoc) > sinceTimestamp)
       : visibleMovieDocs;
+    const pageStartIndex = limit
+      ? getCatalogPageStartIndex(filteredMovieDocs, cursor, offset)
+      : 0;
     const movieDocs = limit
-      ? filteredMovieDocs.slice(offset, offset + limit)
+      ? filteredMovieDocs.slice(pageStartIndex, pageStartIndex + limit)
       : filteredMovieDocs;
+    const nextCursor = limit && movieDocs.length
+      ? encodeCatalogCursor(movieDocs[movieDocs.length - 1])
+      : '';
+    const hasMore = limit ? pageStartIndex + movieDocs.length < filteredMovieDocs.length : false;
     const movies = movieDocs
       .map((movieDoc) => {
         const sanitizedMovie = sanitizeMovieForViewerLocally(movieDoc, entitlement);
@@ -710,9 +787,11 @@ export async function GET(request: Request) {
       delta: shouldReturnDelta,
       since: shouldReturnDelta ? sinceParam : undefined,
       limit: limit || undefined,
-      offset: limit ? offset : undefined,
+      offset: limit ? pageStartIndex : undefined,
+      cursor: cursor ? requestUrl.searchParams.get('cursor') : undefined,
+      nextCursor: hasMore ? nextCursor : undefined,
       total: limit ? filteredMovieDocs.length : undefined,
-      hasMore: limit ? offset + movieDocs.length < filteredMovieDocs.length : false,
+      hasMore,
       partial: Boolean(limit),
       serverTime: new Date().toISOString(),
     });

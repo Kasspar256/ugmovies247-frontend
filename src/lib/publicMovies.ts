@@ -47,6 +47,22 @@ type FetchPublicMoviesOptions = {
   offset?: number;
 };
 
+type FetchPublicMoviePageOptions = {
+  force?: boolean;
+  refreshEntitlement?: boolean;
+  limit?: number;
+  cursor?: string | null;
+};
+
+export type FetchPublicMoviePageResult = {
+  movies: Movie[];
+  catalog: Movie[];
+  hasMore: boolean;
+  nextCursor: string;
+  total?: number;
+  serverTime?: string;
+};
+
 let inMemoryMovieCatalog: CachedPublicMovieCatalog | null = null;
 let inFlightMovieCatalogRequest: Promise<Movie[]> | null = null;
 let inFlightMovieDeltaRequest: Promise<Movie[]> | null = null;
@@ -768,6 +784,64 @@ export async function fetchPublicMovies(options?: FetchPublicMoviesOptions): Pro
   }
 
   return catalogRequest;
+}
+
+export async function fetchPublicMoviePage(
+  options?: FetchPublicMoviePageOptions
+): Promise<FetchPublicMoviePageResult> {
+  const requestedLimit = normalizePageLimit(options?.limit) || PUBLIC_MOVIE_BOOTSTRAP_LIMIT;
+  const moviesParams = new URLSearchParams({
+    compact: '1',
+    limit: String(requestedLimit),
+  });
+
+  if (options?.cursor) {
+    moviesParams.set('cursor', options.cursor);
+  }
+
+  if (options?.refreshEntitlement) {
+    moviesParams.set('refreshEntitlement', '1');
+  }
+
+  if (options?.force) {
+    moviesParams.set('force', '1');
+  }
+
+  const headers = await getHydratedClientDeviceHeaders();
+  const response = await fetch(`/api/movies?${moviesParams.toString()}`, {
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.detail || payload.error || 'Failed to load movies.');
+  }
+
+  const pageMovies = normalizeCatalogMovies(payload.movies);
+  const staleCatalog = getAnyAvailableCatalog();
+  const nextCatalog = staleCatalog?.movies?.length
+    ? mergeCatalogMovies(staleCatalog.movies, pageMovies)
+    : pageMovies;
+
+  if (pageMovies.length || nextCatalog.length) {
+    persistCatalog({
+      movies: nextCatalog,
+      cachedAt: Date.now(),
+      lastSyncedAt: getCatalogSyncIso({ movies: nextCatalog, cachedAt: Date.now() }),
+      partial: payload.hasMore === true || payload.partial === true,
+    });
+  }
+
+  return {
+    movies: filterPublicReadyMovies(pageMovies),
+    catalog: filterPublicReadyMovies(nextCatalog),
+    hasMore: payload.hasMore === true,
+    nextCursor: typeof payload.nextCursor === 'string' ? payload.nextCursor : '',
+    total: typeof payload.total === 'number' ? payload.total : undefined,
+    serverTime: typeof payload.serverTime === 'string' ? payload.serverTime : undefined,
+  };
 }
 
 export async function fetchPublicMovieById(movieId: string): Promise<Movie | null> {

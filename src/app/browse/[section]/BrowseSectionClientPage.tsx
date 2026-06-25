@@ -1,15 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import CatalogArtworkImage from '@/components/catalog/CatalogArtworkImage';
 import MobilePageHeader from '@/components/MobilePageHeader';
-import {
-  fetchPublicMovies,
-  PUBLIC_MOVIE_PAGE_LIMIT,
-  readCachedPublicMovies,
-} from '@/lib/publicMovies';
-import { usePublicMovieCatalogUpdates } from '@/hooks/usePublicMovieCatalogUpdates';
+import VirtualizedCatalogGrid from '@/components/catalog/VirtualizedCatalogGrid';
+import { useInfinitePublicCatalog } from '@/hooks/useInfinitePublicCatalog';
 import {
   DEFAULT_HOME_PAGE_CATEGORIES,
   getHomeCollectionByKey,
@@ -34,14 +30,22 @@ export default function BrowseSectionClientPage({
   initialMovies,
   initialCategories,
 }: BrowseSectionClientPageProps) {
-  const [movies, setMovies] = useState<Movie[]>(() => dedupeSeriesMovies(initialMovies));
   const [categories, setCategories] = useState<HomePageCategoryRecord[]>(
     initialCategories.length ? initialCategories : DEFAULT_HOME_PAGE_CATEGORIES
   );
-  const [loading, setLoading] = useState(() => initialMovies.length === 0);
-
-  usePublicMovieCatalogUpdates((catalog) => {
-    setMovies(dedupeSeriesMovies(catalog));
+  const selectSectionCatalog = useCallback((catalog: Movie[]) => dedupeSeriesMovies(catalog), []);
+  const {
+    items: movies,
+    loading,
+    loadError,
+    isFetchingMore,
+    hasMore,
+    sentinelRef,
+  } = useInfinitePublicCatalog({
+    initialMovies,
+    pageSize: 25,
+    logLabel: `browse-section:${sectionKey}`,
+    selectItems: selectSectionCatalog,
   });
 
   useEffect(() => {
@@ -49,20 +53,13 @@ export default function BrowseSectionClientPage({
 
     const loadSectionData = async () => {
       try {
-        const shouldRefreshEntitlement = readCachedPublicMovies().length === 0;
-        const [nextMovies, categoryResponse] = await Promise.all([
-          fetchPublicMovies({
-            refreshEntitlement: shouldRefreshEntitlement,
-            limit: PUBLIC_MOVIE_PAGE_LIMIT,
-          }),
-          fetch('/api/categories/home', {
-            cache: 'no-store',
-          }).catch(() => null),
-        ]);
+        const categoryResponse = await fetch('/api/categories/home', {
+          cache: 'no-store',
+        }).catch(() => null);
 
-        if (!mounted) return;
-
-        setMovies(dedupeSeriesMovies(nextMovies));
+        if (!mounted) {
+          return;
+        }
 
         if (categoryResponse?.ok) {
           const payload = (await categoryResponse.json().catch(() => ({}))) as {
@@ -75,8 +72,6 @@ export default function BrowseSectionClientPage({
         }
       } catch (error) {
         console.error('[browse] failed to load section', error);
-      } finally {
-        if (mounted) setLoading(false);
       }
     };
 
@@ -106,56 +101,81 @@ export default function BrowseSectionClientPage({
   return (
     <main className="min-h-screen bg-[#0B0C10] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-16 text-white md:px-8 md:pb-16 md:pt-[118px] lg:px-10">
       <MobilePageHeader title={collection?.title || 'Browse'} fallbackHref="/browse" />
+
       <div className="mx-auto max-w-6xl">
         <div className="hidden md:block">
-          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">Browse</div>
+          <div className="text-[10px] font-black uppercase tracking-[0.24em] text-white/40">
+            Browse
+          </div>
           <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white">
             {collection?.title || 'Section not found'}
           </h1>
         </div>
 
         {!collection ? (
-          <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 p-6 text-sm text-white/65">
+          <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 p-6 text-sm text-white/65 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
             This section could not be found. Head back to the home page and choose another row.
           </div>
         ) : !collection.movies.length ? (
-          <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 p-6 text-sm text-white/65">
+          <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 p-6 text-sm text-white/65 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
             No titles are available in this section right now.
           </div>
         ) : (
           <>
-            <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 px-5 py-4 text-sm text-white/60">
+            {loadError && (
+              <div className="mt-5 rounded-[28px] border border-amber-200/20 bg-amber-300/10 px-5 py-4 text-sm font-semibold text-amber-100">
+                {loadError}
+              </div>
+            )}
+            <div className="mt-6 rounded-[28px] border border-white/10 bg-[#11141C]/75 px-5 py-4 text-sm text-white/60 shadow-[0_18px_40px_rgba(0,0,0,0.26)]">
               {collection.movies.length} title{collection.movies.length === 1 ? '' : 's'}
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {collection.movies.map((movie) => (
-                <Link
-                  href={`/movie/${movie.id}`}
-                  key={movie.id}
-                  className="group overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] transition-colors hover:border-[#D90429]/35"
-                >
-                  <div className="relative aspect-[2/3] overflow-hidden bg-[#1F2833]">
-                    <CatalogArtworkImage
-                      src={getCatalogPosterCandidates(movie)}
-                      alt={movie.title}
-                      imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      variant="card"
-                    />
-                    {isSeriesMovie(movie) && (
-                      <span className="absolute right-2 top-2 z-10 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white">
-                        Series
-                      </span>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <div className="text-sm font-semibold leading-6 text-white line-clamp-2">{movie.title}</div>
-                    <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
-                      {getMovieVjLabel(movie)}
+            <div className="mt-5">
+              <VirtualizedCatalogGrid
+                items={collection.movies}
+                getKey={(movie) => movie.id}
+                columns={{ base: 2, sm: 3, lg: 4, xl: 5 }}
+                rowHeight={{ base: 302, sm: 336, lg: 352, xl: 358 }}
+                rowClassName="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                renderItem={(movie) => (
+                  <Link
+                    href={`/movie/${movie.id}`}
+                    key={movie.id}
+                    className="group overflow-hidden rounded-[22px] border border-white/8 bg-[#11141C] transition-colors hover:border-[#D90429]/35"
+                  >
+                    <div className="relative aspect-[2/3] overflow-hidden bg-[#1F2833]">
+                      <CatalogArtworkImage
+                        src={getCatalogPosterCandidates(movie)}
+                        alt={movie.title}
+                        imageClassName="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        variant="card"
+                      />
+                      {isSeriesMovie(movie) && (
+                        <span className="absolute right-2 top-2 z-10 rounded-full border border-white/20 bg-black/70 px-2 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-white">
+                          Series
+                        </span>
+                      )}
                     </div>
-                  </div>
-                </Link>
-              ))}
+
+                    <div className="p-3">
+                      <div className="text-sm font-semibold leading-6 text-white line-clamp-2">
+                        {movie.title}
+                      </div>
+                      <div className="mt-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#D90429]">
+                        {getMovieVjLabel(movie)}
+                      </div>
+                    </div>
+                  </Link>
+                )}
+              />
+            </div>
+
+            <div
+              ref={sentinelRef}
+              className="mt-10 min-h-16 text-center text-xs font-black uppercase tracking-[0.22em] text-white/45"
+            >
+              {isFetchingMore ? 'Loading more titles...' : hasMore ? 'More titles are loading before you reach the end.' : 'End of this section.'}
             </div>
           </>
         )}
