@@ -268,25 +268,25 @@ export default function BrowseClientPage({
   initialCatalogIsPartial = false,
 }: BrowseClientPageProps) {
   const normalizedInitialMovies = useMemo(() => dedupeSeriesMovies(initialMovies), [initialMovies]);
-  const [memorySnapshot, setMemorySnapshot] = useState<BrowseMemorySnapshot | null>(null);
-  const seedMovies = normalizedInitialMovies;
+  const [memorySnapshot] = useState<BrowseMemorySnapshot | null>(() => readBrowseMemorySnapshot());
+  const seedMovies = memorySnapshot?.movies?.length ? memorySnapshot.movies : normalizedInitialMovies;
   const seedCategories = initialHomePageCategories.length
     ? initialHomePageCategories
     : DEFAULT_HOME_PAGE_CATEGORIES;
   const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(false);
   const [movies, setMovies] = useState<Movie[]>(() => seedMovies);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
-    seedCategories
+    memorySnapshot?.homePageCategories?.length ? memorySnapshot.homePageCategories : seedCategories
   );
   const [, setLoading] = useState(() => seedMovies.length === 0);
   const [hasResolvedCatalog, setHasResolvedCatalog] = useState(
-    () => seedMovies.length > 0
+    () => memorySnapshot?.hasResolvedCatalog ?? seedMovies.length > 0
   );
   const [isUsingPartialBootstrap, setIsUsingPartialBootstrap] = useState(
-    () => initialCatalogIsPartial && normalizedInitialMovies.length > 0
+    () => memorySnapshot?.isUsingPartialBootstrap ?? (initialCatalogIsPartial && normalizedInitialMovies.length > 0)
   );
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string>(() => memorySnapshot?.activeCategory || 'ALL');
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
@@ -300,10 +300,6 @@ export default function BrowseClientPage({
     () => applyLocalPremiumAccessToCatalog(movies, hasLocalPremiumAccess),
     [hasLocalPremiumAccess, movies]
   );
-
-  useEffect(() => {
-    setMemorySnapshot(readBrowseMemorySnapshot());
-  }, []);
 
   useEffect(() => {
     const syncLocalPremiumAccess = () => {

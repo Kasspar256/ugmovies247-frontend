@@ -34,6 +34,15 @@ type UseInfinitePublicCatalogResult<TItem> = {
   loadNextPage: () => void;
 };
 
+type CatalogPaginationSnapshot = {
+  catalog: Movie[];
+  cursor: string;
+  hasMore: boolean;
+  hasFetchedFirstPage: boolean;
+};
+
+const catalogPaginationSnapshots = new Map<string, CatalogPaginationSnapshot>();
+
 function mergeCatalogAppend(existingMovies: Movie[], incomingMovies: Movie[]) {
   if (!incomingMovies.length) {
     return existingMovies;
@@ -80,17 +89,31 @@ export function useInfinitePublicCatalog<TItem>({
   selectItems,
 }: UseInfinitePublicCatalogOptions<TItem>): UseInfinitePublicCatalogResult<TItem> {
   const normalizedPageSize = Math.max(1, Math.min(240, Math.floor(pageSize || PUBLIC_MOVIE_BOOTSTRAP_LIMIT)));
-  const [catalog, setCatalog] = useState<Movie[]>(() => initialMovies);
-  const [loading, setLoading] = useState(() => initialMovies.length === 0);
+  const restoredSnapshot = catalogPaginationSnapshots.get(logLabel);
+  const initialCatalog = restoredSnapshot?.catalog?.length ? restoredSnapshot.catalog : initialMovies;
+  const [catalog, setCatalog] = useState<Movie[]>(() => initialCatalog);
+  const [loading, setLoading] = useState(() => initialCatalog.length === 0);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(() => restoredSnapshot?.hasMore ?? true);
   const [loadError, setLoadError] = useState('');
-  const catalogRef = useRef<Movie[]>(initialMovies);
-  const cursorRef = useRef('');
-  const hasMoreRef = useRef(true);
+  const catalogRef = useRef<Movie[]>(initialCatalog);
+  const cursorRef = useRef(restoredSnapshot?.cursor || '');
+  const hasMoreRef = useRef(restoredSnapshot?.hasMore ?? true);
   const isFetchingRef = useRef(false);
-  const hasFetchedFirstPageRef = useRef(false);
+  const hasFetchedFirstPageRef = useRef(restoredSnapshot?.hasFetchedFirstPage ?? initialCatalog.length > 0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const rememberSnapshot = useCallback(
+    (nextCatalog: Movie[] = catalogRef.current) => {
+      catalogPaginationSnapshots.set(logLabel, {
+        catalog: nextCatalog,
+        cursor: cursorRef.current,
+        hasMore: hasMoreRef.current,
+        hasFetchedFirstPage: hasFetchedFirstPageRef.current,
+      });
+    },
+    [logLabel]
+  );
 
   const appendCatalog = useCallback(
     (incomingMovies: Movie[], reason: 'INITIAL' | 'APPEND') => {
@@ -98,6 +121,7 @@ export function useInfinitePublicCatalog<TItem>({
         const nextCatalog = mergeCatalogAppend(currentCatalog, incomingMovies);
 
         catalogRef.current = nextCatalog;
+        rememberSnapshot(nextCatalog);
 
         if (incomingMovies.length) {
           console.info(`[CatalogPagination] ${reason} ${logLabel}`, {
@@ -110,7 +134,7 @@ export function useInfinitePublicCatalog<TItem>({
         return nextCatalog;
       });
     },
-    [logLabel]
+    [logLabel, rememberSnapshot]
   );
 
   usePublicMovieCatalogUpdates((updatedCatalog) => {
@@ -140,6 +164,8 @@ export function useInfinitePublicCatalog<TItem>({
         appendCatalog(page.movies, mode === 'initial' ? 'INITIAL' : 'APPEND');
         cursorRef.current = page.nextCursor;
         hasMoreRef.current = page.hasMore;
+        hasFetchedFirstPageRef.current = true;
+        rememberSnapshot();
         setHasMore(page.hasMore);
         setLoadError('');
       } catch (error) {
@@ -150,9 +176,10 @@ export function useInfinitePublicCatalog<TItem>({
         isFetchingRef.current = false;
         setIsFetchingMore(false);
         setLoading(false);
+        rememberSnapshot();
       }
     },
-    [appendCatalog, logLabel, normalizedPageSize]
+    [appendCatalog, logLabel, normalizedPageSize, rememberSnapshot]
   );
 
   const loadNextPage = useCallback(() => {
@@ -161,18 +188,27 @@ export function useInfinitePublicCatalog<TItem>({
 
   useEffect(() => {
     catalogRef.current = catalog;
-  }, [catalog]);
+    rememberSnapshot(catalog);
+  }, [catalog, rememberSnapshot]);
 
   useEffect(() => {
+    if (hasFetchedFirstPageRef.current && catalogRef.current.length > 0) {
+      setLoading(false);
+      return;
+    }
+
     const cachedMovies = readCachedPublicMovies();
 
     if (cachedMovies.length) {
       appendCatalog(cachedMovies, 'APPEND');
       setLoading(false);
+      hasFetchedFirstPageRef.current = true;
+      rememberSnapshot();
+      return;
     }
 
     void loadPage('initial');
-  }, [appendCatalog, loadPage]);
+  }, [appendCatalog, loadPage, rememberSnapshot]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
