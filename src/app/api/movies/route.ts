@@ -32,7 +32,8 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-const PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS = 1000 * 4;
+const PUBLIC_MOVIE_FALLBACK_TIMEOUT_MS = 12000;
+const MAX_STALE_MOVIE_CACHE_FALLBACK_AGE_MS = 1000 * 60 * 10;
 const MAX_PUBLIC_CATALOG_PAGE_SIZE = 240;
 let movieCatalogBackgroundRefreshPromise: Promise<CachedMovieCatalog | null> | null = null;
 
@@ -314,6 +315,29 @@ function matchesCatalogMode(
   }
 
   return cache.reviewOnly === true ? null : cache;
+}
+
+function isFreshEnoughFallbackMovieCache(cache: CachedMovieCatalog | null) {
+  if (!cache?.movies?.length || !cache.cachedAt) {
+    return false;
+  }
+
+  const cachedAtMs = new Date(cache.cachedAt).getTime();
+
+  return Number.isFinite(cachedAtMs) &&
+    Date.now() - cachedAtMs < MAX_STALE_MOVIE_CACHE_FALLBACK_AGE_MS;
+}
+
+function createUnavailableMovieCatalog(
+  collectionName: string,
+  reviewOnly: boolean
+): CachedMovieCatalog {
+  return {
+    movies: [],
+    cachedAt: new Date().toISOString(),
+    collectionName,
+    reviewOnly,
+  };
 }
 
 function withReviewTrailerFallback(movieDoc: Record<string, unknown>) {
@@ -623,12 +647,12 @@ async function fetchMovieCatalog(
     return diskCacheForMode;
   }
 
-  if (!options?.forceFresh && staleCache?.movies?.length) {
+  if (!options?.forceFresh && isFreshEnoughFallbackMovieCache(staleCache)) {
     refreshMovieCatalogInBackground(collectionName, reviewOnly, staleCache);
     return staleCache;
   }
 
-  if (staleCache?.movies?.length && isMovieCatalogQuotaBlocked()) {
+  if (isFreshEnoughFallbackMovieCache(staleCache) && isMovieCatalogQuotaBlocked()) {
     if (diskCacheForMode) {
       setInMemoryMovieCache(diskCacheForMode);
     }
@@ -671,7 +695,7 @@ async function refreshMovieCatalogFromFirestore(
       return cache;
     }
 
-    if (staleCache?.movies?.length) {
+    if (isFreshEnoughFallbackMovieCache(staleCache)) {
       return staleCache;
     }
 
@@ -679,9 +703,14 @@ async function refreshMovieCatalogFromFirestore(
   } catch (error) {
     recordMovieCatalogQuotaFailure(error);
 
-    if (staleCache?.movies?.length) {
-      console.warn('[movies-api] Firestore unavailable, serving stale movie cache', error);
+    if (isFreshEnoughFallbackMovieCache(staleCache)) {
+      console.warn('[movies-api] Firestore unavailable, serving recent movie cache fallback', error);
       return staleCache;
+    }
+
+    if (staleCache?.movies?.length) {
+      console.warn('[movies-api] Firestore unavailable and fallback cache is too stale; returning empty catalog', error);
+      return createUnavailableMovieCatalog(collectionName, reviewOnly);
     }
 
     throw error;

@@ -26,7 +26,7 @@ export function isNativeAndroidApp() {
 }
 
 export function getNativeFirebaseAuthentication() {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' || !isNativeAndroidApp()) {
     return null;
   }
 
@@ -45,6 +45,10 @@ export function getNativeFirebaseAuthentication() {
 }
 
 export async function loadNativeFirebaseAuthentication() {
+  if (!isNativeAndroidApp()) {
+    return null;
+  }
+
   const registeredPlugin = getNativeFirebaseAuthentication();
 
   if (registeredPlugin?.signInWithGoogle) {
