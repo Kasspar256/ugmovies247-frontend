@@ -181,8 +181,10 @@ export function useInfinitePublicCatalog<TItem>({
       return;
     }
 
-    if ('IntersectionObserver' in window) {
-      const observer = new IntersectionObserver(
+    const BrowserIntersectionObserver = window.IntersectionObserver;
+
+    if (typeof BrowserIntersectionObserver === 'function') {
+      const observer = new BrowserIntersectionObserver(
         (entries) => {
           if (entries.some((entry) => entry.isIntersecting)) {
             loadNextPage();
