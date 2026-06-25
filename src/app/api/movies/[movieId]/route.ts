@@ -19,6 +19,9 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+const TMDB_BACKDROP_TIMEOUT_MS = 650;
+const TMDB_BACKDROP_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const tmdbBackdropCache = new Map<string, { value: string; cachedAt: number }>();
 
 const DEFAULT_ENTITLEMENT: SubscriptionEntitlement = {
   hasPremiumAccess: false,
@@ -58,10 +61,23 @@ async function fetchTmdbMovieBackdrop(tmdbId: unknown) {
     return '';
   }
 
+  const cacheKey = String(normalizedTmdbId);
+  const cachedBackdrop = tmdbBackdropCache.get(cacheKey);
+
+  if (cachedBackdrop && Date.now() - cachedBackdrop.cachedAt < TMDB_BACKDROP_CACHE_TTL_MS) {
+    return cachedBackdrop.value;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TMDB_BACKDROP_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `https://api.themoviedb.org/3/movie/${normalizedTmdbId}?api_key=${apiKey}&language=en-US`,
-      { cache: 'no-store' }
+      {
+        cache: 'force-cache',
+        signal: controller.signal,
+      }
     );
 
     if (!response.ok) {
@@ -73,13 +89,23 @@ async function fetchTmdbMovieBackdrop(tmdbId: unknown) {
     }
 
     const payload = (await response.json().catch(() => ({}))) as { backdrop_path?: string | null };
-    return buildTmdbImageUrl(payload.backdrop_path);
-  } catch (error) {
-    console.warn('[movie-api] failed to fetch TMDB player backdrop', {
-      tmdbId: normalizedTmdbId,
-      error: error instanceof Error ? error.message : error,
+    const backdropUrl = buildTmdbImageUrl(payload.backdrop_path);
+    tmdbBackdropCache.set(cacheKey, {
+      value: backdropUrl,
+      cachedAt: Date.now(),
     });
+
+    return backdropUrl;
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'AbortError')) {
+      console.warn('[movie-api] failed to fetch TMDB player backdrop', {
+        tmdbId: normalizedTmdbId,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
     return '';
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
