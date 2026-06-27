@@ -48,9 +48,11 @@ import com.ugmovies247.tv.data.TvMovie
 @Composable
 fun TvMovieDetailScreen(
     movie: TvMovie,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onPlay: () -> Unit
 ) {
     val playFocusRequester = remember { FocusRequester() }
+    val hasPlayableStream = !movie.playbackUrl.isNullOrBlank()
 
     BackHandler(onBack = onBack)
 
@@ -107,9 +109,14 @@ fun TvMovieDetailScreen(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     TvDetailActionButton(
-                        label = if (movie.isLocked) "Subscribe to Watch" else "Play",
+                        label = when {
+                            movie.isLocked -> "Subscribe to Watch"
+                            hasPlayableStream -> "Play"
+                            else -> "No Stream Yet"
+                        },
                         focusRequester = playFocusRequester,
-                        onClick = {}
+                        enabled = hasPlayableStream && !movie.isLocked,
+                        onClick = onPlay
                     )
 
                     TvDetailActionButton(
@@ -189,7 +196,8 @@ private fun TvDetailActionButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    enabled: Boolean = true
 ) {
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -200,7 +208,11 @@ private fun TvDetailActionButton(
     )
 
     val backgroundColor by animateColorAsState(
-        targetValue = if (focused) Color(0xFFE5092F) else Color(0xFF171B25),
+        targetValue = when {
+            !enabled -> Color(0xFF2A2E38)
+            focused -> Color(0xFFE5092F)
+            else -> Color(0xFF171B25)
+        },
         label = "detail_action_focus_background"
     )
 
@@ -215,6 +227,7 @@ private fun TvDetailActionButton(
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                alpha = if (enabled) 1f else 0.72f
             }
             .clip(RoundedCornerShape(999.dp))
             .background(backgroundColor)
@@ -225,6 +238,7 @@ private fun TvDetailActionButton(
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
+                enabled = enabled,
                 onClick = onClick
             )
             .padding(horizontal = 28.dp, vertical = 14.dp)

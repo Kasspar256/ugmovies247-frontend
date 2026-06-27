@@ -58,6 +58,14 @@ class TvCatalogRepository(
                 ?: getString("heroPoster")
                 ?: getString("poster")
                 ?: getString("thumbnail"),
+            playbackUrl = firstNonBlank(
+                getString("video_url"),
+                getString("videoUrl"),
+                getString("streamUrl"),
+                getString("playbackUrl"),
+                firstPlayableUrlFromParts(),
+                firstPlayableUrlFromSeasons()
+            ),
             badge = when {
                 getBoolean("is_trending_tiktok") == true -> "Trending"
                 !getString("vj").isNullOrBlank() -> getString("vj")
@@ -68,4 +76,53 @@ class TvCatalogRepository(
             isLocked = locked
         )
     }
+
+    private fun DocumentSnapshot.firstPlayableUrlFromParts(): String? =
+        firstStringFromList(
+            fieldName = "parts",
+            keys = listOf("video_url", "videoUrl", "streamUrl", "playbackUrl")
+        )
+
+    private fun DocumentSnapshot.firstPlayableUrlFromSeasons(): String? {
+        val seasons = get("seasons") as? List<*> ?: return null
+
+        seasons.forEach { season ->
+            val seasonMap = season as? Map<*, *> ?: return@forEach
+            val episodes = seasonMap["episodes"] as? List<*> ?: return@forEach
+
+            episodes.forEach { episode ->
+                val episodeMap = episode as? Map<*, *> ?: return@forEach
+                val url = firstNonBlank(
+                    episodeMap["video_url"] as? String,
+                    episodeMap["videoUrl"] as? String,
+                    episodeMap["streamUrl"] as? String,
+                    episodeMap["playbackUrl"] as? String
+                )
+
+                if (url != null) return url
+            }
+        }
+
+        return null
+    }
+
+    private fun DocumentSnapshot.firstStringFromList(
+        fieldName: String,
+        keys: List<String>
+    ): String? {
+        val items = get(fieldName) as? List<*> ?: return null
+
+        items.forEach { item ->
+            val map = item as? Map<*, *> ?: return@forEach
+            keys.forEach { key ->
+                val value = map[key] as? String
+                if (!value.isNullOrBlank()) return value
+            }
+        }
+
+        return null
+    }
+
+    private fun firstNonBlank(vararg values: String?): String? =
+        values.firstOrNull { !it.isNullOrBlank() }
 }

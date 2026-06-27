@@ -39,6 +39,7 @@ import com.ugmovies247.tv.data.TvMovie
 import com.ugmovies247.tv.ui.components.TvMovieCard
 import com.ugmovies247.tv.ui.components.TvMovieCardUi
 import com.ugmovies247.tv.ui.details.TvMovieDetailScreen
+import com.ugmovies247.tv.ui.player.TvPlayerScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -55,6 +56,7 @@ fun TvHomeScreen() {
     var isFetchingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var selectedMovie by remember { mutableStateOf<TvMovie?>(null) }
+    var playingMovie by remember { mutableStateOf<TvMovie?>(null) }
 
     fun loadNextPage() {
         if (isFetchingMore || !hasMore) return
@@ -89,10 +91,19 @@ fun TvHomeScreen() {
         }
     }
 
+    playingMovie?.let { movie ->
+        TvPlayerScreen(
+            movie = movie,
+            onBack = { playingMovie = null }
+        )
+        return
+    }
+
     selectedMovie?.let { movie ->
         TvMovieDetailScreen(
             movie = movie,
-            onBack = { selectedMovie = null }
+            onBack = { selectedMovie = null },
+            onPlay = { playingMovie = movie }
         )
         return
     }
