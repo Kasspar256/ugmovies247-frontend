@@ -43,16 +43,20 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
+import com.ugmovies247.tv.auth.TvUserSession
 import com.ugmovies247.tv.data.TvMovie
 
 @Composable
 fun TvMovieDetailScreen(
     movie: TvMovie,
+    session: TvUserSession?,
     onBack: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onSignInRequired: () -> Unit
 ) {
     val playFocusRequester = remember { FocusRequester() }
     val hasPlayableStream = !movie.playbackUrl.isNullOrBlank()
+    val userCanPlay = hasPlayableStream && (!movie.isLocked || session?.hasPremiumAccess == true)
 
     BackHandler(onBack = onBack)
 
@@ -105,18 +109,28 @@ fun TvMovieDetailScreen(
                     overflow = TextOverflow.Ellipsis
                 )
 
+                Text(
+                    text = accessMessage(movie, session, hasPlayableStream),
+                    color = Color(0xFFB8C0CC),
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     TvDetailActionButton(
-                        label = when {
-                            movie.isLocked -> "Subscribe to Watch"
-                            hasPlayableStream -> "Play"
-                            else -> "No Stream Yet"
-                        },
+                        label = actionLabel(movie, session, hasPlayableStream),
                         focusRequester = playFocusRequester,
-                        enabled = hasPlayableStream && !movie.isLocked,
-                        onClick = onPlay
+                        enabled = hasPlayableStream,
+                        onClick = {
+                            if (userCanPlay) {
+                                onPlay()
+                            } else {
+                                onSignInRequired()
+                            }
+                        }
                     )
 
                     TvDetailActionButton(
@@ -128,6 +142,32 @@ fun TvMovieDetailScreen(
         }
     }
 }
+
+private fun actionLabel(
+    movie: TvMovie,
+    session: TvUserSession?,
+    hasPlayableStream: Boolean
+): String =
+    when {
+        !hasPlayableStream -> "No Stream Yet"
+        !movie.isLocked -> "Play"
+        session == null -> "Sign In to Watch"
+        session.hasPremiumAccess -> "Play"
+        else -> "Subscribe to Watch"
+    }
+
+private fun accessMessage(
+    movie: TvMovie,
+    session: TvUserSession?,
+    hasPlayableStream: Boolean
+): String =
+    when {
+        !hasPlayableStream -> "This title does not have a playable stream yet."
+        !movie.isLocked -> "This title is free to play."
+        session?.hasPremiumAccess == true -> "Premium access active${if (session.planName.isNotBlank()) ": ${session.planName}" else ""}."
+        session == null -> "This title requires premium access. Sign in with your UG Movies 247 account."
+        else -> "Your account is signed in, but premium access is not active."
+    }
 
 @Composable
 private fun DetailBackdrop(movie: TvMovie) {

@@ -34,17 +34,21 @@ import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.google.firebase.firestore.DocumentSnapshot
+import com.ugmovies247.tv.auth.TvAuthRepository
+import com.ugmovies247.tv.auth.TvAuthUiState
 import com.ugmovies247.tv.data.TvCatalogRepository
 import com.ugmovies247.tv.data.TvMovie
 import com.ugmovies247.tv.ui.components.TvMovieCard
 import com.ugmovies247.tv.ui.components.TvMovieCardUi
 import com.ugmovies247.tv.ui.details.TvMovieDetailScreen
+import com.ugmovies247.tv.ui.auth.TvSignInScreen
 import com.ugmovies247.tv.ui.player.TvPlayerScreen
 import kotlinx.coroutines.launch
 
 @Composable
 fun TvHomeScreen() {
     val repository = remember { TvCatalogRepository() }
+    val authRepository = remember { TvAuthRepository() }
     val firstCardFocusRequester = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
@@ -56,6 +60,8 @@ fun TvHomeScreen() {
     var isFetchingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var selectedMovie by remember { mutableStateOf<TvMovie?>(null) }
+    var authState by remember { mutableStateOf(TvAuthUiState(isLoading = true)) }
+    var showSignIn by remember { mutableStateOf(false) }
     var playingMovie by remember { mutableStateOf<TvMovie?>(null) }
 
     fun loadNextPage() {
@@ -83,6 +89,9 @@ fun TvHomeScreen() {
 
     LaunchedEffect(Unit) {
         loadNextPage()
+        runCatching { authRepository.currentSession() }
+            .onSuccess { authState = TvAuthUiState(session = it) }
+            .onFailure { authState = TvAuthUiState(error = it.message) }
     }
 
     LaunchedEffect(movies.isNotEmpty()) {
@@ -99,11 +108,33 @@ fun TvHomeScreen() {
         return
     }
 
+    if (showSignIn) {
+        TvSignInScreen(
+            isLoading = authState.isLoading,
+            error = authState.error,
+            onSignIn = { email, password ->
+                authState = authState.copy(isLoading = true, error = null)
+                scope.launch {
+                    runCatching { authRepository.signIn(email, password) }
+                        .onSuccess {
+                            authState = TvAuthUiState(session = it)
+                            showSignIn = false
+                        }
+                        .onFailure { authState = TvAuthUiState(error = it.message ?: "Sign in failed.") }
+                }
+            },
+            onBack = { showSignIn = false }
+        )
+        return
+    }
+
     selectedMovie?.let { movie ->
         TvMovieDetailScreen(
             movie = movie,
+            session = authState.session,
             onBack = { selectedMovie = null },
-            onPlay = { playingMovie = movie }
+            onPlay = { playingMovie = movie },
+            onSignInRequired = { showSignIn = true }
         )
         return
     }
