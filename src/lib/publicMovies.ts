@@ -321,13 +321,25 @@ async function readCatalogFromPersistentStorageAsync() {
 }
 
 function persistCatalog(cache: CachedPublicMovieCatalog) {
-  if (!cache.movies.length) {
-    const existingCatalog = getAnyAvailableCatalog();
+  const existingCatalog = getAnyAvailableCatalog();
 
+  if (!cache.movies.length) {
     if (existingCatalog?.movies?.length) {
       console.warn('[movies-cache] refused to overwrite local catalog with an empty response');
       return;
     }
+  }
+
+  if (
+    cache.partial === true &&
+    existingCatalog?.movies?.length &&
+    cache.movies.length < existingCatalog.movies.length
+  ) {
+    console.warn('[movies-cache] refused to shrink local catalog with a smaller partial response', {
+      current: existingCatalog.movies.length,
+      incoming: cache.movies.length,
+    });
+    return;
   }
 
   inMemoryMovieCatalog = cache;

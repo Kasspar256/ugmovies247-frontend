@@ -269,24 +269,36 @@ export default function BrowseClientPage({
 }: BrowseClientPageProps) {
   const normalizedInitialMovies = useMemo(() => dedupeSeriesMovies(initialMovies), [initialMovies]);
   const [memorySnapshot] = useState<BrowseMemorySnapshot | null>(() => readBrowseMemorySnapshot());
-  const seedMovies = memorySnapshot?.movies?.length ? memorySnapshot.movies : normalizedInitialMovies;
+  const shouldUseMemorySnapshot = Boolean(
+    memorySnapshot?.movies?.length &&
+      (normalizedInitialMovies.length === 0 ||
+        memorySnapshot.movies.length >= normalizedInitialMovies.length)
+  );
+  const seedMovies = shouldUseMemorySnapshot ? memorySnapshot?.movies || [] : normalizedInitialMovies;
   const seedCategories = initialHomePageCategories.length
     ? initialHomePageCategories
     : DEFAULT_HOME_PAGE_CATEGORIES;
   const [hasLocalPremiumAccess, setHasLocalPremiumAccess] = useState(false);
   const [movies, setMovies] = useState<Movie[]>(() => seedMovies);
   const [homePageCategories, setHomePageCategories] = useState<HomePageCategoryRecord[]>(
-    memorySnapshot?.homePageCategories?.length ? memorySnapshot.homePageCategories : seedCategories
+    shouldUseMemorySnapshot && memorySnapshot?.homePageCategories?.length
+      ? memorySnapshot.homePageCategories
+      : seedCategories
   );
   const [, setLoading] = useState(() => seedMovies.length === 0);
   const [hasResolvedCatalog, setHasResolvedCatalog] = useState(
     () => memorySnapshot?.hasResolvedCatalog ?? seedMovies.length > 0
   );
   const [isUsingPartialBootstrap, setIsUsingPartialBootstrap] = useState(
-    () => memorySnapshot?.isUsingPartialBootstrap ?? (initialCatalogIsPartial && normalizedInitialMovies.length > 0)
+    () =>
+      shouldUseMemorySnapshot
+        ? memorySnapshot?.isUsingPartialBootstrap ?? true
+        : initialCatalogIsPartial && normalizedInitialMovies.length > 0
   );
   const [heroIndex, setHeroIndex] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>(() => memorySnapshot?.activeCategory || 'ALL');
+  const [activeCategory, setActiveCategory] = useState<string>(() =>
+    shouldUseMemorySnapshot ? memorySnapshot?.activeCategory || 'ALL' : 'ALL'
+  );
   const [showHeroDetails, setShowHeroDetails] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [headerActionMessage, setHeaderActionMessage] = useState('');
@@ -342,20 +354,34 @@ export default function BrowseClientPage({
 
   usePublicMovieCatalogUpdates((catalog) => {
     const nextMovies = dedupeSeriesMovies(catalog);
+    const incomingIsPartial =
+      hasPartialPublicMovieCatalog() && !hasAuthoritativePublicMovieCatalog();
 
     if (!nextMovies.length && movies.length > 0) {
       return;
     }
 
+    if (
+      incomingIsPartial &&
+      movies.length > 0 &&
+      nextMovies.length < Math.max(movies.length, PUBLIC_MOVIE_BOOTSTRAP_LIMIT)
+    ) {
+      console.info('[home] ignored smaller partial catalog update', {
+        current: movies.length,
+        incoming: nextMovies.length,
+      });
+      return;
+    }
+
     setMovies(nextMovies);
     setHasResolvedCatalog(true);
-    setIsUsingPartialBootstrap(false);
+    setIsUsingPartialBootstrap(incomingIsPartial);
   });
 
   useEffect(() => {
     let mounted = true;
     const requestId = ++homeLoadRequestRef.current;
-    const memoryMovies = memorySnapshot?.movies || [];
+    const memoryMovies = shouldUseMemorySnapshot ? memorySnapshot?.movies || [] : [];
     const hasMemoryMovies = memoryMovies.length > 0;
     const hasSeedMovies = seedMovies.length > 0;
     const localPremiumAccess = readLocalPremiumAccessSnapshot().hasPremiumAccess;
@@ -430,11 +456,11 @@ export default function BrowseClientPage({
               authenticated: false,
             } satisfies ClientAuthStatus));
 
-        const visibleMovieSeed = hasCachedMovies
-          ? cachedMovies
-          : hasMemoryMovies
-            ? memoryMovies
-            : seedMovies;
+        const visibleMovieSeed = [cachedMovies, memoryMovies, seedMovies].reduce<Movie[]>(
+          (bestMovies, candidateMovies) =>
+            candidateMovies.length > bestMovies.length ? candidateMovies : bestMovies,
+          []
+        );
         const moviesPromise = shouldForceMovieFetch
           ? fetchPublicMovies({
               force: true,
@@ -483,7 +509,13 @@ export default function BrowseClientPage({
         }
 
         if (movieData.length || (!hasSeedMovies && !hasCachedMovies && !hasMemoryMovies)) {
-          setMovies(movieData);
+          setMovies((currentMovies) =>
+            movieData.length &&
+            currentMovies.length > 0 &&
+            movieData.length < Math.max(currentMovies.length, PUBLIC_MOVIE_BOOTSTRAP_LIMIT)
+              ? currentMovies
+              : movieData
+          );
         }
         const catalogStillPartial =
           hasPartialPublicMovieCatalog() && !hasAuthoritativePublicMovieCatalog();
@@ -514,6 +546,7 @@ export default function BrowseClientPage({
     normalizedInitialMovies,
     seedCategories,
     seedMovies,
+    shouldUseMemorySnapshot,
   ]);
 
   useEffect(() => {
