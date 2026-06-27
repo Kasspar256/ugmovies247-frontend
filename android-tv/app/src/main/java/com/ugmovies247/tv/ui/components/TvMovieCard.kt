@@ -50,7 +50,8 @@ fun TvMovieCard(
     movie: TvMovieCardUi,
     onClick: (TvMovieCardUi) -> Unit,
     modifier: Modifier = Modifier,
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    onFocused: (TvMovieCardUi) -> Unit = {}
 ) {
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -80,6 +81,10 @@ fun TvMovieCard(
         )
         .onFocusChanged { focusState ->
             focused = focusState.isFocused || focusState.hasFocus
+
+            if (focusState.isFocused) {
+                onFocused(movie)
+            }
         }
         .focusable(interactionSource = interactionSource)
         .clickable(
