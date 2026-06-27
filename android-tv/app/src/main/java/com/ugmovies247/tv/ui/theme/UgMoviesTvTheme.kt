@@ -31,7 +31,6 @@ private val UgMoviesTvColors = darkColorScheme(
     onSurface = UgText,
     surfaceVariant = UgSurfaceRaised,
     onSurfaceVariant = UgMutedText,
-    outline = Color(0xFF404757)
 )
 
 private val UgMoviesTvTypography = Typography(
