@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,9 +31,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.google.firebase.firestore.DocumentSnapshot
@@ -38,6 +38,7 @@ import com.ugmovies247.tv.data.TvCatalogRepository
 import com.ugmovies247.tv.data.TvMovie
 import com.ugmovies247.tv.ui.components.TvMovieCard
 import com.ugmovies247.tv.ui.components.TvMovieCardUi
+import com.ugmovies247.tv.ui.details.TvMovieDetailScreen
 import kotlinx.coroutines.launch
 
 @Composable
@@ -53,6 +54,7 @@ fun TvHomeScreen() {
     var isLoadingInitial by remember { mutableStateOf(true) }
     var isFetchingMore by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var selectedMovie by remember { mutableStateOf<TvMovie?>(null) }
 
     fun loadNextPage() {
         if (isFetchingMore || !hasMore) return
@@ -85,6 +87,14 @@ fun TvHomeScreen() {
         if (movies.isNotEmpty()) {
             firstCardFocusRequester.requestFocus()
         }
+    }
+
+    selectedMovie?.let { movie ->
+        TvMovieDetailScreen(
+            movie = movie,
+            onBack = { selectedMovie = null }
+        )
+        return
     }
 
     LazyColumn(
@@ -122,7 +132,8 @@ fun TvHomeScreen() {
                     if (index >= movies.size - 6) {
                         loadNextPage()
                     }
-                }
+                },
+                onMovieSelected = { selectedMovie = it }
             )
         }
     }
@@ -191,7 +202,8 @@ private fun TvLatestMoviesRow(
     movies: List<TvMovie>,
     firstCardFocusRequester: FocusRequester,
     isFetchingMore: Boolean,
-    onMovieFocused: (Int, TvMovie) -> Unit
+    onMovieFocused: (Int, TvMovie) -> Unit,
+    onMovieSelected: (TvMovie) -> Unit
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -206,7 +218,7 @@ private fun TvLatestMoviesRow(
                 movie = movie.toCardUi(),
                 focusRequester = if (index == 0) firstCardFocusRequester else null,
                 onFocused = { onMovieFocused(index, movie) },
-                onClick = { onMovieFocused(index, movie) }
+                onClick = { onMovieSelected(movie) }
             )
         }
 
@@ -226,7 +238,7 @@ private fun TvMovie.toCardUi() =
     TvMovieCardUi(
         id = id,
         title = title,
-        posterUrl = posterUrl,
+        posterUrl = posterUrl ?: backdropUrl,
         badge = badge,
         isLocked = isLocked
     )

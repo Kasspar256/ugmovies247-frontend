@@ -54,6 +54,10 @@ class TvCatalogRepository(
                 ?: getString("thumbnail")
                 ?: getString("heroPoster")
                 ?: getString("overriddenBackdrop"),
+            backdropUrl = getString("overriddenBackdrop")
+                ?: getString("heroPoster")
+                ?: getString("poster")
+                ?: getString("thumbnail"),
             badge = when {
                 getBoolean("is_trending_tiktok") == true -> "Trending"
                 !getString("vj").isNullOrBlank() -> getString("vj")

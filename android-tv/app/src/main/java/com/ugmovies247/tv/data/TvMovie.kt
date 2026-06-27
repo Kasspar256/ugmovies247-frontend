@@ -6,6 +6,7 @@ data class TvMovie(
     val id: String,
     val title: String,
     val posterUrl: String? = null,
+    val backdropUrl: String? = null,
     val badge: String? = null,
     val overview: String = "",
     val isLocked: Boolean = false

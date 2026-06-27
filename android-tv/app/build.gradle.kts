@@ -33,6 +33,7 @@ googleServices {
 }
 
 dependencies {
+    val coilVersion = "3.5.0"
     val media3Version = "1.10.1"
 
     implementation(platform("androidx.compose:compose-bom:2026.06.00"))
@@ -42,6 +43,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.foundation:foundation")
+
+    implementation("io.coil-kt.coil3:coil-compose:$coilVersion")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:$coilVersion")
 
     implementation("androidx.tv:tv-material:1.1.0")
     implementation("androidx.tv:tv-foundation:1.0.0")

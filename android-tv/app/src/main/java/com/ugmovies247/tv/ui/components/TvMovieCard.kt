@@ -30,12 +30,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import coil3.compose.AsyncImage
 
 data class TvMovieCardUi(
     val id: String,
@@ -72,19 +74,10 @@ fun TvMovieCard(
             scaleX = scale
             scaleY = scale
         }
-        .then(
-            if (focusRequester != null) {
-                Modifier.focusRequester(focusRequester)
-            } else {
-                Modifier
-            }
-        )
+        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
         .onFocusChanged { focusState ->
             focused = focusState.isFocused || focusState.hasFocus
-
-            if (focusState.isFocused) {
-                onFocused(movie)
-            }
+            if (focusState.isFocused) onFocused(movie)
         }
         .focusable(interactionSource = interactionSource)
         .clickable(
@@ -111,25 +104,41 @@ fun TvMovieCard(
                     shape = RoundedCornerShape(18.dp)
                 )
         ) {
+            if (movie.posterUrl.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xFF242A36), Color(0xFF080A0F))
+                            )
+                        )
+                )
+
+                Text(
+                    text = movie.title.take(1).uppercase(),
+                    modifier = Modifier.align(Alignment.Center),
+                    color = Color.White.copy(alpha = 0.72f),
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Black
+                )
+            } else {
+                AsyncImage(
+                    model = movie.posterUrl,
+                    contentDescription = movie.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0xFF242A36),
-                                Color(0xFF080A0F)
-                            )
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.34f))
                         )
                     )
-            )
-
-            Text(
-                text = movie.title.take(1).uppercase(),
-                modifier = Modifier.align(Alignment.Center),
-                color = Color.White.copy(alpha = 0.72f),
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Black
             )
 
             movie.badge?.let { badge ->
